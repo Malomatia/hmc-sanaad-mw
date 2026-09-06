@@ -36,8 +36,8 @@ export class MssqlMpinStoreRepository implements MpinStorePort {
     // first-time set on a fresh device cannot silently do nothing.
     if (updated.rowsAffected === 0) {
       await this.db.execute(
-        `INSERT INTO HMC_Sanad_DeviceRegn_tbl (LoginID, IMEINumber, MPIN, DateFirstRegistered, Status)
-         VALUES (@username, @imei, @mpin, GETDATE(), 'Active')`,
+        `INSERT INTO HMC_Sanad_DeviceRegn_tbl (LoginID, IMEINumber, MPIN, DateFirstRegistered, AddedDt, Status)
+         VALUES (@username, @imei, @mpin, GETDATE(), GETDATE(), 'Active')`,
         { username: cmd.username, imei: cmd.imei, mpin: cmd.mpin },
       );
     }

@@ -92,7 +92,7 @@ describe('MssqlDeviceRegistryRepository', () => {
 
     expect(db.execute).toHaveBeenCalledWith(
       expect.stringMatching(
-        /IF NOT EXISTS[\s\S]*INSERT INTO HMC_Sanad_DeviceRegn_tbl[\s\S]*'Inactive'/,
+        /IF NOT EXISTS[\s\S]*INSERT INTO HMC_Sanad_DeviceRegn_tbl[\s\S]*AddedDt[\s\S]*'Inactive'/,
       ),
       { username: 'hmc1', imei: 'imei-1' },
     );

@@ -72,12 +72,14 @@ describe('MpinService.forgotInitiate (API-6)', () => {
       imei: 'imei-1',
       platform: 'Android',
     });
-    expect(otp.send).toHaveBeenCalledWith({
-      username: 'hmc1',
-      phoneNumber: '77861234',
-      imei: 'imei-1',
-      purpose: 'FORGOT_MPIN',
-    });
+    expect(otp.send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        username: 'hmc1',
+        phoneNumber: '77861234',
+        imei: 'imei-1',
+        purpose: 'FORGOT_MPIN',
+      }),
+    );
     expect(result).toMatchObject({ status: 'initiated successfully', requestid: '42' });
   });
 

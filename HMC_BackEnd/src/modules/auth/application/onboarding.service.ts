@@ -116,6 +116,9 @@ export class OnboardingService {
             phoneNumber: identity.phoneNumber,
             imei: dto.imeinumber,
             purpose: 'ONBOARDING',
+            appName: dto.appname,
+            appVersion: dto.version,
+            appDatetime: dto.sysdate,
           })
         ).requestId;
 
@@ -170,6 +173,9 @@ export class OnboardingService {
             phoneNumber: dto.phonenumber,
             imei: dto.imeinumber,
             purpose: 'ONBOARDING',
+            appName: dto.appname,
+            appVersion: dto.version,
+            appDatetime: dto.sysdate,
           })
         ).requestId;
 

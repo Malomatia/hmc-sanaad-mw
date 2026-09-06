@@ -27,8 +27,8 @@ export class MssqlDeviceRegistryRepository implements DeviceRegistryPort {
       `IF NOT EXISTS (
          SELECT 1 FROM HMC_Sanad_DeviceRegn_tbl WHERE LoginID = @username AND IMEINumber = @imei
        )
-       INSERT INTO HMC_Sanad_DeviceRegn_tbl (LoginID, IMEINumber, DateFirstRegistered, Status)
-       VALUES (@username, @imei, GETDATE(), 'Inactive')`,
+       INSERT INTO HMC_Sanad_DeviceRegn_tbl (LoginID, IMEINumber, DateFirstRegistered, AddedDt, Status)
+       VALUES (@username, @imei, GETDATE(), GETDATE(), 'Inactive')`,
       { username: cmd.username, imei: cmd.imei },
     );
   }

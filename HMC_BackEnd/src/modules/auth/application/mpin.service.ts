@@ -85,6 +85,9 @@ export class MpinService {
           phoneNumber: identity.phoneNumber,
           imei: dto.imeinumber,
           purpose: 'FORGOT_MPIN',
+          appName: dto.appname,
+          appVersion: dto.version,
+          appDatetime: dto.sysdate,
         })
       ).requestId;
     }

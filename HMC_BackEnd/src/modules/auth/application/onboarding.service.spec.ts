@@ -93,12 +93,15 @@ describe('OnboardingService.validateUser (reworked initiate, 2026-09-03)', () =>
       imei: 'imei-1',
       platform: 'Android',
     });
-    expect(otp.send).toHaveBeenCalledWith({
-      username: 'MKHOJA',
-      phoneNumber: '55372169',
-      imei: 'imei-1',
-      purpose: 'ONBOARDING',
-    });
+    expect(otp.send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        username: 'MKHOJA',
+        phoneNumber: '55372169',
+        imei: 'imei-1',
+        purpose: 'ONBOARDING',
+        appVersion: '1.0.0',
+      }),
+    );
     expect(res).toMatchObject({
       status: 'success',
       message: 'OTP sent successfully',

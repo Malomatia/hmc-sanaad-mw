@@ -5,6 +5,7 @@ import { OracleSchemaService } from '@core/database/oracle-schema.service';
 import { BaseOracleRepository } from '@core/database/base.repository';
 import { Lang, toOracleLanguage } from '@shared/domain/lang';
 import { str } from '@shared/utils/mapper.util';
+import { resolveContentType } from '@shared/utils/content-type.util';
 import { SubmitResult } from '@shared/domain/submit-result';
 import { ORACLE_OBJECTS, REQUEST_DETAIL_VIEWS } from '@shared/constants/oracle-objects';
 import {
@@ -270,7 +271,13 @@ export class ApprovalsOracleRepository extends BaseOracleRepository implements A
     return rows.map((r) => ({
       id: Number(r.ATTACHED_DOCUMENT_ID),
       fileName: String(r.FILE_NAME ?? ''),
-      contentType: String(r.FILE_CONTENT_TYPE ?? 'application/octet-stream'),
+      // No bytes here - this query deliberately skips the BLOB - so the
+      // filename stands in for them. Still better than the column alone,
+      // which calls 48 images PDFs.
+      contentType: resolveContentType({
+        fileName: String(r.FILE_NAME ?? ''),
+        stored: r.FILE_CONTENT_TYPE,
+      }),
       sizeBytes: r.SIZE_BYTES === null ? null : Number(r.SIZE_BYTES),
       uploadedAt: r.LAST_UPDATE_DATE ? new Date(r.LAST_UPDATE_DATE).toISOString() : null,
       // Includes the API prefix. Without it the path answered 404 and every
@@ -291,10 +298,17 @@ export class ApprovalsOracleRepository extends BaseOracleRepository implements A
     if (!row) return undefined;
     // fetchAsString covers CLOBs only, so a BLOB arrives as a Buffer.
     const data = row.FILE_DATA;
+    const bytes = Buffer.isBuffer(data) ? data : undefined;
     return {
       fileName: String(row.FILE_NAME ?? ''),
-      contentType: String(row.FILE_CONTENT_TYPE ?? 'application/octet-stream'),
-      contentBase64: Buffer.isBuffer(data) ? data.toString('base64') : '',
+      // The file itself is in hand here, so it decides its own type. The
+      // stored column is wrong for 27% of the rows typed as PDF.
+      contentType: resolveContentType({
+        bytes,
+        fileName: String(row.FILE_NAME ?? ''),
+        stored: row.FILE_CONTENT_TYPE,
+      }),
+      contentBase64: bytes ? bytes.toString('base64') : '',
     };
   }
 

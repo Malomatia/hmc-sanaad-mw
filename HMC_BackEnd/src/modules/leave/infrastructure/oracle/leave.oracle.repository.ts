@@ -8,6 +8,7 @@ import { toOracleLanguage } from '@shared/domain/lang';
 import { parseOracleDate } from '@shared/utils/date.util';
 import { col, dateStr, pruneUndefined, str, strAr } from '@shared/utils/mapper.util';
 import { ORACLE_OBJECTS } from '@shared/constants/oracle-objects';
+import { USERNAME_KEY_CANDIDATES } from '@shared/constants/oracle-columns';
 import {
   LeaveApplyCommand,
   LeaveBalance,
@@ -252,14 +253,21 @@ export class LeaveOracleRepository extends BaseOracleRepository implements Leave
   };
 
   /**
-   * RFL_LEAVE_DET_LOV / RFL_REL_LEAVE1_LOV / RFL_REL_LEAVE2_LOV — raw rows via
-   * `SELECT * FROM <view> WHERE USER_NAME = :u`, keeping EVERY column
-   * (RFL_LEAVE_DET_V: USER_NAME, ABSENCE_ATTENDANCE_ID, LEAVE): the op 56
-   * submit needs the full LEAVE value string, and the record id would be lost
-   * through the LovItem mapping.
+   * RFL_LEAVE_DET_LOV / RFL_REL_LEAVE1_LOV / RFL_REL_LEAVE2_LOV — raw rows,
+   * keeping EVERY column (USER_NAME, LEAVE, ABSENCE_ATTENDANCE_ID): op 56
+   * binds the numeric id, which the LovItem mapping would drop.
+   *
+   * Resolved rather than hard-coded: readByUsername defaults to the column
+   * literal `username`, but these views spell it `USER_NAME`, so all three
+   * endpoints answered ORA-00904 / HTTP 500 — which left the id unreachable
+   * and POST /leave/return impossible to call from a client.
    */
   rflLov(kind: RflLovKind, username: string): Promise<Record<string, unknown>[]> {
-    return this.readByUsername(LeaveOracleRepository.RFL_LOV_VIEW[kind], username);
+    return this.readByResolvedKey(
+      LeaveOracleRepository.RFL_LOV_VIEW[kind],
+      username,
+      USERNAME_KEY_CANDIDATES,
+    );
   }
 
   /**

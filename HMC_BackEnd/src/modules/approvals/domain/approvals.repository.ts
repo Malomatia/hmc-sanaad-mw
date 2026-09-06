@@ -105,6 +105,16 @@ export interface ApprovalsRepository {
   decide(cmd: DecisionCommand): Promise<SubmitResult>;
   requestInfo(cmd: RequestInfoCommand): Promise<SubmitResult>;
   getMyRequests(keys: readonly string[], lang: Lang): Promise<MyRequests>;
+  /**
+   * Ownership checks for the routes that resolve a request by ID ALONE.
+   * op 21 and the attachment download carry no caller in their queries and the
+   * notification ids run in sequence, so these stand in for the role gate they
+   * were behind — without them, opening those routes would let any employee
+   * read every request in the organisation.
+   */
+  isOwnedBy(approvalId: string, keys: readonly string[]): Promise<boolean>;
+  isItemOwnedBy(itemKey: string, keys: readonly string[]): Promise<boolean>;
+  itemKeyOfAttachment(attachedDocumentId: string): Promise<string | undefined>;
 }
 export const APPROVALS_REPOSITORY = Symbol('APPROVALS_REPOSITORY');
 

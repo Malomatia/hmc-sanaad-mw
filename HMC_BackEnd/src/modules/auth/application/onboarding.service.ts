@@ -1,11 +1,15 @@
-import { Inject, Injectable, Logger, NotImplementedException } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'node:crypto';
 import { AuditService } from '@core/audit/audit.service';
 import { AuthLifecycleEvent } from '@core/audit/audit-event';
 import { LDAP_USER_PORT, LdapUserPort } from '../domain/ports/ldap-user.port';
 import { OTP_PORT, OtpPort } from '../domain/ports/otp.port';
-import { MPIN_STORE_PORT, MpinStorePort } from '../domain/ports/mpin-store.port';
+import {
+  DEVICE_REGISTRY_PORT,
+  DeviceRegistration,
+  DeviceRegistryPort,
+} from '../domain/ports/device-registry.port';
 import { EmployeeIdentity } from '../domain/auth-identity';
 import {
   SendOtpRequestDto,
@@ -18,12 +22,21 @@ import { StatusMessageDto } from '../interface/dto/auth.dto';
 import { devIdentity } from './dev-fallback';
 
 /**
- * API-2 (User Validate) + API-3 (Validate OTP). Per the auth framework doc,
- * API-2 looks the username up in LDAP (NO password): it confirms the user is a
- * valid employee, resolves the registered phone number, decides new-vs-existing
- * user (from the MPIN store), then triggers OTP delivery. When
- * AUTH_DISABLED=true a dev bypass synthesizes identity and accepts any
- * well-formed OTP; otherwise the real LDAP/OTP path runs in every environment.
+ * API-2 (User Validate) + API-3 (Validate OTP). Reworked flow (client request
+ * 2026-09-03):
+ *
+ *  1. The username is resolved through the identity port (AUTH_DIRECTORY=
+ *     usersdb → HMC_SND_LIV_EMP_MASTER_VW on the MOTC_SMS DB). Unknown user →
+ *     "User not found." error.
+ *  2. The exact user+device registration is read from HMC_Sanad_DeviceRegn_tbl.
+ *  3. Registered WITH an MPIN → existing user: the response carries the full
+ *     identity from both tables and NO OTP is sent (they log in with MPIN).
+ *  4. Otherwise a missing registration row is created (MPIN NULL, Status
+ *     'Inactive'), an OTP is stored (HMC_RHAP_OTP_tbl) and delivered (MOTC
+ *     push table), and the response says "OTP sent successfully".
+ *
+ * When AUTH_DISABLED=true a dev bypass synthesizes identity and accepts any
+ * well-formed OTP; otherwise the real path runs in every environment.
  */
 @Injectable()
 export class OnboardingService {
@@ -33,7 +46,7 @@ export class OnboardingService {
   constructor(
     @Inject(LDAP_USER_PORT) private readonly ldap: LdapUserPort,
     @Inject(OTP_PORT) private readonly otp: OtpPort,
-    @Inject(MPIN_STORE_PORT) private readonly mpin: MpinStorePort,
+    @Inject(DEVICE_REGISTRY_PORT) private readonly devices: DeviceRegistryPort,
     private readonly audit: AuditService,
     config: ConfigService,
   ) {
@@ -48,13 +61,13 @@ export class OnboardingService {
       appVersion: dto.version,
     };
 
+    // Step 1 — the user must exist in the live-employee master view (or the
+    // configured directory).
     let identity: EmployeeIdentity;
     if (this.devBypass) {
-      this.logger.warn(`DEV bypass: synthesizing identity for "${dto.username}" (no LDAP).`);
+      this.logger.warn(`DEV bypass: synthesizing identity for "${dto.username}" (no directory).`);
       identity = devIdentity(dto.username);
     } else {
-      // API-2 is a passwordless LDAP lookup (see auth framework doc): resolve
-      // the employee by directory search using the service/bind account.
       identity = await this.ldap.validate({
         username: dto.username,
         imei: dto.imeinumber,
@@ -64,16 +77,37 @@ export class OnboardingService {
 
     if (!identity.isEmployee) {
       this.audit.lifecycle(AuthLifecycleEvent.USER_VALIDATE_FAILURE, { ...ctx, status: 'error' });
-      return { status: 'error', message: 'Invalid employee id received.' };
+      return { status: 'error', message: 'User not found.' };
     }
 
-    // New (first-time) vs existing user is owned by the MPIN store: a user with
-    // an MPIN registered on this device is "existing". Guarded so LDAP can be
-    // exercised before the MPIN store is wired.
-    if (!this.devBypass) {
-      identity.isNewUser = !(await this.hasMpin(dto.username, dto.imeinumber));
+    // Step 2 — this exact user+device registration.
+    const device = this.devBypass
+      ? undefined
+      : await this.devices.find(dto.username, dto.imeinumber);
+
+    // Step 3 — registered with an MPIN: existing user, no OTP. Everything the
+    // client needs comes back from both tables.
+    if (device?.mpinSet) {
+      this.audit.lifecycle(AuthLifecycleEvent.USER_VALIDATE_SUCCESS, { ...ctx, status: 'success' });
+      return {
+        status: 'success',
+        ...this.userData(identity, device),
+        newuser: 'No',
+      };
     }
 
+    // Step 3b — first time on this device: create the registration with no
+    // MPIN and Status 'Inactive' (activated when the MPIN is set, API-4).
+    if (!this.devBypass && !device) {
+      await this.devices.bind({
+        username: dto.username,
+        imei: dto.imeinumber,
+        platform: dto.platform,
+      });
+    }
+
+    // Step 4 — store the OTP (HMC_RHAP_OTP_tbl) and deliver it (MOTC push
+    // table / configured delivery).
     const requestid = this.devBypass
       ? randomUUID().replace(/-/g, '').toUpperCase()
       : (
@@ -83,6 +117,9 @@ export class OnboardingService {
             email: identity.email,
             imei: dto.imeinumber,
             purpose: 'ONBOARDING',
+            appName: dto.appname,
+            appVersion: dto.version,
+            appDatetime: dto.sysdate,
           })
         ).requestId;
 
@@ -90,12 +127,26 @@ export class OnboardingService {
     this.audit.lifecycle(AuthLifecycleEvent.OTP_SENT, ctx);
 
     return {
+      status: 'success',
+      message: 'OTP sent successfully',
+      ...this.userData(identity, device),
+      newuser: 'Yes',
+      requestid,
+    };
+  }
+
+  /** Response fields drawn from the employee view + the device registration. */
+  private userData(identity: EmployeeIdentity, device?: DeviceRegistration) {
+    return {
       employeeusername: identity.username,
       employeename: identity.employeeName,
-      newuser: identity.isNewUser ? 'Yes' : 'No',
-      employeeflag: identity.isEmployee ? 'Yes' : 'No',
+      employeenumber: identity.employeeNumber,
+      jobname: identity.jobName,
+      email: identity.email,
+      department: identity.department,
+      employeeflag: 'Yes',
       employeephonenumber: identity.phoneNumber,
-      requestid,
+      devicestatus: device?.status,
     };
   }
 
@@ -124,6 +175,9 @@ export class OnboardingService {
             email: dto.email,
             imei: dto.imeinumber,
             purpose: 'ONBOARDING',
+            appName: dto.appname,
+            appVersion: dto.version,
+            appDatetime: dto.sysdate,
           })
         ).requestId;
 
@@ -158,20 +212,4 @@ export class OnboardingService {
       : { status: 'error', message: 'Invalid OTP' };
   }
 
-  /**
-   * Whether the user already has an MPIN registered on this device (existing
-   * user). Tolerates the MPIN store not being wired yet: treats the user as
-   * new so the LDAP validation path can be exercised independently.
-   */
-  private async hasMpin(username: string, imei: string): Promise<boolean> {
-    try {
-      return await this.mpin.exists(username, imei);
-    } catch (err) {
-      if (err instanceof NotImplementedException) {
-        this.logger.warn('MPIN store not wired — treating user as first-time (newuser=Yes).');
-        return false;
-      }
-      throw err;
-    }
-  }
 }

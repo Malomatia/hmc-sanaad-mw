@@ -36,6 +36,8 @@ export interface EmployeeIdentity {
   employeeNameAr?: string;
   department?: string;
   company?: string;
+  jobName?: string;
+  email?: string;
   phoneNumber?: string;
   /** Corporate email — the OTP fallback channel when there is no mobile. */
   email?: string;

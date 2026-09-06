@@ -1,5 +1,7 @@
-import { Body, Controller, Get, Param, Post, Query, HttpCode } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, HttpCode, Res } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import type { Response } from 'express';
+import { SkipEnvelope } from '@core/http/response.interceptor';
 import { Lang } from '@core/i18n/lang.decorator';
 import type { Lang as LangCode } from '@shared/domain/lang';
 import { CurrentUser } from '@core/auth/decorators/current-user.decorator';
@@ -13,12 +15,21 @@ import {
   ActionHistoryQueryDto,
   ApprovalDetailQueryDto,
   ApproveRejectRequestDto,
+  OwnScopeQueryDto,
   ReassignApprovalRequestDto,
   RequestInfoRequestDto,
   WorklistSummaryQueryDto,
 } from './dto/approvals.dto';
 
-/** Approvals/Worklist endpoints (ops 20-23, 68-71). APPROVER/SUPERVISOR only. */
+/**
+ * Approvals/Worklist endpoints (ops 20-23, 68-71).
+ *
+ * APPROVER/SUPERVISOR by default, with ops 20 and 23 exempt: they return only
+ * the caller's own rows, so identity is the filter and the role adds nothing —
+ * and while no identity adapter grants those roles, the class rule made them
+ * permanently unreachable. The routes that ACT on a request (decision,
+ * request-info, reassign) keep the role.
+ */
 @ApiTags('approvals')
 @ApiBearerAuth()
 @Roles(Role.APPROVER, Role.SUPERVISOR)
@@ -29,18 +40,54 @@ export class ApprovalsController {
     private readonly worklist: WorklistService,
   ) {}
 
+  /**
+   * What is waiting for the CALLER's approval — APPROVE_SUMRY_V and
+   * PNDNG_QID_V are both filtered on the APPROVER side, so this is an
+   * approver's inbox, not a list of the caller's own requests (that is
+   * `my-requests` below).
+   *
+   * Scoped by identity rather than gated by role. The role gate made it a
+   * permanent 403 — nothing in the system assigns APPROVER/SUPERVISOR — while
+   * the identity filter already gives each caller exactly their own rows: an
+   * employee who approves nothing sees an empty list, and a real approver sees
+   * their queue. `enum` is accepted for payload compatibility but IGNORED;
+   * honouring it on an open route would let anyone read another approver's
+   * inbox by passing their number.
+   */
+  @Roles()
   @Get()
   @ApiOperation({ summary: 'op 20 — Approvals summary', operationId: 'approvals_summary' })
-  summary(@Query() q: ProfileQueryDto, @CurrentUser() user: AuthenticatedUser) {
-    // `enum` accepts either the login or the employee number: the two views
-    // behind this response store different forms of the same person.
-    return this.approvals.summary(q.enum, q.lang, user);
+  summary(
+    @Query() q: OwnScopeQueryDto,
+    @Lang() lang: LangCode,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.approvals.summary(user, lang, q.enum ?? q.username);
   }
 
+  /**
+   * "What I submitted" — an employee's OWN requests and their approval
+   * status. That is not approver data, so it does not take the approver role
+   * the rest of this controller requires: the empty `@Roles()` overrides the
+   * class decorator (RolesGuard resolves handler over class). Nothing in the
+   * system grants APPROVER/SUPERVISOR today, so under the class rule this
+   * endpoint was unreachable for everyone — including the person whose own
+   * requests it lists.
+   *
+   * `enum` stays accepted for payload compatibility but is IGNORED: the rows
+   * are scoped to the authenticated caller. Honouring a client-supplied
+   * identifier on an employee-open endpoint would let anyone read another
+   * employee's requests by passing their number.
+   */
+  @Roles()
   @Get('my-requests')
   @ApiOperation({ summary: 'op 23 — My requests', operationId: 'approvals_myRequests' })
-  myRequests(@Query() q: ProfileQueryDto, @CurrentUser() user: AuthenticatedUser) {
-    return this.approvals.myRequests(q.enum, q.lang, user);
+  myRequests(
+    @Query() q: OwnScopeQueryDto,
+    @Lang() lang: LangCode,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.approvals.myRequests(user, lang, q.enum ?? q.username);
   }
 
   @Get('worklist')
@@ -64,18 +111,65 @@ export class ApprovalsController {
 
   @Get(':id/details')
   @ApiOperation({ summary: 'op 21 — Approval detail', operationId: 'approvals_details' })
-  details(@Param('id') id: string, @Query() q: ApprovalDetailQueryDto) {
-    return this.approvals.details(id, q.lang);
+  /**
+   * How an employee opens one of their own requests, so it is not approver-only
+   * either. The read resolves by notification id with no caller in the query,
+   * and the ids are sequential — so the service checks that the caller is the
+   * request's requestor or its approver, and answers 403 otherwise. That check
+   * is what replaces the role gate; do not remove one without the other.
+   */
+  @Roles()
+  details(
+    @Param('id') id: string,
+    @Query() q: OwnScopeQueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.approvals.details(id, q.lang, user, q.enum ?? q.username);
   }
 
-  /** Download one of the files listed by `:id/details` → `attachments[].url`. */
+  /**
+   * Download one of the files listed by `:id/details` → `attachments[].url`.
+   *
+   * Serves the FILE, not a description of it: real bytes, the stored
+   * content-type, and a `Content-Disposition` filename. That is what lets a
+   * client point an image view or a PDF viewer straight at the URL. It
+   * previously answered a JSON envelope with the bytes base64-encoded inside,
+   * which nothing could render without unwrapping it first — and which was
+   * empty anyway, since BLOBs arrive as Lob streams and the reader tested for
+   * a Buffer.
+   *
+   * `@SkipEnvelope` because the Sanaad wrapper would turn a PDF into a JSON
+   * string. Open alongside `:id/details`, which advertises these URLs — gating
+   * one and not the other would ship a download button that always fails — and
+   * the service still requires the caller to own the request the file belongs
+   * to, since a document id identifies only the file.
+   */
+  @Roles()
+  @SkipEnvelope()
   @Get('attachments/:documentId')
   @ApiOperation({
-    summary: 'op 21b — Download a request attachment',
+    summary: 'op 21b — Download a request attachment (binary)',
     operationId: 'approvals_attachment',
   })
-  attachment(@Param('documentId') documentId: string) {
-    return this.approvals.attachment(documentId);
+  @ApiOkResponse({
+    description: 'The file itself, with its own content-type.',
+    content: { 'application/octet-stream': { schema: { type: 'string', format: 'binary' } } },
+  })
+  async attachment(
+    @Param('documentId') documentId: string,
+    @Query() q: OwnScopeQueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+    @Res() res: Response,
+  ) {
+    const file = await this.approvals.attachment(documentId, user, q.enum ?? q.username);
+    const body = Buffer.from(file.contentBase64, 'base64');
+
+    res.setHeader('Content-Type', file.contentType);
+    res.setHeader('Content-Length', body.length);
+    // `inline` so a viewer renders it in place; a client that wants to save it
+    // can still do so. The name is quoted because filenames contain spaces.
+    res.setHeader('Content-Disposition', `inline; filename="${file.fileName.replace(/"/g, '')}"`);
+    res.send(body);
   }
 
   @Post(':id/decision')

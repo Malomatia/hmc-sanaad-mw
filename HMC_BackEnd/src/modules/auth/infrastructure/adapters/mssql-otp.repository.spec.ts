@@ -11,6 +11,9 @@ const OTP_CFG: OtpConfig = {
   ttlSeconds: 300,
   maxAttempts: 3,
   resendWindowSeconds: 60,
+  staticValue: '',
+  charset: 'numeric',
+  delivery: 'motc',
   store: 'legacy',
 };
 
@@ -52,6 +55,11 @@ describe('MssqlOtpRepository', () => {
           username: 'hmc1',
           imei: 'imei-1',
           otp: expect.stringMatching(/^\d{6}$/),
+          requestId: expect.stringMatching(/^[0-9A-F]{32}$/),
+          appName: 'Sanaad',
+          appVersion: '1.0.0',
+          appDatetime: expect.any(Date),
+          requestType: 'USER_REG',
         }),
       );
       const otp = (db.execute.mock.calls[0][1] as { otp: string }).otp;

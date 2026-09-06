@@ -1,6 +1,9 @@
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { AppConfig } from '@core/config/configuration';
 import { Lang } from '@shared/domain/lang';
 import { SubmitResult } from '@shared/domain/submit-result';
+import { ERROR_MESSAGES } from '@shared/constants/error-codes';
 import { AuthenticatedUser } from '@core/auth/auth-user.interface';
 import {
   APPROVALS_REPOSITORY,
@@ -51,20 +54,45 @@ export interface RequestDetailResponse {
 /** Approvals summary/detail/decision/my-requests (ops 20, 21, 22, 23). */
 @Injectable()
 export class ApprovalsService {
-  constructor(@Inject(APPROVALS_REPOSITORY) private readonly repo: ApprovalsRepository) {}
+  /** Outside production, a caller may scope these reads to someone else. */
+  private readonly actAsAllowed: boolean;
 
-  /**
-   * `identifier` is whatever the client sent (`enum`) — login or employee
-   * number. `user` adds the authenticated identity, so the views that store the
-   * other form still match without the client having to know which is which.
-   */
-  summary(identifier: string, lang: Lang, user?: AuthenticatedUser): Promise<ApprovalsSummary> {
-    return this.repo.getSummary(ApprovalsService.keysOf(identifier, user), lang);
+  constructor(
+    @Inject(APPROVALS_REPOSITORY) private readonly repo: ApprovalsRepository,
+    config: ConfigService,
+  ) {
+    this.actAsAllowed = config.getOrThrow<AppConfig>('app').nodeEnv !== 'production';
   }
 
-  /** Caller identifiers in every form the approvals views may store. */
-  private static keysOf(identifier: string, user?: AuthenticatedUser): string[] {
-    return [...new Set([identifier, user?.username, user?.employeeNumber].filter(Boolean))] as string[];
+  /**
+   * op 20 — what is waiting for the CALLER's approval. Scoped to the
+   * authenticated identity, like op 23: the route is open to any employee, so
+   * a client-supplied identifier must not be able to widen it to another
+   * approver's queue.
+   */
+  summary(user: AuthenticatedUser, lang: Lang = 'en', actAs?: string): Promise<ApprovalsSummary> {
+    return this.repo.getSummary(this.keysOf(user, actAs), lang);
+  }
+
+  /**
+   * The identifiers these reads are scoped to.
+   *
+   * Always the caller in every form the views may store — they disagree about
+   * whether that is the login or the employee number. OUTSIDE PRODUCTION a
+   * client-supplied `?enum=`/`?username=` is added too, so a tester can point
+   * any of these endpoints at a real approver and get real rows back; the
+   * accounts that hold data are listed in AGENTS.md.
+   *
+   * In production it is dropped. Honouring it there would let any employee
+   * read another's requests — and read one of the approval detail views, whose
+   * notification ids are sequential — simply by passing their number. Same
+   * `NODE_ENV` rule the SQL consoles use, so there is no new switch to
+   * remember or to leak.
+   */
+  private keysOf(user: AuthenticatedUser, actAs?: string): string[] {
+    const own = [user.username, user.employeeNumber];
+    const supplied = this.actAsAllowed && actAs ? [actAs] : [];
+    return [...new Set([...own, ...supplied].filter(Boolean))] as string[];
   }
 
   /**
@@ -77,7 +105,17 @@ export class ApprovalsService {
    * map, for validation/filtering, and `attachments` carries a download path
    * per file.
    */
-  async details(approvalId: string, lang: Lang): Promise<RequestDetailResponse> {
+  async details(
+    approvalId: string,
+    lang: Lang,
+    user: AuthenticatedUser,
+    actAs?: string,
+  ): Promise<RequestDetailResponse> {
+    // The route is open to every employee (it is how they see their own
+    // request), and the read below resolves purely by notification id — so
+    // ownership is checked here. Without it, sequential ids would expose every
+    // request in the organisation.
+    await this.assertOwns(approvalId, user, actAs);
     const src = await this.repo.getDetails(approvalId, lang);
     const header = src.header ?? {};
     const { fields, values } = buildRequestFields(src.serviceView, src.detailRow);
@@ -103,10 +141,33 @@ export class ApprovalsService {
     };
   }
 
-  async attachment(attachedDocumentId: string): Promise<AttachmentContent> {
+  async attachment(
+    attachedDocumentId: string,
+    user: AuthenticatedUser,
+    actAs?: string,
+  ): Promise<AttachmentContent> {
+    // Same exposure as details(), one step worse: this returns the file
+    // itself. The document id identifies the file and nothing else, so the
+    // request it belongs to is resolved and checked first.
+    const itemKey = await this.repo.itemKeyOfAttachment(attachedDocumentId);
+    if (!itemKey || !(await this.repo.isItemOwnedBy(itemKey, this.keysOf(user, actAs)))) {
+      throw new ForbiddenException(ERROR_MESSAGES.FORBIDDEN);
+    }
+
     const file = await this.repo.getAttachmentContent(attachedDocumentId);
     if (!file) throw new NotFoundException(`Attachment ${attachedDocumentId} was not found.`);
     return file;
+  }
+
+  /** 403 unless the caller is the request's requestor or its approver. */
+  private async assertOwns(
+    approvalId: string,
+    user: AuthenticatedUser,
+    actAs?: string,
+  ): Promise<void> {
+    if (!(await this.repo.isOwnedBy(approvalId, this.keysOf(user, actAs)))) {
+      throw new ForbiddenException(ERROR_MESSAGES.FORBIDDEN);
+    }
   }
 
   decide(
@@ -127,8 +188,15 @@ export class ApprovalsService {
     return this.repo.requestInfo({ username: user.username, lang, approvalId, ...dto });
   }
 
-  myRequests(identifier: string, lang: Lang, user?: AuthenticatedUser): Promise<MyRequests> {
-    return this.repo.getMyRequests(ApprovalsService.keysOf(identifier, user), lang);
+  /**
+   * op 23 — the CALLER's own requests. Scoped to the authenticated identity
+   * only: the endpoint is open to every employee (it is their own data), so a
+   * client-supplied identifier must not be able to widen it to someone else's
+   * rows. Both forms of the caller are still sent, because the two views
+   * behind the response store different ones.
+   */
+  myRequests(user: AuthenticatedUser, lang: Lang = 'en', actAs?: string): Promise<MyRequests> {
+    return this.repo.getMyRequests(this.keysOf(user, actAs), lang);
   }
 }
 

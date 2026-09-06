@@ -318,9 +318,9 @@ export const LEAVE_RETURN_BODY = {
       },
       p_leave_details: {
         type: 'string',
-        example: 'Casual Leave|19-APR-2026|19-APR-2026',
+        example: '56949953',
         description:
-          "SHORT composite 'Leave Type|DD-MON-YYYY|DD-MON-YYYY' (type|start|end) — verified live: passes the lookup. Do NOT send the op 55 LOV's long display string ('… Leave Start Date : …') — it overflows the procedure's buffer (ORA-06502).",
+          "The leave's ABSENCE_ATTENDANCE_ID as a numeric string — read it from GET /leave/lov/return → `id`. The procedure runs TO_NUMBER on this argument, so every text form (the composite 'Leave Type|DD-MON-YYYY|DD-MON-YYYY', the LOV's display string, the bare type) answers ORA-01722.",
       },
       p_related_leave1: { type: 'string', nullable: true, example: null },
       p_related_leave2: { type: 'string', nullable: true, example: null },
@@ -333,7 +333,7 @@ export const LEAVE_RETURN_BODY = {
       ...attachmentProperties(),
     },
     example: {
-      p_leave_details: 'Casual Leave|19-APR-2026|19-APR-2026',
+      p_leave_details: '56949953',
       p_related_leave1: null,
       p_related_leave2: null,
       p_return_date: '20-Apr-2026',

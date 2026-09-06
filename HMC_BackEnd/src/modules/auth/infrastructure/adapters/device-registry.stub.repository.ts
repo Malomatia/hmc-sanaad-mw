@@ -1,6 +1,7 @@
 import { Injectable, NotImplementedException } from '@nestjs/common';
 import {
   DeviceBindingCommand,
+  DeviceRegistration,
   DeviceRegistryPort,
 } from '../../domain/ports/device-registry.port';
 
@@ -18,6 +19,12 @@ export class DeviceRegistryStubRepository implements DeviceRegistryPort {
   }
 
   isBound(_username: string, _imei: string): Promise<boolean> {
+    throw new NotImplementedException(
+      'Device registry is not wired yet — provide the device-binding store spec. [TODO(spec)]',
+    );
+  }
+
+  find(_username: string, _imei: string): Promise<DeviceRegistration | undefined> {
     throw new NotImplementedException(
       'Device registry is not wired yet — provide the device-binding store spec. [TODO(spec)]',
     );

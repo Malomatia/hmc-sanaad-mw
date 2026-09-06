@@ -71,6 +71,51 @@ describe('BaseOracleRepository.toSubmitResult', () => {
     expect(result.successflag).toBe('S');
     expect(result.errormessage).toBe('Success');
   });
+
+  /**
+   * `select`/`from`/`update` are ordinary English words: op 10's real
+   * validation text (" 01-OCT-26 does not fall between 01-SEP-2025 to
+   * 31-AUG-2026. Please select the correct Contractual Year") was suppressed to
+   * the generic database-error message because the leak filter matched bare
+   * `\bSELECT\b`. Business prose must pass through untouched.
+   */
+  it('returns validation prose containing SQL keywords as English words', () => {
+    const prose =
+      ' 01-OCT-26 does not fall between   01-SEP-2025 to 31-AUG-2026. ' +
+      'Please select the correct Contractual Year';
+    const result = repo.expose({ p_success_flag: 'N', p_error_msg: prose });
+    expect(result.status).toBe('error');
+    expect(result.errormessage).toBe(prose);
+  });
+
+  it('still suppresses genuinely technical proc messages', () => {
+    for (const leak of [
+      'ORA-00942: table or view does not exist',
+      'error in XXHMC_SND_LEAV_OF_ABSEN_NEW_PR',
+      'failed: SELECT NVL(days, 0) FROM absence_table WHERE id = :1',
+    ]) {
+      const result = repo.expose({ p_success_flag: 'N', p_error_msg: leak });
+      expect(result.errormessage).toBe(
+        'A database operation could not be completed. Please contact support if the problem persists.',
+      );
+    }
+  });
+
+  it('surfaces the human text of an ORA-20xxx business raise in p_error_msg', () => {
+    const result = repo.expose({
+      p_success_flag: 'N',
+      p_error_msg: 'ORA-20001: Leave dates overlap an existing request ORA-06512: at line 12',
+    });
+    expect(result.errormessage).toBe('Leave dates overlap an existing request');
+  });
+
+  it('falls back to the generic business message when the raise text is itself technical', () => {
+    const result = repo.expose({
+      p_success_flag: 'N',
+      p_error_msg: 'ORA-20001: failure in XXHMC_SND_LEAV_PKG ORA-06512: at line 12',
+    });
+    expect(result.errormessage).toBe('The requested operation cannot be completed.');
+  });
 });
 
 /**

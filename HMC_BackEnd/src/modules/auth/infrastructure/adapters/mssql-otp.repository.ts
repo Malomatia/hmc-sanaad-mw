@@ -1,6 +1,6 @@
 import { HttpException, HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { randomInt, timingSafeEqual } from 'node:crypto';
+import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { MssqlService } from '@core/database/mssql.service';
 import { OtpConfig } from '@core/config/configuration';
 import {
@@ -14,6 +14,7 @@ import {
   OTP_EMAIL_DELIVERY_PORT,
   OtpEmailDeliveryPort,
 } from '../../domain/ports/otp-email-delivery.port';
+import { generateOtp } from './otp-generator.util';
 
 /** Latest OTP row for a user+device (legacy OTPValidate/OTPResend projection). */
 interface OtpRow {
@@ -67,12 +68,30 @@ export class MssqlOtpRepository implements OtpPort {
       );
     }
 
-    const otp = this.generateOtp();
+    const otp = generateOtp(this.cfg);
+    // Every legacy column is populated except OTPSendMode (client decision
+    // 2026-09-04): RequestId is NOT NULL — a fresh opaque correlation id per
+    // row (UUID hex, e.g. 04D0B9C63F2142BD84E8D5A9D527AC7D); the mobile
+    // `requestid` stays SeqNo, the documented validation key. AppName/
+    // AppVersion/AppDatetime mirror the client context from the request.
     const inserted = await this.db.execute<{ SeqNo: number }>(
-      `INSERT INTO HMC_RHAP_OTP_tbl (LoginID, DeviceIMEINumber, OTPValue, OTPSentDateTime)
+      `INSERT INTO HMC_RHAP_OTP_tbl
+         (LoginID, DeviceIMEINumber, OTPValue, OTPSentDateTime, RequestId,
+          AppName, AppVersion, AppDatetime, OTPValidationAttemptCount,
+          RequestType, OTPStatus)
        OUTPUT INSERTED.SeqNo AS SeqNo
-       VALUES (@username, @imei, @otp, GETDATE())`,
-      { username: cmd.username, imei: cmd.imei, otp },
+       VALUES (@username, @imei, @otp, GETDATE(), @requestId,
+               @appName, @appVersion, @appDatetime, 0, @requestType, '1')`,
+      {
+        username: cmd.username,
+        imei: cmd.imei,
+        otp,
+        requestId: randomUUID().replace(/-/g, '').toUpperCase(),
+        appName: cmd.appName || 'Sanaad',
+        appVersion: cmd.appVersion || '1.0.0',
+        appDatetime: MssqlOtpRepository.safeDate(cmd.appDatetime),
+        requestType: MssqlOtpRepository.REQUEST_TYPE[cmd.purpose],
+      },
     );
     const seqNo = inserted.rows[0]?.SeqNo ?? (await this.latestRow(cmd.username, cmd.imei))?.SeqNo;
     if (seqNo === undefined) {
@@ -131,10 +150,16 @@ export class MssqlOtpRepository implements OtpPort {
     return rows[0];
   }
 
-  /** Numeric OTP of OTP_LENGTH digits (leading zeros preserved). */
-  private generateOtp(): string {
-    const max = 10 ** this.cfg.length;
-    return String(randomInt(0, max)).padStart(this.cfg.length, '0');
+  /** Legacy RequestType values per OTP purpose. */
+  private static readonly REQUEST_TYPE: Record<SendOtpCommand['purpose'], string> = {
+    ONBOARDING: 'USER_REG',
+    FORGOT_MPIN: 'FORGET_MPIN',
+  };
+
+  /** Client `sysdate` as a Date for the AppDatetime column; now when absent/invalid. */
+  private static safeDate(value?: string): Date {
+    const parsed = value ? new Date(value) : new Date();
+    return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
   }
 
   private static safeEquals(a: string, b: string): boolean {

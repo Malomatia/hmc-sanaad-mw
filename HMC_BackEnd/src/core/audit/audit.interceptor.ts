@@ -41,7 +41,7 @@ export class AuditInterceptor implements NestInterceptor {
 
     const ctx: AuditContext = {
       username: req.user?.username ?? asString(body.username),
-      deviceImei: asString(body.imeinumber) ?? asString(body.deviceimei),
+      deviceImei: asString(body.imeinumber) ?? asString(body.deviceimei) ?? asString(body.deviceid),
       platform: asString(body.platform),
       appVersion: asString(body.version) ?? asString(body.appVersion),
       source: req.ip,

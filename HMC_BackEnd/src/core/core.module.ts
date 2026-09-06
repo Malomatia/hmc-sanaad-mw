@@ -7,6 +7,8 @@ import { envValidationSchema } from './config/env.validation';
 import { OracleModule } from './database/oracle.module';
 import { MssqlModule } from './database/mssql.module';
 import { EmailModule } from './email/email.module';
+import { FirebaseModule } from './firebase/firebase.module';
+
 import { AuthModule } from './auth/auth.module';
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
 import { RolesGuard } from './auth/roles.guard';
@@ -46,6 +48,7 @@ import { DevConsoleModule } from './dev-console/dev-console.module';
     OracleModule,
     MssqlModule,
     EmailModule,
+    FirebaseModule,
     AuthModule,
     AuditModule,
     ApiLogsModule,
@@ -66,6 +69,7 @@ import { DevConsoleModule } from './dev-console/dev-console.module';
     { provide: APP_INTERCEPTOR, useClass: TimeoutInterceptor },
     { provide: APP_INTERCEPTOR, useClass: ResponseInterceptor },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
+
     { provide: APP_GUARD, useClass: RolesGuard },
     { provide: APP_GUARD, useClass: FunctionAccessGuard },
     { provide: APP_FILTER, useClass: AllExceptionsFilter },

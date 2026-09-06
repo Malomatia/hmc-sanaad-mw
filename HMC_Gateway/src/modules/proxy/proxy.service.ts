@@ -7,8 +7,26 @@ import { Request, Response } from 'express';
 import { AppConfig, BackendConfig } from '@core/config/configuration';
 import { CORRELATION_ID_HEADER } from '@core/http/correlation-id.middleware';
 
-/** Request headers forwarded from the mobile client to HMC_BackEnd. */
-const FORWARD_REQUEST_HEADERS = ['authorization', 'content-type', 'accept', 'accept-language'];
+/**
+ * Request headers forwarded from the mobile client to HMC_BackEnd.
+ *
+ * The attestation headers are on this list because the gateway's check is a
+ * cheap first pass — presence, shape, and whether the body hash matches — and
+ * the cryptographic verification happens in the backend. Dropping them here
+ * would leave that verification permanently blind, since the gateway is the
+ * only way in.
+ */
+const FORWARD_REQUEST_HEADERS = [
+  'authorization',
+  'content-type',
+  'accept',
+  'accept-language',
+  'x-integrity-token',
+  'x-integrity-request-hash',
+  'x-integrity-challenge',
+  'x-ios-assertion',
+  'x-ios-key-id',
+];
 /** Response headers relayed from HMC_BackEnd back to the mobile client. */
 const FORWARD_RESPONSE_HEADERS = ['content-type'];
 
@@ -44,7 +62,11 @@ export class ProxyService {
       url: targetPath,
       method: req.method as AxiosRequestConfig['method'],
       headers: this.buildForwardHeaders(req, correlationId),
-      data: req.body,
+      // The original bytes when we have them, rather than axios re-encoding
+      // the parsed object: Play Integrity binds a token to a hash the client
+      // computed over exactly what it sent, and a re-serialized body is a
+      // different string even when it is the same data.
+      data: (req as Request & { rawBody?: Buffer }).rawBody ?? req.body,
       responseType: 'arraybuffer',
     };
 

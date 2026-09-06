@@ -47,7 +47,7 @@ Forward-design documentation for building a **new NestJS backend** that re-expos
 - **Appointments (41–44)** are **Cerner**-backed, not Oracle — wrap in an anticorruption client.
 
 ## AI working files
-Extraction backbone and progress live in `Docs_Ai/`: `operation-inventory.md` (master table), `progress-checklist.md`.
+Extraction backbone and progress live in `Docs_Ai/`: `operation-inventory.md` (master table), `progress-checklist.md`, `auth-otp-env-vars.md` (env vars of the reworked 2026-09 auth/OTP journey).
 
 ## Source documents (`Docs Project/`)
 `sanaad-api-service-mapping.html` (primary, v1.9) · `HMC_SANAD_Implementation Approach_Document_v5.pdf` · `Sanaad_Master_API_Table_and_Summary.pdf` · `Sanaad_API_REVISEDJune__2026-1.pdf` (superseded by the HTML).

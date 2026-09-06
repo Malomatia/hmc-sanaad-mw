@@ -14,10 +14,19 @@ export const DEV_FUNCTION_ACCESS: FunctionAccess[] = [
   { functionname: 'Housing', functioncode: 'HOUSNG', remarks: 'Housing (coming soon)', status: FunctionStatus.COMING_SOON },
 ];
 
+/**
+ * `employeeNumber` is left unset rather than invented: several views key on the
+ * real number, and a placeholder like '000000' matches nothing while looking
+ * like an answer. Adapters that need it resolve it from the username against
+ * the data dictionary instead (see ApprovalsOracleRepository.scopeKeys).
+ *
+ * Roles are permissive here for the same reason DEV_USER is: AUTH_DISABLED
+ * means authorization is off too, and without the approver role the whole
+ * approvals journey is unreachable in a dev environment.
+ */
 export function devIdentity(username: string): EmployeeIdentity {
   return {
     username,
-    employeeNumber: '000000',
     employeeName: 'Dev User',
     employeeNameAr: 'مستخدم تجريبي',
     department: 'Information Communication and Technology',
@@ -25,6 +34,6 @@ export function devIdentity(username: string): EmployeeIdentity {
     phoneNumber: '7786XXXX',
     isEmployee: true,
     isNewUser: false,
-    roles: [Role.EMPLOYEE],
+    roles: [Role.EMPLOYEE, Role.SUPERVISOR, Role.APPROVER],
   };
 }

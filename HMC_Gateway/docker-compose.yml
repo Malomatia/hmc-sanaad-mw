@@ -34,6 +34,19 @@ services:
       # ── Rate limiting for the pre-login auth endpoints ──
       THROTTLE_LOGIN_LIMIT: "${THROTTLE_LOGIN_LIMIT:-5}"
       THROTTLE_LOGIN_TTL_MS: "${THROTTLE_LOGIN_TTL_MS:-60000}"
+      # ── Device attestation, first pass ──
+      # off (default) | observe (check + log only) | enforce (401 on failure).
+      #
+      # Deliberately needs NO database and NO platform credentials: the gateway
+      # only checks that the attestation headers are present, shaped like real
+      # values, and that X-Integrity-Request-Hash matches the body received.
+      # Whether a signature is genuine needs stored state and stays in
+      # HMC_BackEnd under APP_INTEGRITY_MODE — the two are independent, either
+      # can run ahead of the other.
+      #
+      # ROLL OUT VIA observe: enforcing rejects real devices (no Play Services,
+      # rooted, sideloaded, simulators).
+      GATEWAY_INTEGRITY_MODE: "${GATEWAY_INTEGRITY_MODE:-off}"
       REQUEST_TIMEOUT_MS: "${REQUEST_TIMEOUT_MS:-35000}"
       LOG_LEVEL: "${LOG_LEVEL:-debug}"
     # Host:container port mapping stays in sync with GATEWAY_PORT in .env.

@@ -88,6 +88,18 @@ export class LovMapper {
     ...LovMapper.TYPE_COLUMNS,
   ]);
 
+  /**
+   * Record ids surfaced as their own `id` field, for views whose submit binds
+   * the id rather than the label: RET_FRM_LEAV_PR runs TO_NUMBER on
+   * `p_leave_details`, so op 56 needs ABSENCE_ATTENDANCE_ID and any text form
+   * answers ORA-01722.
+   *
+   * Deliberately additive — `code`/`meaning`/`used_value` keep the values they
+   * always had, so a client that does not know about `id` behaves exactly as
+   * before.
+   */
+  private static readonly RECORD_ID_COLUMNS = ['absence_attendance_id'];
+
   static toItem(row: Record<string, any>, _lang: Lang): LovItem {
     const codeColumn = this.firstColumn(row, this.CODE_COLUMNS);
     const code = codeColumn ? str(row, codeColumn) : undefined;
@@ -95,6 +107,11 @@ export class LovMapper {
       this.firstString(row, this.MEANING_COLUMNS) ?? this.fallbackLabel(row, codeColumn);
     const meaningAr = this.firstArString(row, this.MEANING_AR_COLUMNS);
     const type = this.firstString(row, this.TYPE_COLUMNS);
+    const id = this.firstString(row, this.RECORD_ID_COLUMNS);
+    // Only when DESCRIPTION is carrying something other than the label — on
+    // LETTER_NAME_LOV it holds the one language that letter exists in, which
+    // op 17 must be given alongside the name.
+    const description = this.firstString(row, ['description']);
 
     return {
       code: code ?? meaning ?? '',
@@ -105,6 +122,8 @@ export class LovMapper {
       // has no *Ar twin and therefore survives untouched — submits bind it.
       used_value: meaning ?? code ?? '',
       ...(type ? { type } : {}),
+      ...(id ? { id } : {}),
+      ...(description && description !== meaning ? { description } : {}),
     };
   }
 

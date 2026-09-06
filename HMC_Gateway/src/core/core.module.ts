@@ -7,6 +7,7 @@ import { envValidationSchema } from './config/env.validation';
 import { HttpClientModule } from './http/http-client.module';
 import { AuthModule } from './auth/auth.module';
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
+import { IntegrityPreCheckGuard } from './integrity/integrity-precheck.guard';
 import { AllExceptionsFilter } from './http/all-exceptions.filter';
 import { CorrelationIdMiddleware } from './http/correlation-id.middleware';
 import { HealthController } from './health/health.controller';
@@ -48,6 +49,8 @@ import { HealthController } from './health/health.controller';
       }),
     },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
+    // After the JWT: identity first, then whether the caller looks like our app.
+    { provide: APP_GUARD, useClass: IntegrityPreCheckGuard },
     { provide: APP_FILTER, useClass: AllExceptionsFilter },
   ],
 })

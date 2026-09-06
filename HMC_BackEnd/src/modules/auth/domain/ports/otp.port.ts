@@ -7,6 +7,11 @@ export interface SendOtpCommand {
   email?: string;
   imei: string;
   purpose: OtpPurpose;
+  /** Client app context mirrored into the legacy OTP row (nothing NULL). */
+  appName?: string;
+  appVersion?: string;
+  /** Client-reported datetime (the request's `sysdate`). */
+  appDatetime?: string;
 }
 
 export interface SendOtpResult {

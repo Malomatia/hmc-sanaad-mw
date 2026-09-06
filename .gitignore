@@ -10,3 +10,12 @@
 # workbooks shared with the DB / mobile / backend teams and the API sample
 # docs. They are distributed directly, not through the repository.
 /reports/
+
+# Service-account credentials. The Firebase Admin key is a PRIVATE KEY for the
+# production project — it reaches the server through FIREBASE_SERVICE_ACCOUNT
+# (inline) or a path outside the repository, never through a commit. Named
+# broadly because these files arrive with their generated download name.
+*-firebase-adminsdk-*.json
+*service-account*.json
+*serviceAccountKey*.json
+firebase-adminsdk*.json

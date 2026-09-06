@@ -3,8 +3,7 @@ import { ApiBearerAuth, ApiBody, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Lang } from '@core/i18n/lang.decorator';
 import type { Lang as LangCode } from '@shared/domain/lang';
 import { CurrentUser } from '@core/auth/decorators/current-user.decorator';
-import { Roles } from '@core/auth/decorators/roles.decorator';
-import { AuthenticatedUser, Role } from '@core/auth/auth-user.interface';
+import { AuthenticatedUser } from '@core/auth/auth-user.interface';
 import { LovUserQueryDto, ProfileQueryDto } from '@shared/dto/common-query.dto';
 import { ApiReadOkResponse } from '@shared/swagger/api-read-ok-response.decorator';
 import { ApiActionOkResponse } from '@shared/swagger/api-action-ok-response.decorator';
@@ -57,7 +56,6 @@ export class EmployeeController {
   }
 
   @Get('supervisor/views')
-  @Roles(Role.SUPERVISOR)
   @ApiOperation({ summary: 'op 35 — Supervisor view', operationId: 'employee_supervisorViews' })
   @ApiReadOkResponse({ example: EMPLOYEE_SUPERVISOR_VIEWS_EXAMPLE })
   supervisorViews(@Query() q: SupervisorViewsQueryDto) {
@@ -66,7 +64,6 @@ export class EmployeeController {
 
   @Post('supervisor')
   @HttpCode(200)
-  @Roles(Role.SUPERVISOR)
   @ApiOperation({ summary: 'op 36 — Supervisor update', operationId: 'employee_supervisorUpdate' })
   @ApiBody(EMPLOYEE_SUPERVISOR_UPDATE_BODY)
   @ApiActionOkResponse({ example: EMPLOYEE_SUPERVISOR_UPDATE_EXAMPLE })

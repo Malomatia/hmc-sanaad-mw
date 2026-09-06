@@ -139,11 +139,24 @@ mpin/otp params redacted from logs:
 - `HMC_Sanad_DeviceRegn_tbl` — device binding (`DeviceRegistryPort`) and MPIN
   (`MpinStorePort`); MPIN stored **as received** (client pre-hashes) and
   compared with SQL equality — legacy-compatible by explicit decision, do not
-  switch to scrypt without a migration plan.
-- `HMC_RHAP_OTP_tbl` — OTP rows (`OtpPort`): `TOP 1 ... ORDER BY SeqNo DESC` +
-  `DATEDIFF` freshness; `SeqNo` doubles as the mobile `requestid`. Resend
-  window/TTL/max-attempts come from `OTP_*` config (attempts + single-use are
-  tracked in-memory; the legacy table has no columns for them).
+  switch to scrypt without a migration plan. Reworked initiate flow
+  (2026-09-03): `/auth/initiate` reads the exact user+device row
+  (`DeviceRegistryPort.find`); registered WITH an MPIN = existing user (full
+  identity returned, NO OTP), otherwise a missing row is created with MPIN
+  NULL + `Status` `'Inactive'` and an OTP is sent. `MpinStorePort.set`
+  (API-4 `/auth/mpin/update`) sets `DateFirstRegistered = GETDATE()`, the
+  MPIN and `Status = 'Active'`.
+- `HMC_RHAP_OTP_tbl` — OTP rows (`OtpPort`, `OTP_STORE=legacy`, the default
+  since 2026-09-03): `TOP 1 ... ORDER BY SeqNo DESC` + `DATEDIFF` freshness;
+  `SeqNo` doubles as the mobile `requestid`. Resend window/TTL/max-attempts
+  come from `OTP_*` config (attempts + single-use are tracked in-memory; the
+  legacy table has no columns for them). Delivery is separate
+  (`OTP_DELIVERY`): `motc` (default) INSERTs the SMS into
+  `MOTC_SMS_PushTable` (`MotcPushOtpDeliveryAdapter`), `http` is the generic
+  SMS adapter. OTP generation is shared (`otp-generator.util.ts`):
+  `OTP_STATIC_VALUE` (testing only) pins every OTP to a fixed value — leave
+  empty in production — and `OTP_CHARSET` picks `numeric` (default) or
+  `alphanumeric` (unambiguous A-Z/2-9).
 - `HMC_Sanad_AppDownTime_tbl` / `HMC_Sanad_App_Update_tbl` — API-1
   `/healthcheck` downtime + update-type (`APP_NAME` matches
   `HMC_Sanad_AppMaster_Tbl.AppName`); falls back to the `APP_*` env config when
@@ -167,13 +180,138 @@ The `AUTH_DISABLED`/non-production dev bypass is unchanged.
 The corporate-directory lookup behind `LDAP_USER_PORT` (auth journey API-2/5) is
 switchable via `AUTH_DIRECTORY`: `ldap` (default) uses `LdapUserRepository`
 (LDAPS/`ldapts`), `entra` uses `EntraGraphUserRepository` (Microsoft Graph,
-app-only client-credentials over the existing `@nestjs/axios`). The factory is in
+app-only client-credentials over the existing `@nestjs/axios`), `usersdb` uses
+`MssqlUserRepository`, which since 2026-09-03 checks the username against the
+live-employee master view `HMC_SND_LIV_EMP_MASTER_VW` on the **MOTC_SMS** DB
+(`MOTC_SMS_EMPLOYEE_MASTER_VIEW`, `UserName` column; absent = refused, and
+`EMPLOYEE_NAME`/`EMPLOYEE_NUMBER`/`MOBILE_NUMBER` feed the identity + OTP SMS
+destination — previously it was only the `HMC_Sanad_DeviceRegn_tbl` device
+lookup on the Users DB). The factory is in
 `src/modules/auth/auth.module.ts`. Only `validate()` (passwordless lookup) is
 used by the journey — the mobile credential stays OTP + MPIN — so `authenticate()`
 is a 501 in the Entra adapter. Entra config lives in the `entra` namespace
 (`ENTRA_TENANT_ID`/`ENTRA_CLIENT_ID`/`ENTRA_CLIENT_SECRET`/…); the Graph app needs
 `User.Read.All` (Application) with admin consent. Switching back to `ldap` is an
 instant rollback (no code redeploy). No mobile/gateway/DTO/JWT changes.
+
+## Push notifications (FCM)
+
+`src/modules/notifications/` — ports + adapters, exported so any module can
+notify a person without knowing about FCM, tokens or how many devices they
+have (`NotificationsService.notifyUser(username, message)`).
+
+- **Multi-device by design.** Tokens live in `HMC_Sanad_DeviceToken_tbl` keyed
+  by `(LoginID, IMEINumber)` — the same pair as the device-binding table — not
+  in a column on `HMC_Sanad_DeviceRegn_tbl`. Phone plus tablet is ordinary and
+  a single column would silently drop one of them; the token is also the
+  volatile part (FCM reissues it on reinstall/data-clear/periodically), so
+  keying on the DEVICE makes re-registration a replace. DDL is
+  `tools/notifications-schema.sql`; **it has not been applied yet** — until it
+  is, registrations are discarded with one warning and nothing else breaks.
+- **Nothing here may fail a request.** A notification is a side effect of an
+  action that already succeeded, so `notifyUser` never throws, the store
+  degrades to warnings, and an unconfigured credential binds `NoopPushSender`
+  instead of refusing to boot.
+- The credential is a PRIVATE KEY for the **production** project `sanaadprd`.
+  It is read once at boot from `FIREBASE_SERVICE_ACCOUNT` (raw JSON or base64)
+  or `FIREBASE_SERVICE_ACCOUNT_PATH`, inline winning — the same rule as
+  `LDAP_CA_CERT`. `.gitignore` blocks the generated key filenames; never commit
+  one.
+- `POST/DELETE /notifications/device-token` take the user from the JWT and
+  reject a `username` in the body — a registration redirects a person's
+  notifications to a handset, so the client must not get to name the person.
+  The app should re-register on every launch, and unregister on logout.
+- Tokens FCM reports as permanently dead (`UNREGISTERED`,
+  `INVALID_REGISTRATION_TOKEN`, `INVALID_ARGUMENT`) are pruned after a send; a
+  merely failed send is transient and must NOT cost a device its registration.
+- **What triggers one.** `NotificationTriggerInterceptor` is global and watches
+  every POST: an interceptor rather than a call in each feature, because
+  submits live in ten modules and the eleventh would be forgotten. It fires
+  only on business success (`successflag === 'S'`, not HTTP 200), and the work
+  is NOT awaited — the caller never waits for Oracle or FCM, and a rejection is
+  swallowed.
+  - a decision (`/approvals/:id/decision`) notifies the REQUESTOR of the
+    outcome;
+  - any other submit notifies the APPROVER. This one is **best-effort**: the
+    procedures return only `successflag`, so the new request is found by
+    reading the submitter's newest row in MY_REQEST_SUMMARY_V, and Oracle
+    writes that row asynchronously. When it is not there yet nobody is
+    notified — the approver still sees it in their worklist.
+- The summary views hold a person as their EMPLOYEE NUMBER while device tokens
+  are keyed by LOGIN, so `OracleRequestLookupRepository` translates via
+  PERSONAL_DETAILS_V (cached). Anything non-numeric is already a login.
+- `RequestLookupPort` is declared in the notifications domain rather than
+  reusing the approvals repository, so the dependency points inward — approvals
+  would otherwise need to know notifications exist, and a later "notify from
+  approvals" would close the cycle.
+
+## Device attestation (App Attest + Play Integrity)
+
+`src/modules/app-integrity/` — Apple and Google verified directly, not through
+Firebase App Check. (App Check was built first and then removed on the client's
+decision; do not reintroduce it alongside this.)
+
+The two platforms are genuinely different, and that shapes the module:
+
+- **iOS** registers ONCE (`POST /app-integrity/ios/register`) and afterwards
+  signs each request with the Secure Enclave key, so the server issues a nonce
+  and keeps a public key per installation.
+- **Android** has no registration. Every call carries a fresh token that
+  already contains a hash of the request body, so nothing is stored.
+
+Facts worth not rediscovering:
+
+- **There is no Apple endpoint that validates an attestation.** The widely
+  copied `validate_device_token` call belongs to DeviceCheck — a different,
+  older feature — and neither accepts an attestation object nor returns a
+  public key. Verification is local: parse the CBOR, check the certificate
+  chain against Apple's App Attest root CA (`node-app-attest` does this).
+- **App Attest therefore needs no Apple secret** — `APPLE_TEAM_ID` and
+  `APPLE_BUNDLE_ID` are the whole setup. The `.p8` keys people associate with
+  it are for DeviceCheck and for APNs.
+- **Play Integrity needs its own credential**, not the Firebase one:
+  `PLAY_INTEGRITY_SERVICE_ACCOUNT` with the `playintegrity` scope. The method
+  is `playintegrity.v1.decodeIntegrityToken` — not a top-level
+  `decodePlayIntegrity`, which does not exist on the client.
+- A challenge is **stored and single-use**; consuming it is one conditional
+  UPDATE so two racing requests cannot both spend it. It is spent even when
+  the attestation then fails, or a captured one could be retried until
+  accepted. Generating a nonce and forgetting it — as most samples do — makes
+  the whole exercise decorative.
+- The iOS **sign counter must advance**; a repeated value is a replay.
+- `APP_INTEGRITY_MODE` = `off` (default) | `observe` | `enforce`. **Roll out
+  via `observe`**: enforcement rejects real devices (no Play Services, rooted,
+  sideloaded, simulator) and observe reports what would have been refused while
+  letting everything through. An unrecognised value means `off`.
+- `POST /app-integrity/android/verify` is a **development aid, not the
+  enforcement path** — in production the token rides as a header on the real
+  request and the guard checks it there; calling this first would make every
+  action two round trips. It exists because attestation ships `off`, so an app
+  can send a completely invalid token and learn nothing until enforcement is
+  switched on and everything fails at once. Unlike the guard it RETURNS
+  Google's verdicts, which is the point. Android has no `register` route
+  because it has no key to store.
+- `@SkipIntegrity()` (`core/integrity/`) exempts a controller — health,
+  diagnostics, the dev console and the attestation routes themselves, since a
+  device cannot prove itself before registering. Mobile routes including login
+  stay covered.
+- Each platform binds a refusing stub when unconfigured, so iOS can be live
+  while the Android credential is still being issued. Storage is
+  `tools/app-integrity-schema.sql`; a missing table warns once and means
+  "cannot verify", never a crash.
+- **The gateway does a first pass** (`HMC_Gateway`, `core/integrity/`,
+  `GATEWAY_INTEGRITY_MODE`) — defence in depth, nothing was moved out of the
+  backend. It holds no database and no platform credentials by design, so it
+  checks only what needs neither: headers present, shaped like real values, and
+  the request hash matching the body received. Two things this required, both
+  of which had made the backend's verification unreachable:
+  - `FORWARD_REQUEST_HEADERS` in `proxy.service.ts` is an allow-list, and the
+    attestation headers were not on it — they were being dropped, so the
+    backend guard could never have seen one.
+  - The proxy forwarded `req.body`, which axios re-serializes. Play Integrity
+    binds a token to a hash of exactly what the client sent, so a re-encoded
+    body is a different string. `main.ts` now keeps the raw bytes via the
+    body-parser `verify` hook and the proxy forwards those.
 
 ## Outstanding — not a code issue
 
@@ -265,6 +403,87 @@ responses as examples.
   (`person_id`/`username`/`enum`) are matched together via `key IN (...)`
   against whichever scoping column the view exposes (LEAVE_CANCEL_V/AMEND_V
   key on PERSON_ID — a username-only call used to return an empty list).
+  Identifiers that cannot match the column's TYPE are dropped first
+  (`OracleSchemaService.isNumericColumn`): Oracle coerces the other side of the
+  comparison, so one username in `person_id IN (...)` raised ORA-01722 and lost
+  the whole predicate — `?person_id=26023&username=…` answered 0 rows where
+  `?person_id=26023` alone answered 15, i.e. sending more identifiers made the
+  result worse. Pinned in `lov-scope-types.spec.ts`.
+- op 56 `POST /leave/return`: `p_leave_details` is the leave's
+  ABSENCE_ATTENDANCE_ID as a numeric string ('56949953'), NOT a composite —
+  RET_FRM_LEAV_PR runs TO_NUMBER on it and every text form answers ORA-01722
+  (verified 2026-09-01). The op 55 LOV publishes it as a new, additive `id`
+  field — `code`/`meaning`/`used_value` still carry the display string, so
+  clients that do not need the id see no change. The three RFL LOVs (`return-details`/`related1`/`related2`) had
+  been answering ORA-00904/500 because `readByUsername` defaults to the column
+  literal `username` while those views spell it `USER_NAME` — they resolve the
+  column now, which is what makes the id reachable at all.
+- **Nothing in the system grants APPROVER or SUPERVISOR.** Every identity
+  adapter hard-codes `roles: [Role.EMPLOYEE]` (LDAP, Users DB, Entra, the dev
+  fallback and the static login), and `AuthService` defaults to the same, so
+  `@Roles(Role.APPROVER, Role.SUPERVISOR)` is unreachable for every user — not
+  just untested. The approvals views hold real rows meanwhile (8 for `037400`
+  in MY_REQEST_SUMMARY_V, 31 for approver `027303` in APPROVE_SUMRY_V), so a
+  403 there is the guard, never missing data. Ops 20 and 23 (`GET /approvals`,
+  `GET /approvals/my-requests`) are exempt via an empty `@Roles()` on the
+  handler: both already filter on the caller, so identity is the whole
+  protection and the role added nothing but a permanent 403. Their `?enum=` is
+  accepted and IGNORED — required for the pipe (`forbidNonWhitelisted` rejects
+  an unknown property, and ProfileQueryDto's required `enum` would reject a
+  client that stops sending it), and ignored so an employee-open route cannot
+  be pointed at someone else's rows. The routes that ACT on a request
+  (decision, request-info, reassign) keep the role and so still need a real
+  source — deriving it from those views at login is the obvious candidate.
+  **Note this cannot be verified by running locally:** `AUTH_DISABLED=true`
+  injects `DEV_USER`, which holds EMPLOYEE + SUPERVISOR + APPROVER, so every
+  route passes. `roles-guard-override.spec.ts` pins the behaviour instead.
+- **Testing an approver journey (dev only).** With `AUTH_DISABLED=true` the
+  identity now follows the presented token instead of being pinned to
+  `DEV_USER`, so logging in as an approver actually acts as them — previously
+  every request fell back to DEV_USER and their queue came back empty, which
+  made the journey impossible to exercise. Log in with any credentials as one
+  of these (login form ← employee number, rows waiting):
+  `EALJASSIM` ← 027303 (33) · `MSALEM4` ← 024799 (11) · `RABOOBACKER` ← 037911
+  (8) · `MIMRAN2` ← 048945 (2) · `AGAD1` ← 030728 (2) · `MASHWAR` ← 043914 (1).
+  The last four hold `037400`'s own pending requests, so a full
+  submit → approve loop can be run end to end. `devIdentity` deliberately
+  leaves `employeeNumber` unset — a placeholder like '000000' matches no view
+  while looking like an answer; adapters resolve the real one from the
+  username.
+- **Pointing the approvals reads at someone else (non-production only).** Ops
+  20, 21, 21b and 23 honour a client-supplied `?enum=`/`?username=` as an
+  ADDITIONAL scope when `NODE_ENV !== 'production'`, and ignore it inside
+  production — the same rule the SQL consoles use, so there is no extra switch
+  to set or to leak. That is how a tester gets real rows without an approver
+  account: `GET /approvals?enum=027303` returns that approver's 33, and
+  `:id/details` will open one of their requests because the ownership check is
+  widened by the same value. In production the parameter is dropped, because
+  honouring it would let any employee read another's requests — and read a
+  detail view whose notification ids are sequential — by passing their number.
+  `act-as-scope.spec.ts` is that boundary.
+- ops 21 and 21b (`GET /approvals/:id/details`, `attachments/:documentId`) are
+  open to any employee — that is how they open their own request — but they
+  resolve a request by ID ALONE, with no caller in the query, and the
+  notification ids are SEQUENTIAL. The role gate was the only thing preventing
+  an employee from walking the range and reading every request in the
+  organisation, so it is replaced by an ownership check (`isOwnedBy` /
+  `isItemOwnedBy`), not removed: the caller must be the requestor or the
+  approver, checked BEFORE any data is read. `request-ownership.spec.ts` is the
+  security boundary — do not relax one side without the other.
+- op 17 `POST /letters/apply` rejects a value it cannot look up, and the two
+  inputs a client could not previously obtain were the pair `p_letter_name` +
+  `p_letter_language` and `p_mobile_number`. Both come from op 16 now:
+  `name[].description` carries the ONE language that letter exists in
+  (LETTER_NAME_LOV.DESCRIPTION — the mapper used to drop it, so the pairing had
+  to be guessed), and `/letters/lov` passes the authenticated username
+  alongside `?enum=` because LETTER_MOBILE_NO_LOV keys on the login, not the
+  employee number, which is why `mobileNo` came back empty for a documented
+  call. `description` is additive and never localized.
+- ORA-01403 escaping a submit means a value WE sent did not resolve, so it maps
+  to `UNRESOLVED_VALUE` → **422**, not 404. As 404 "resource not found" it hid
+  the cause of op 17 failures: a bad letter/language pair, an unknown delivery
+  location and a mobile that is not the employee's were indistinguishable, and
+  the only way to tell was the Oracle log.
   Optional `?leave_type=` is a case-insensitive CONTAINS match on the view's
   `NAME` column (NAME holds display strings with dates); a dedicated
   `LEAVE_TYPE` column (op 13 ABSENCE_REASON_V) still gets an exact match.

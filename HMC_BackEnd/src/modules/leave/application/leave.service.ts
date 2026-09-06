@@ -134,8 +134,8 @@ export class LeaveService {
         this.settle('BEREAV_RELAT_V', t, [] as LovItem[], () =>
           this.lookups.getByObject(ORACLE_OBJECTS.BEREAV_RELAT_V, lang),
         ),
-        this.settle('CONTRACT_YEAR_V', t, [] as LovItem[], () =>
-          this.lookups.getByObject(ORACLE_OBJECTS.CONTRACT_YEAR_V, lang),
+        this.settle('CONTRACT_YEARS_V', t, [] as LovItem[], () =>
+          this.lookups.getByObject(ORACLE_OBJECTS.CONTRACT_YEARS_V, lang),
         ),
         this.settle('ABSENCE_TYPE_V', t, [] as LovItem[], () =>
           this.lookups.getByObject(ORACLE_OBJECTS.ABSENCE_TYPE_V, lang),
@@ -177,8 +177,8 @@ export class LeaveService {
       this.settle('ALSR_DFALT_LOV', t, [] as LovItem[], () =>
         this.lookups.getByObject(ORACLE_OBJECTS.ALSR_DFALT_LOV, lang),
       ),
-      this.settle('CONTRACT_YEAR_V', t, [] as LovItem[], () =>
-        this.lookups.getByObject(ORACLE_OBJECTS.CONTRACT_YEAR_V, lang),
+      this.settle('CONTRACT_YEARS_V', t, [] as LovItem[], () =>
+        this.lookups.getByObject(ORACLE_OBJECTS.CONTRACT_YEARS_V, lang),
       ),
     ]);
     return { employment, lovs: { annualTicket, library, alsr, contractYear } };

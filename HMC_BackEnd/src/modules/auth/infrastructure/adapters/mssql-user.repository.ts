@@ -1,6 +1,8 @@
 import { Injectable, Logger, NotImplementedException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Role } from '@core/auth/auth-user.interface';
-import { MssqlService } from '@core/database/mssql.service';
+import { MotcSmsDbService } from '@core/database/motc-sms-db.service';
+import { MotcSmsConfig } from '@core/config/configuration';
 import {
   AuthenticateUserQuery,
   LdapUserPort,
@@ -10,49 +12,46 @@ import { EmployeeIdentity } from '../../domain/auth-identity';
 
 /**
  * Users-DB directory adapter (AUTH_DIRECTORY=usersdb) — resolves the pre-login
- * identity from the legacy `HMC_Sanad_DeviceRegn_tbl` alone, with NO corporate
- * directory involved. This mirrors the legacy Sanaad `userValidate` service,
- * whose only check per the client's service mapping is
- *   `SELECT DeviceID FROM HMC_Sanad_DeviceRegn_tbl
- *     WHERE LoginID = @username AND IMEINumber = @imei`
- * — there is no LDAP lookup anywhere in the legacy journey; HR validity is
- * enforced post-login by `validatehruser` (Oracle).
+ * identity from the live-employee master view `HMC_SND_LIV_EMP_MASTER_VW` on
+ * the MOTC_SMS database (client request 2026-09-03; previously the legacy
+ * `HMC_Sanad_DeviceRegn_tbl` device registration was the only check):
  *
- *  - The row for (LoginID, IMEINumber) is read first; for a new device, the
- *    user's most recent row on any device still contributes the stored
- *    phone/name.
- *  - Name/phone/employee-number columns are not part of the documented
- *    projection, so they are picked up tolerantly when the table has them. A
- *    user without a resolvable phone simply cannot receive an OTP SMS (the
- *    OTP port then rejects with "No registered phone number").
- *  - Every username is treated as a valid employee pre-login (legacy
- *    semantics). `isNewUser` here is provisional — OnboardingService
- *    recomputes it from the MPIN store.
+ *  - The username is looked up by the view's `UserName` column. A user absent
+ *    from the view is NOT a live employee — `isEmployee: false`, which makes
+ *    /auth/initiate answer "Invalid employee id received.".
+ *  - The view carries the identity used downstream: EMPLOYEE_NUMBER,
+ *    EMPLOYEE_NAME and MOBILE_NUMBER (the OTP SMS destination). Columns are
+ *    picked tolerantly by candidate name; MOBILE_NUMBER can be NULL, in which
+ *    case the OTP port rejects with "No registered phone number".
+ *  - `isNewUser` here is provisional — OnboardingService recomputes it from
+ *    the MPIN store (an MPIN on this device = existing user).
  *  - `authenticate` throws 501 like the Entra adapter (the mobile credential
  *    is OTP + MPIN, never a password).
  */
 @Injectable()
 export class MssqlUserRepository implements LdapUserPort {
   private readonly logger = new Logger(MssqlUserRepository.name);
+  private readonly view: string;
 
   private static readonly PHONE_COLUMNS = [
+    'mobile_number',
     'mobilenumber',
     'mobileno',
     'mobile',
+    'phone_number',
     'phonenumber',
     'phoneno',
     'phone',
-    'contactnumber',
-    'msisdn',
   ];
   private static readonly NAME_COLUMNS = [
+    'employee_name',
     'employeename',
     'empname',
     'fullname',
     'displayname',
-    'username_display',
   ];
   private static readonly EMPNO_COLUMNS = [
+    'employee_number',
     'employeenumber',
     'empno',
     'empnum',
@@ -61,40 +60,51 @@ export class MssqlUserRepository implements LdapUserPort {
   ];
   private static readonly EMAIL_COLUMNS = ['emailid', 'emailaddress', 'email', 'mailid', 'mail'];
 
-  constructor(private readonly db: MssqlService) {}
+  constructor(
+    private readonly db: MotcSmsDbService,
+    config: ConfigService,
+  ) {
+    this.view = config.getOrThrow<MotcSmsConfig>('motcSms').employeeMasterView;
+    // Config-controlled (never user input) but interpolated into SQL as an
+    // identifier, so keep it to identifier characters (same rule as the
+    // MOTC push table name).
+    if (!/^[A-Za-z0-9_.[\]]+$/.test(this.view)) {
+      throw new Error(
+        `Invalid MOTC_SMS_EMPLOYEE_MASTER_VIEW "${this.view}" — not a SQL identifier.`,
+      );
+    }
+  }
 
   async validate(query: ValidateUserQuery): Promise<EmployeeIdentity> {
-    const exact = await this.db.query<Record<string, unknown>>(
-      `SELECT TOP 1 * FROM HMC_Sanad_DeviceRegn_tbl
-        WHERE LoginID = @username AND IMEINumber = @imei`,
-      { username: query.username, imei: query.imei },
+    const rows = await this.db.query<Record<string, unknown>>(
+      `SELECT TOP 1 * FROM ${this.view} WHERE UserName = @username`,
+      { username: query.username },
     );
-    let row = exact[0];
+    const row = rows[0];
     if (!row) {
-      // New device: the user's latest registration on any device still knows
-      // the stored phone/name, so onboarding on a replacement phone works.
-      const any = await this.db.query<Record<string, unknown>>(
-        `SELECT TOP 1 * FROM HMC_Sanad_DeviceRegn_tbl
-          WHERE LoginID = @username
-          ORDER BY DateFirstRegistered DESC`,
-        { username: query.username },
+      this.logger.warn(
+        `No ${this.view} row for "${query.username}" — not a live employee, refusing.`,
       );
-      row = any[0];
-      if (!row) {
-        this.logger.warn(
-          `No HMC_Sanad_DeviceRegn_tbl row for "${query.username}" — first-time user with no stored phone.`,
-        );
-      }
+      return {
+        username: query.username,
+        employeeName: query.username,
+        isEmployee: false,
+        isNewUser: true,
+        roles: [],
+      };
     }
 
     return {
       username: query.username,
-      employeeNumber: row ? pick(row, MssqlUserRepository.EMPNO_COLUMNS) : undefined,
-      employeeName: (row && pick(row, MssqlUserRepository.NAME_COLUMNS)) ?? query.username,
       phoneNumber: row ? pick(row, MssqlUserRepository.PHONE_COLUMNS) : undefined,
       email: row ? pick(row, MssqlUserRepository.EMAIL_COLUMNS) : undefined,
+      employeeNumber: pick(row, MssqlUserRepository.EMPNO_COLUMNS),
+      employeeName: pick(row, MssqlUserRepository.NAME_COLUMNS) ?? query.username,
+      department: pick(row, ['department_desc', 'department']),
+      jobName: pick(row, ['job_name', 'jobname']),
+      email: pick(row, ['email_address', 'email']),
       isEmployee: true,
-      isNewUser: !row || pick(row, ['mpin']) === undefined,
+      isNewUser: true,
       roles: [Role.EMPLOYEE],
     };
   }

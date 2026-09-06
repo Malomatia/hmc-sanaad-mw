@@ -27,6 +27,12 @@ export interface LovReadOptions {
    * client from guessing which one a given view wants.
    */
   scopeAlternatives?: readonly (string | undefined)[];
+  /**
+   * Explicit equality filter on the view's PERSON_ID column
+   * (`WHERE PERSON_ID = :personId`) — e.g. CONTRACT_YEARS_V. Ignored when the
+   * view has no PERSON_ID column, like the other optional filters.
+   */
+  personId?: string;
 }
 
 export interface LovRepository {

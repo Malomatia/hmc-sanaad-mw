@@ -74,6 +74,12 @@ export class OracleService implements OnModuleInit, OnModuleDestroy {
       this.enableThickModeIfConfigured();
       oracledb.outFormat = oracledb.OUT_FORMAT_OBJECT;
       oracledb.fetchAsString = [oracledb.CLOB];
+      // BLOBs otherwise arrive as Lob STREAMS, not Buffers. The attachment
+      // reader tested `Buffer.isBuffer(...)` and silently returned an empty
+      // string for every file, so downloads had never once worked. Buffering
+      // is appropriate here: the only BLOBs read are request attachments, and
+      // uploads are already capped at the 15 MB body limit.
+      oracledb.fetchAsBuffer = [oracledb.BLOB];
       this.pool = await oracledb.createPool({
         user: this.cfg.user,
         password: this.cfg.password,

@@ -22,9 +22,12 @@ export class MssqlMpinStoreRepository implements MpinStorePort {
   constructor(private readonly db: MssqlService) {}
 
   async set(cmd: SetMpinCommand): Promise<void> {
+    // Setting the MPIN also activates the registration (client flow
+    // 2026-09-03: initiate creates the row with MPIN NULL + Status
+    // 'Inactive'; the MPIN update flips it to 'Active').
     const updated = await this.db.execute(
       `UPDATE HMC_Sanad_DeviceRegn_tbl
-          SET DateFirstRegistered = GETDATE(), MPIN = @mpin
+          SET DateFirstRegistered = GETDATE(), MPIN = @mpin, Status = 'Active'
         WHERE LoginID = @username AND IMEINumber = @imei`,
       { username: cmd.username, imei: cmd.imei, mpin: cmd.mpin },
     );
@@ -33,8 +36,8 @@ export class MssqlMpinStoreRepository implements MpinStorePort {
     // first-time set on a fresh device cannot silently do nothing.
     if (updated.rowsAffected === 0) {
       await this.db.execute(
-        `INSERT INTO HMC_Sanad_DeviceRegn_tbl (LoginID, IMEINumber, MPIN, DateFirstRegistered)
-         VALUES (@username, @imei, @mpin, GETDATE())`,
+        `INSERT INTO HMC_Sanad_DeviceRegn_tbl (LoginID, IMEINumber, MPIN, DateFirstRegistered, AddedDt, Status)
+         VALUES (@username, @imei, @mpin, GETDATE(), GETDATE(), 'Active')`,
         { username: cmd.username, imei: cmd.imei, mpin: cmd.mpin },
       );
     }

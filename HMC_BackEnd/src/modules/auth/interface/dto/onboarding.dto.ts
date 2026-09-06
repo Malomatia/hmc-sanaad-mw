@@ -10,13 +10,31 @@ import { ClientContextDto } from './client-context.dto';
  */
 export class UserValidateRequestDto extends ClientContextDto {}
 
-/** API-2 — success carries onboarding info + requestid; failure carries status/message. */
+/**
+ * API-2 — reworked initiate response (client request 2026-09-03). Existing
+ * user (device registered with an MPIN): full identity from the employee view
+ * + device registration, newuser=No, no OTP. New user/device: registration
+ * created, OTP sent, requestid + "OTP sent successfully". Unknown username:
+ * status=error, "User not found.".
+ */
 export class UserValidateResponseDto {
   @ApiPropertyOptional({ example: 'employee nt id' })
   employeeusername?: string;
 
   @ApiPropertyOptional({ example: 'Name of employee' })
   employeename?: string;
+
+  @ApiPropertyOptional({ example: '011759' })
+  employeenumber?: string;
+
+  @ApiPropertyOptional({ example: 'HICT Programmer.HMC' })
+  jobname?: string;
+
+  @ApiPropertyOptional({ example: 'MKHOJA@hamad.qa' })
+  email?: string;
+
+  @ApiPropertyOptional({ example: 'Cardiothoracic Surgery.Heart Hospital' })
+  department?: string;
 
   @ApiPropertyOptional({ example: 'Yes', description: 'First-time user flag.' })
   newuser?: string;
@@ -27,13 +45,16 @@ export class UserValidateResponseDto {
   @ApiPropertyOptional({ example: '7786XXXX' })
   employeephonenumber?: string;
 
-  @ApiPropertyOptional({ example: '35233177903C44859C82269212F48088' })
+  @ApiPropertyOptional({ example: 'Active', description: 'Device registration status.' })
+  devicestatus?: string;
+
+  @ApiPropertyOptional({ example: '12345', description: 'Present when an OTP was sent.' })
   requestid?: string;
 
-  @ApiPropertyOptional({ example: 'error', description: 'Present on failure.' })
+  @ApiPropertyOptional({ example: 'success', description: '`error` on failure.' })
   status?: string;
 
-  @ApiPropertyOptional({ example: 'Invalid employee id received.', description: 'Present on failure.' })
+  @ApiPropertyOptional({ example: 'OTP sent successfully' })
   message?: string;
 }
 

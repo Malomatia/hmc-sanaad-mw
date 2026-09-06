@@ -8,7 +8,12 @@ import { parseOracleDate } from '@shared/utils/date.util';
 import { toBlobBuffer } from '@shared/utils/blob.util';
 import { ERROR_MESSAGES, extractOraCode } from '@shared/constants/error-codes';
 import { EMP_KEY_COLUMN, USERNAME_COLUMN } from '@shared/constants/oracle-columns';
-import { CATEGORY_MESSAGE, ErrorCategory, looksSensitive } from '../http/error-category';
+import {
+  CATEGORY_MESSAGE,
+  ErrorCategory,
+  extractBusinessRaiseText,
+  looksSensitive,
+} from '../http/error-category';
 import { SchemaColumnNotFoundException } from './schema-column-not-found.error';
 import { RequestContext } from '../http/request-context';
 
@@ -679,20 +684,22 @@ export abstract class BaseOracleRepository {
     // sanitized here too — never forward technical detail to the client.
     // A failed submit (p_success_flag/p_status = 'N') always comes back as an
     // error result, never a silent success — and a custom ORA-20xxx raise (a
-    // business-rule validation, e.g. "FLEX-VALUE DOES NOT EXIST") is reported
-    // as a business-rule failure rather than the generic database-error
-    // message, matching how the same ORA range is classified for thrown
-    // exceptions (see exception-classifier.ts).
+    // business-rule validation, e.g. "FLEX-VALUE DOES NOT EXIST") surfaces its
+    // own raise text when that text is clean (it is authored as user-facing
+    // validation), falling back to the generic business-rule message otherwise —
+    // matching how the same ORA range is classified for thrown exceptions
+    // (see exception-classifier.ts).
     if (!isSuccess && looksSensitive(errormessage)) {
       const oraCode = extractOraCode(errormessage);
-      const category =
-        oraCode !== undefined && oraCode >= 20000 && oraCode <= 20999
-          ? ErrorCategory.BUSINESS_RULE_ERROR
-          : ErrorCategory.DATABASE_ERROR;
+      const isBusinessRaise = oraCode !== undefined && oraCode >= 20000 && oraCode <= 20999;
+      const category = isBusinessRaise
+        ? ErrorCategory.BUSINESS_RULE_ERROR
+        : ErrorCategory.DATABASE_ERROR;
+      const raiseText = isBusinessRaise ? extractBusinessRaiseText(errormessage) : undefined;
       this.logger.warn(
         `Suppressed technical proc message (${category}${oraCode ? ` ORA-${oraCode}` : ''}): ${errormessage}`,
       );
-      errormessage = CATEGORY_MESSAGE[category];
+      errormessage = raiseText ?? CATEGORY_MESSAGE[category];
       safeMessageAr = undefined;
     }
 

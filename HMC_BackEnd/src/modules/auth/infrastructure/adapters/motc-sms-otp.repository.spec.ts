@@ -11,6 +11,9 @@ const OTP_CFG: OtpConfig = {
   ttlSeconds: 300,
   maxAttempts: 3,
   resendWindowSeconds: 60,
+  staticValue: '',
+  charset: 'numeric',
+  delivery: 'motc',
   store: 'motc',
 };
 

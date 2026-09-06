@@ -1352,6 +1352,398 @@
           ]
         },
         {
+          "name": "GET /profile/notifications",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Response time is less than 5 seconds\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(5000);",
+                  "});",
+                  "",
+                  "pm.test(\"Response is valid JSON\", function () {",
+                  "    pm.response.to.be.json;",
+                  "});",
+                  "",
+                  "pm.test(\"Has success envelope fields\", function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json).to.have.property('status', 'success');",
+                  "    pm.expect(json).to.have.property('result');",
+                  "    pm.expect(json).to.have.property('httpStatusCode');",
+                  "});",
+                  "",
+                  "pm.test(\"Rows carry the WORKLISTS_V columns\", function () {",
+                  "    const rows = pm.response.json().result;",
+                  "    pm.expect(rows).to.be.an('array');",
+                  "    if (rows.length) {",
+                  "        pm.expect(rows[0]).to.have.property('NOTIFICATION_ID');",
+                  "        pm.expect(rows[0]).to.have.property('SUBJECT');",
+                  "        pm.expect(rows[0]).to.have.property('STATUS');",
+                  "        pm.expect(rows[0]).to.have.property('ITEM_KEY');",
+                  "    }",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/profile/notifications?username=AIBRAHIM39&lang=en",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "profile",
+                "notifications"
+              ],
+              "query": [
+                {
+                  "key": "username",
+                  "value": "AIBRAHIM39"
+                },
+                {
+                  "key": "lang",
+                  "value": "en"
+                }
+              ]
+            },
+            "description": "**Purpose:** Notification list — the caller's workflow notifications, raw `XXHMC_SND_WORKLISTS_V` rows with ALL columns relayed as-is (`SELECT *`, getworklist documented query: `(RECIPIENT_ROLE = :u AND MORE_INFO_ROLE IS NULL) OR MORE_INFO_ROLE = :u`).\n\nSame data as op 68 `GET /approvals/worklist`, but reachable by EVERY authenticated user (the approvals route is APPROVER/SUPERVISOR-only) — notifications such as FYIs and RFMI answers go to regular employees too.\n\n**Auth: a token is now REQUIRED** — staging enforces authentication. Get one from `POST /auth/login` with `{\"username\":\"AIBRAHIM39\",\"imeinumber\":\"356789012345678\",\"mpin\":\"555407\"}` (AUTH_STATIC_LOGIN answers it without the database) and send `Authorization: Bearer {{token}}`. It lasts 1 h.\n\n**Query:** `username` (required — Oracle username form matched against RECIPIENT_ROLE/MORE_INFO_ROLE), `lang`.\n\n**Verified against staging — the success example is a real captured response (2026-09-01).**"
+          },
+          "response": [
+            {
+              "name": "Success (200)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/profile/notifications?username=AIBRAHIM39&lang=en",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "profile",
+                    "notifications"
+                  ],
+                  "query": [
+                    {
+                      "key": "username",
+                      "value": "AIBRAHIM39"
+                    },
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    }
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"result\": [\n    {\n      \"NOTIFICATION_ID\": 123859434,\n      \"FROM_USER\": \"SYSADMIN\",\n      \"TO_USER\": \"037400    - Amir Ibrahim\",\n      \"SUBJECT\": \"Return from Leave has been forwarded for approval to 037911    - Rizwan Aboobacker\",\n      \"LANGUAGE\": \"US\",\n      \"BEGIN_DATE\": \"2026-09-01T11:06:32.000Z\",\n      \"DUE_DATE\": null,\n      \"STATUS\": \"OPEN\",\n      \"RECIPIENT_ROLE\": \"AIBRAHIM39\",\n      \"END_DATE\": null,\n      \"TYPE\": \"HR\",\n      \"MORE_INFO_ROLE\": null,\n      \"FROM_ROLE\": \"SYSADMIN\",\n      \"MESSAGE_TYPE\": \"HRSSA\",\n      \"ITEM_KEY\": \"18876168\",\n      \"MESSAGE_NAME\": \"HR_EMBD_NTFY_APPROVAL_FWD_MSG\",\n      \"MAIL_STATUS\": \"MAIL\",\n      \"ORIGINAL_RECIPIENT\": \"AIBRAHIM39\"\n    }\n  ],\n  \"opstatus\": 0,\n  \"status\": \"success\",\n  \"httpStatusCode\": 200\n}"
+            },
+            {
+              "name": "Validation Error (400) — username required",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/profile/notifications?lang=en",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "profile",
+                    "notifications"
+                  ],
+                  "query": [
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    }
+                  ]
+                }
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"message\": \"Validation failed.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 400,\n  \"errors\": {\n    \"details\": [\n      \"username should not be empty\",\n      \"username must be a string\"\n    ]\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "GET /profile/notifications/summary",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Response time is less than 5 seconds\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(5000);",
+                  "});",
+                  "",
+                  "pm.test(\"Response is valid JSON\", function () {",
+                  "    pm.response.to.be.json;",
+                  "});",
+                  "",
+                  "pm.test(\"Has success envelope fields\", function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json).to.have.property('status', 'success');",
+                  "    pm.expect(json).to.have.property('result');",
+                  "    pm.expect(json).to.have.property('httpStatusCode');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/profile/notifications/summary?username=AIBRAHIM39&notificationId=123859434&lang=en",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "profile",
+                "notifications",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "username",
+                  "value": "AIBRAHIM39"
+                },
+                {
+                  "key": "notificationId",
+                  "value": "123859434"
+                },
+                {
+                  "key": "lang",
+                  "value": "en"
+                }
+              ]
+            },
+            "description": "**Purpose:** op 69 getworklistsummary — ONE notification's raw `XXHMC_SND_WORKLISTS_V` row: the notification-list query additionally scoped with `NOTIFICATION_ID = :id`. Omit `notificationId` for the full list (then identical to `GET /profile/notifications`).\n\nSame data as `GET /approvals/worklist/summary`, but reachable by EVERY authenticated user (the approvals route is APPROVER/SUPERVISOR-only).\n\n**Auth: a token is now REQUIRED** — get one from `POST /auth/login` with `{\"username\":\"AIBRAHIM39\",\"imeinumber\":\"356789012345678\",\"mpin\":\"555407\"}` and send `Authorization: Bearer {{token}}`.\n\n**Query:** `username` (required — Oracle username form), `notificationId` (optional — NOTIFICATION_ID from the notification rows), `lang`.\n\n**The success example row is the real staging capture from `GET /profile/notifications` (2026-09-01) — the summary returns the same shape.**"
+          },
+          "response": [
+            {
+              "name": "Success (200)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/profile/notifications/summary?username=AIBRAHIM39&notificationId=123859434&lang=en",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "profile",
+                    "notifications",
+                    "summary"
+                  ],
+                  "query": [
+                    {
+                      "key": "username",
+                      "value": "AIBRAHIM39"
+                    },
+                    {
+                      "key": "notificationId",
+                      "value": "123859434"
+                    },
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    }
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"result\": [\n    {\n      \"NOTIFICATION_ID\": 123859434,\n      \"FROM_USER\": \"SYSADMIN\",\n      \"TO_USER\": \"037400    - Amir Ibrahim\",\n      \"SUBJECT\": \"Return from Leave has been forwarded for approval to 037911    - Rizwan Aboobacker\",\n      \"LANGUAGE\": \"US\",\n      \"BEGIN_DATE\": \"2026-09-01T11:06:32.000Z\",\n      \"DUE_DATE\": null,\n      \"STATUS\": \"OPEN\",\n      \"RECIPIENT_ROLE\": \"AIBRAHIM39\",\n      \"END_DATE\": null,\n      \"TYPE\": \"HR\",\n      \"MORE_INFO_ROLE\": null,\n      \"FROM_ROLE\": \"SYSADMIN\",\n      \"MESSAGE_TYPE\": \"HRSSA\",\n      \"ITEM_KEY\": \"18876168\",\n      \"MESSAGE_NAME\": \"HR_EMBD_NTFY_APPROVAL_FWD_MSG\",\n      \"MAIL_STATUS\": \"MAIL\",\n      \"ORIGINAL_RECIPIENT\": \"AIBRAHIM39\"\n    }\n  ],\n  \"opstatus\": 0,\n  \"status\": \"success\",\n  \"httpStatusCode\": 200\n}"
+            },
+            {
+              "name": "Validation Error (400) — username required",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/profile/notifications/summary?lang=en",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "profile",
+                    "notifications",
+                    "summary"
+                  ],
+                  "query": [
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    }
+                  ]
+                }
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"message\": \"Validation failed.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 400,\n  \"errors\": {\n    \"details\": [\n      \"username should not be empty\",\n      \"username must be a string\"\n    ]\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "GET /profile/notifications/:id/history",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Response time is less than 5 seconds\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(5000);",
+                  "});",
+                  "",
+                  "pm.test(\"Response is valid JSON\", function () {",
+                  "    pm.response.to.be.json;",
+                  "});",
+                  "",
+                  "pm.test(\"Has success envelope fields\", function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json).to.have.property('status', 'success');",
+                  "    pm.expect(json).to.have.property('result');",
+                  "    pm.expect(json).to.have.property('httpStatusCode');",
+                  "});",
+                  "",
+                  "pm.test(\"Rows carry sequence_num + action columns\", function () {",
+                  "    const rows = pm.response.json().result;",
+                  "    pm.expect(rows).to.be.an('array');",
+                  "    if (rows.length) {",
+                  "        pm.expect(rows[0]).to.have.property('SEQUENCE_NUM');",
+                  "        pm.expect(rows[0]).to.have.property('ACTION_NAME');",
+                  "        pm.expect(rows[0]).to.have.property('ITEM_KEY');",
+                  "    }",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/profile/notifications/18875965/history?itemType=HRSSA&lang=en",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "profile",
+                "notifications",
+                "18875965",
+                "history"
+              ],
+              "query": [
+                {
+                  "key": "itemType",
+                  "value": "HRSSA"
+                },
+                {
+                  "key": "lang",
+                  "value": "en"
+                }
+              ]
+            },
+            "description": "**Purpose:** op 70 getworklistactionhistory — the notification action history, raw `XXHMC_SND_ACTION_HISTORY_V` rows plus the query's `rownum sequence_num` (`SELECT rownum sequence_num, v.* FROM XXHMC_SND_ACTION_HISTORY_V v WHERE ITEM_TYPE = :type AND ITEM_KEY = :key`).\n\n**The path `:id` is the workflow ITEM_KEY from the notification rows — NOT the NOTIFICATION_ID.**\n\nSame data as `GET /approvals/worklist/:id/history`, but reachable by EVERY authenticated user (the approvals route is APPROVER/SUPERVISOR-only).\n\n**Auth: a token is now REQUIRED** — get one from `POST /auth/login` with `{\"username\":\"AIBRAHIM39\",\"imeinumber\":\"356789012345678\",\"mpin\":\"555407\"}` and send `Authorization: Bearer {{token}}`.\n\n**Query:** `itemType` (optional, default `HRSSA`), `lang`.\n\n**The success example rows are real staging captures of the same repository read (approvals history, 2026-08-23).**"
+          },
+          "response": [
+            {
+              "name": "Success (200)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/profile/notifications/18875965/history?itemType=HRSSA&lang=en",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "profile",
+                    "notifications",
+                    "18875965",
+                    "history"
+                  ],
+                  "query": [
+                    {
+                      "key": "itemType",
+                      "value": "HRSSA"
+                    },
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    }
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"result\": [\n    {\n      \"SEQUENCE_NUM\": 1,\n      \"NOTIFICATION_ID\": 0,\n      \"FROM_ROLE\": \"AIBRAHIM39\",\n      \"FROM_USER\": \"037400    - Amir Ibrahim\",\n      \"TO_ROLE\": null,\n      \"TO_USER\": null,\n      \"ACTION_NAME\": \"Submit\",\n      \"ACTION_COMMENT\": null,\n      \"ACTION_DATE\": \"2026-08-23T08:54:26.000Z\",\n      \"ITEM_TYPE\": \"HRSSA\",\n      \"ITEM_KEY\": \"18875965\"\n    },\n    {\n      \"SEQUENCE_NUM\": 2,\n      \"NOTIFICATION_ID\": 123859198,\n      \"FROM_ROLE\": \"MIMRAN2\",\n      \"FROM_USER\": \"048945    - Mohammed Imran\",\n      \"TO_ROLE\": null,\n      \"TO_USER\": null,\n      \"ACTION_NAME\": \"Pending\",\n      \"ACTION_COMMENT\": null,\n      \"ACTION_DATE\": null,\n      \"ITEM_TYPE\": \"HRSSA\",\n      \"ITEM_KEY\": \"18875965\"\n    }\n  ],\n  \"opstatus\": 0,\n  \"status\": \"success\",\n  \"httpStatusCode\": 200\n}"
+            }
+          ]
+        },
+        {
           "name": "GET /profile/lov/marital-status",
           "event": [
             {

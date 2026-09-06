@@ -15,10 +15,24 @@ export class LettersService {
     private readonly lookups: LookupsService,
   ) {}
 
-  async getLetterLovs(lang: Lang, username?: string): Promise<Record<string, LovItem[]>> {
+  /**
+   * `identifiers` are every form of the caller we were given (employee number
+   * from `?enum=`, plus the authenticated username).
+   *
+   * LETTER_MOBILE_NO_LOV keys on USER_NAME — the login — while op 16 is
+   * documented with `?enum=<employee number>`, so a client following the docs
+   * got `mobileNo: []` and had no legal value for op 17's `p_mobile_number`,
+   * which must be an existing 'M' phone of the employee. Matching on any of
+   * the supplied forms fixes that without the client having to know which one
+   * this particular view happens to use.
+   */
+  async getLetterLovs(lang: Lang, ...identifiers: (string | undefined)[]): Promise<Record<string, LovItem[]>> {
+    const [primary, ...alternatives] = identifiers.filter((v): v is string => !!v && v.trim() !== '');
     const [mobileNo, defaultCopy, country, name, language, exitCopies, deliveryLoc] =
       await Promise.all([
-        this.lookups.getByObject(ORACLE_OBJECTS.LETTER_MOBILE_NO_LOV, lang, username),
+        this.lookups.getByObject(ORACLE_OBJECTS.LETTER_MOBILE_NO_LOV, lang, primary, {
+          scopeAlternatives: alternatives,
+        }),
         this.lookups.getByObject(ORACLE_OBJECTS.EMP_LTR_DEFAULT_COPY, lang),
         this.lookups.getByObject(ORACLE_OBJECTS.LETTER_COUNTRY_LOV, lang),
         this.lookups.getByObject(ORACLE_OBJECTS.LETTER_NAME_LOV, lang),

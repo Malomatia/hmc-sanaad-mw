@@ -1,6 +1,6 @@
 import { HttpException, HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { randomInt, timingSafeEqual } from 'node:crypto';
+import { timingSafeEqual } from 'node:crypto';
 import { MotcSmsDbService } from '@core/database/motc-sms-db.service';
 import { MssqlQueryError } from '@core/database/mssql.error';
 import { MotcSmsConfig, OtpConfig, SmsConfig } from '@core/config/configuration';
@@ -14,6 +14,7 @@ import {
   OTP_EMAIL_DELIVERY_PORT,
   OtpEmailDeliveryPort,
 } from '../../domain/ports/otp-email-delivery.port';
+import { generateOtp, otpCharClass } from './otp-generator.util';
 
 /** Latest OTP push row for a user+device (or by MessageID). */
 interface PushRow {
@@ -99,7 +100,7 @@ export class MotcSmsOtpRepository implements OtpPort {
       );
     }
 
-    const otp = this.generateOtp();
+    const otp = generateOtp(this.cfg);
     // Raw OTP goes only into MessageBody — never logged, never returned.
     const messageBody = this.messageTemplate.replace('{otp}', otp);
     const messageId = await this.insertMessage(cmd, messageBody);
@@ -256,26 +257,22 @@ export class MotcSmsOtpRepository implements OtpPort {
     return rows[0];
   }
 
-  /** Numeric OTP of OTP_LENGTH digits (leading zeros preserved). */
-  private generateOtp(): string {
-    const max = 10 ** this.cfg.length;
-    return String(randomInt(0, max)).padStart(this.cfg.length, '0');
-  }
-
   /**
    * Derive the extraction pattern from the message template: everything is
-   * matched literally except `{otp}`, which becomes a digit-capture group.
-   * A template without `{otp}` degrades to "the first OTP_LENGTH digit run".
+   * matched literally except `{otp}`, which becomes a capture group of the
+   * configured OTP charset. A template without `{otp}` degrades to "the
+   * first OTP_LENGTH-character run of that charset".
    */
   private buildOtpPattern(): RegExp {
+    const cls = otpCharClass(this.cfg);
     const escaped = this.messageTemplate.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     if (escaped.includes('\\{otp\\}')) {
-      return new RegExp(escaped.replace('\\{otp\\}', '(\\d+)'));
+      return new RegExp(escaped.replace('\\{otp\\}', `(${cls}+)`));
     }
     this.logger.warn(
-      'SMS_MESSAGE_TEMPLATE has no {otp} placeholder — OTP extraction falls back to the first digit run.',
+      'SMS_MESSAGE_TEMPLATE has no {otp} placeholder — OTP extraction falls back to the first charset run.',
     );
-    return new RegExp(`(\\d{${this.cfg.length}})`);
+    return new RegExp(`(${cls}{${this.cfg.length}})`);
   }
 
   private extractOtp(messageBody: string): string | undefined {

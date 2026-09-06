@@ -87,22 +87,31 @@ export class LovOracleRepository implements LovRepository {
     // One caller may be identified by several forms (username / employee
     // number / PERSON_ID); match ANY of them against the view's scoping
     // column so the client never has to know which form a given view uses.
-    const scopeValues = [
+    const supplied = [
       ...new Set(
         [username, ...(options.scopeAlternatives ?? [])].filter(
           (v): v is string => !!v && v.trim() !== '',
         ),
       ),
     ];
-    const keyColumn = scopeValues.length ? await this.userColumnOf(object) : undefined;
+    const keyColumn = supplied.length ? await this.userColumnOf(object) : undefined;
+    const scopeValues = keyColumn ? await this.matchable(object, keyColumn, supplied) : supplied;
+    const personIdColumn =
+      options.personId && (await this.schema.hasColumn(object, PERSON_ID_COLUMN))
+        ? PERSON_ID_COLUMN
+        : undefined;
     const searchColumn = options.search ? await this.searchColumnOf(object) : undefined;
     const typeColumn = options.dataType ? await this.typeColumnOf(object) : undefined;
     const leaveTypeColumn = options.leaveType ? await this.leaveTypeColumnOf(object) : undefined;
     const conditions: string[] = [];
     const binds: oracledb.BindParameters = {};
-    if (keyColumn) {
+    if (keyColumn && scopeValues.length) {
       conditions.push(`${keyColumn} IN (${scopeValues.map((_, i) => `:u${i}`).join(', ')})`);
       scopeValues.forEach((v, i) => ((binds as Record<string, unknown>)[`u${i}`] = v));
+    }
+    if (personIdColumn && options.personId) {
+      conditions.push(`${personIdColumn} = :personId`);
+      binds.personId = options.personId.trim();
     }
     if (searchColumn && options.search) {
       conditions.push(`UPPER(${searchColumn}) LIKE :search`);
@@ -165,6 +174,25 @@ export class LovOracleRepository implements LovRepository {
       if (await this.schema.hasColumn(object, candidate)) return candidate;
     }
     return undefined;
+  }
+
+  /**
+   * Keep only the identifiers that CAN match `keyColumn`.
+   *
+   * Oracle coerces the other side of a comparison to the column's type, so a
+   * username in an IN-list against the numeric PERSON_ID raises ORA-01722 and
+   * loses the whole predicate — including the identifier that would have
+   * matched. That is what made `?person_id=26023&username=…` answer 0 rows
+   * while `?person_id=26023` alone answered 15: sending MORE identifiers made
+   * the result worse, the opposite of what scopeAlternatives is for.
+   */
+  private async matchable(
+    object: string,
+    keyColumn: string,
+    values: readonly string[],
+  ): Promise<string[]> {
+    if (!(await this.schema.isNumericColumn(object, keyColumn))) return [...values];
+    return values.filter((v) => /^\d+$/.test(v.trim()));
   }
 
   private async searchColumnOf(object: string): Promise<string | undefined> {

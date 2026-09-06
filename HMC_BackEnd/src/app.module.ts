@@ -14,6 +14,8 @@ import { SchoolFeesModule } from '@modules/school-fees/school-fees.module';
 import { AppointmentsModule } from '@modules/appointments/appointments.module';
 import { AnnualTicketModule } from '@modules/annual-ticket/annual-ticket.module';
 import { ApprovalsModule } from '@modules/approvals/approvals.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
+import { AppIntegrityModule } from './modules/app-integrity/app-integrity.module';
 
 /**
  * Root module. Imports core cross-cutting concerns, the shared lookups kernel,
@@ -38,6 +40,8 @@ import { ApprovalsModule } from '@modules/approvals/approvals.module';
     AppointmentsModule,
     AnnualTicketModule,
     ApprovalsModule,
+    NotificationsModule,
+    AppIntegrityModule,
   ],
 })
 export class AppModule {}

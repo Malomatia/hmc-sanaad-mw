@@ -48,11 +48,32 @@ export interface ThrottleConfig {
   loginTtlMs: number;
 }
 
+/**
+ * First-pass device attestation at the edge.
+ *
+ * The gateway deliberately holds no database and no platform credentials, so
+ * it checks only what can be checked with neither: are the attestation headers
+ * there, are they shaped like real values, and does the request hash match the
+ * body actually received. Whether the signature is genuine — Apple's
+ * certificate chain, Google's verdicts, a challenge that has not been spent, a
+ * counter that advanced — needs stored state and stays in the backend.
+ *
+ * That split is by capability, not preference: it lets the gateway drop junk
+ * in microseconds without becoming a second stateful service.
+ *
+ * Independent of the backend's own `APP_INTEGRITY_MODE` — either can run
+ * ahead of the other.
+ */
+export interface IntegrityConfig {
+  mode: 'off' | 'observe' | 'enforce';
+}
+
 export interface RootConfig {
   app: AppConfig;
   backend: BackendConfig;
   auth: AuthConfig;
   throttle: ThrottleConfig;
+  integrity: IntegrityConfig;
 }
 
 const toBool = (v: unknown): boolean => v === true || v === 'true';
@@ -106,5 +127,13 @@ export default (): RootConfig => ({
   throttle: {
     loginLimit: Number(process.env.THROTTLE_LOGIN_LIMIT ?? 5),
     loginTtlMs: Number(process.env.THROTTLE_LOGIN_TTL_MS ?? 60000),
+  },
+  integrity: {
+    // Anything unrecognised means off: a typo must not start rejecting users.
+    mode: (['off', 'observe', 'enforce'].includes(
+      (process.env.GATEWAY_INTEGRITY_MODE ?? '').toLowerCase(),
+    )
+      ? process.env.GATEWAY_INTEGRITY_MODE!.toLowerCase()
+      : 'off') as IntegrityConfig['mode'],
   },
 });

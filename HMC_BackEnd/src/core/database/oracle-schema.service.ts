@@ -53,6 +53,8 @@ export class OracleSchemaService {
   private readonly logger = new Logger(OracleSchemaService.name);
   /** object → upper-cased column names. */
   private readonly columnCache = new Map<string, Set<string>>();
+  /** object → column name → declared data type (populated with columnCache). */
+  private readonly columnTypeCache = new Map<string, Map<string, string>>();
   /** object → declared parameters, or null when the dictionary knows none. */
   private readonly paramCache = new Map<string, ProcedureSignature[] | null | undefined>();
 
@@ -81,6 +83,22 @@ export class OracleSchemaService {
   async hasColumn(object: string, column: string): Promise<boolean> {
     const available = await this.columnsOf(object);
     return available.has(column.toUpperCase());
+  }
+
+  /**
+   * True when `column` on `object` holds numbers.
+   *
+   * Callers that match a value against a column need this because Oracle
+   * coerces the OTHER side of the comparison to the column's type: putting a
+   * username in an IN-list against the numeric PERSON_ID raises ORA-01722 and
+   * kills the whole predicate, not just that one value (see
+   * LovOracleRepository.queryLov). Unknown column → false, so the caller keeps
+   * its existing behaviour.
+   */
+  async isNumericColumn(object: string, column: string): Promise<boolean> {
+    const types = await this.columnTypesOf(object);
+    const type = types.get(column.toUpperCase());
+    return type ? /^(NUMBER|FLOAT|INTEGER|BINARY_(FLOAT|DOUBLE))/.test(type) : false;
   }
 
   /**
@@ -263,13 +281,23 @@ export class OracleSchemaService {
     if (cached) return cached;
 
     let names = new Set<string>();
+    const types = new Map<string, string>();
     try {
       const columns = await this.metadata.describeColumns(object);
       names = new Set(columns.map((c) => c.name.toUpperCase()));
+      for (const c of columns) types.set(c.name.toUpperCase(), c.dataType.toUpperCase());
     } catch (err) {
       this.logger.warn(`Could not describe ${object}: ${(err as Error).message}`);
     }
     this.columnCache.set(key, names);
+    this.columnTypeCache.set(key, types);
     return names;
+  }
+
+  /** Column types for `object`, filled by the same dictionary read as columnsOf. */
+  private async columnTypesOf(object: string): Promise<Map<string, string>> {
+    const key = object.toUpperCase();
+    if (!this.columnTypeCache.has(key)) await this.columnsOf(object);
+    return this.columnTypeCache.get(key) ?? new Map();
   }
 }

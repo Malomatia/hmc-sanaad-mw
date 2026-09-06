@@ -9,6 +9,13 @@ export enum ErrorCategory {
   AUTHENTICATION_ERROR = 'AUTHENTICATION_ERROR',
   AUTHORIZATION_ERROR = 'AUTHORIZATION_ERROR',
   NOT_FOUND = 'NOT_FOUND',
+  /**
+   * A submitted value did not resolve inside the procedure (ORA-01403 from a
+   * SELECT INTO). Separate from NOT_FOUND because the resource exists — the
+   * INPUT is what could not be matched, and calling that "not found" sent
+   * people looking for a missing endpoint instead of a wrong field value.
+   */
+  UNRESOLVED_VALUE = 'UNRESOLVED_VALUE',
   BUSINESS_RULE_ERROR = 'BUSINESS_RULE_ERROR',
   DATABASE_ERROR = 'DATABASE_ERROR',
   EXTERNAL_SERVICE_ERROR = 'EXTERNAL_SERVICE_ERROR',
@@ -36,6 +43,10 @@ export const CATEGORY_MESSAGE: Readonly<Record<ErrorCategory, string>> = Object.
   [ErrorCategory.AUTHENTICATION_ERROR]: 'Authentication failed.',
   [ErrorCategory.AUTHORIZATION_ERROR]: 'You do not have permission to perform this action.',
   [ErrorCategory.NOT_FOUND]: 'The requested resource was not found.',
+  [ErrorCategory.UNRESOLVED_VALUE]:
+    'One of the submitted values was not recognised. Check each value against its ' +
+    'lookup (LOV) endpoint — the letter name and language must be a valid pair, and ' +
+    'the phone number and delivery location must be ones already on record.',
   [ErrorCategory.BUSINESS_RULE_ERROR]: 'The requested operation cannot be completed.',
   [ErrorCategory.DATABASE_ERROR]:
     'A database operation could not be completed. Please contact support if the problem persists.',
@@ -55,6 +66,9 @@ export const CATEGORY_MESSAGE_AR: Readonly<Record<ErrorCategory, string>> = Obje
   [ErrorCategory.AUTHENTICATION_ERROR]: 'فشلت عملية المصادقة.',
   [ErrorCategory.AUTHORIZATION_ERROR]: 'ليس لديك صلاحية لتنفيذ هذا الإجراء.',
   [ErrorCategory.NOT_FOUND]: 'المورد المطلوب غير موجود.',
+  [ErrorCategory.UNRESOLVED_VALUE]:
+    'إحدى القيم المُرسلة غير معروفة. يرجى التحقق من كل قيمة مقابل قائمة الاختيار الخاصة بها — ' +
+    'اسم الخطاب ولغته يجب أن يكونا زوجًا صحيحًا، ورقم الهاتف وموقع التسليم يجب أن يكونا مسجَّلين مسبقًا.',
   [ErrorCategory.BUSINESS_RULE_ERROR]: 'تعذر إتمام العملية المطلوبة.',
   [ErrorCategory.DATABASE_ERROR]:
     'تعذر إتمام عملية قاعدة البيانات. يرجى التواصل مع الدعم الفني إذا استمرت المشكلة.',
@@ -74,6 +88,8 @@ export const CATEGORY_STATUS: Readonly<Record<ErrorCategory, number>> = Object.f
   [ErrorCategory.AUTHENTICATION_ERROR]: 401,
   [ErrorCategory.AUTHORIZATION_ERROR]: 403,
   [ErrorCategory.NOT_FOUND]: 404,
+  // 422: the request is well-formed but a value in it could not be resolved.
+  [ErrorCategory.UNRESOLVED_VALUE]: 422,
   [ErrorCategory.BUSINESS_RULE_ERROR]: 409,
   [ErrorCategory.DATABASE_ERROR]: 500,
   [ErrorCategory.EXTERNAL_SERVICE_ERROR]: 503,
@@ -88,13 +104,40 @@ export const CATEGORY_STATUS: Readonly<Record<ErrorCategory, number>> = Object.f
 
 /**
  * Markers of technical/internal detail that must never reach a client: Oracle /
- * PL/SQL codes, SQL keywords, schema object names, connection strings, file
+ * PL/SQL codes, SQL statements, schema object names, connection strings, file
  * paths and stack frames.
+ *
+ * SQL keywords are matched as STATEMENT SHAPES, not bare words: procs return
+ * legitimate business prose like "Please select the correct Contractual Year"
+ * or "does not fall between … to …", and matching `\bSELECT\b`/`\bFROM\b`
+ * alone suppressed exactly the validation messages the client needs (op 10
+ * answered the generic database-error text for a plain date-range rejection).
  */
 const SENSITIVE_PATTERN =
-  /(ORA-\d{3,5}|PLS-\d{3,5}|\bSELECT\b|\bFROM\b|\bINSERT\b|\bUPDATE\b|\bDELETE\b|\bBEGIN\b|XXHMC_[A-Z0-9_.]+|connectString|:\d+\/[A-Za-z0-9_]+|[A-Za-z]:\\|\/(?:home|Users|var|opt|app)\/|node_modules|\.(?:ts|js):\d+|\n\s*at\s)/i;
+  /(ORA-\d{3,5}|PLS-\d{3,5}|\bINSERT\s+INTO\b|\bDELETE\s+FROM\b|\bUPDATE\s+[A-Za-z0-9_$#."]+\s+SET\b|\bBEGIN\b[\s\S]{0,500}?\bEND\s*;|XXHMC_[A-Z0-9_.]+|connectString|:\d+\/[A-Za-z0-9_]+|[A-Za-z]:\\|\/(?:home|Users|var|opt|app)\/|node_modules|\.(?:ts|js):\d+|\n\s*at\s)/i;
+
+/**
+ * A leaked query, recognised by its SQL-cased form only: `select`/`from` are
+ * ordinary English words ("select a date from the calendar"), so lowercase
+ * prose must not trip the filter while an uppercase `SELECT … FROM` still does.
+ */
+const SQL_QUERY_PATTERN = /\bSELECT\b[\s\S]{0,500}?\bFROM\b/;
 
 /** True when `text` contains internal detail that must not be exposed to clients. */
 export function looksSensitive(text?: string | null): boolean {
-  return !!text && SENSITIVE_PATTERN.test(text);
+  return !!text && (SENSITIVE_PATTERN.test(text) || SQL_QUERY_PATTERN.test(text));
+}
+
+/**
+ * The human text of a `RAISE_APPLICATION_ERROR` (ORA-20xxx) message — the DB
+ * team authors these as user-facing validation text, so it is returned to the
+ * client when it carries no technical detail of its own. Strips the ORA-20xxx
+ * prefix and everything from the first follow-up ORA/PLS frame (ORA-06512 "at
+ * line …" etc.). Undefined when nothing safe remains.
+ */
+export function extractBusinessRaiseText(message?: string | null): string | undefined {
+  if (!message) return undefined;
+  const match = /ORA-20\d{3}:\s*([\s\S]*?)(?=\s*(?:ORA|PLS)-\d{3,5}|$)/.exec(message);
+  const text = match?.[1]?.trim();
+  return text && !looksSensitive(text) ? text : undefined;
 }

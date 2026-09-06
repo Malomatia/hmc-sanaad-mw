@@ -19,11 +19,18 @@ import { LETTERS_LOV_EXAMPLE } from './letters.examples';
 export class LettersController {
   constructor(private readonly service: LettersService) {}
 
+  /**
+   * The authenticated username is passed alongside `?enum=` because
+   * LETTER_MOBILE_NO_LOV keys on the login, not the employee number: op 16 is
+   * documented with `?enum=`, so `mobileNo` came back empty and op 17 had no
+   * legal `p_mobile_number` to send. Both forms go to the view and whichever
+   * it uses matches.
+   */
   @Get('lov')
   @ApiOperation({ summary: 'op 16 — Letter request LOVs', operationId: 'letters_lov' })
   @ApiReadOkResponse({ example: LETTERS_LOV_EXAMPLE })
-  lov(@Query() q: ProfileQueryDto) {
-    return this.service.getLetterLovs(q.lang, q.enum);
+  lov(@Query() q: ProfileQueryDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.service.getLetterLovs(q.lang, q.enum, user.username);
   }
 
   @Post('apply')

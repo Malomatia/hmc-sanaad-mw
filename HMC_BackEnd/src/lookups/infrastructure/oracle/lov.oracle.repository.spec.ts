@@ -12,7 +12,7 @@ describe('LovOracleRepository', () => {
     const hasColumn = jest.fn().mockImplementation((_object: string, column: string) =>
       Promise.resolve(['USER_NAME', 'NAME'].includes(column.toUpperCase())),
     );
-    const schema = { hasColumn } as unknown as OracleSchemaService;
+    const schema = { hasColumn, isNumericColumn: jest.fn().mockResolvedValue(false) } as unknown as OracleSchemaService;
     const config = {
       get: jest.fn().mockReturnValue(300000),
     } as unknown as ConfigService;
@@ -51,7 +51,7 @@ describe('LovOracleRepository', () => {
     const hasColumn = jest
       .fn()
       .mockImplementation((_o: string, c: string) => Promise.resolve(c.toUpperCase() === 'D_DATA_TYPE'));
-    const schema = { hasColumn } as unknown as OracleSchemaService;
+    const schema = { hasColumn, isNumericColumn: jest.fn().mockResolvedValue(false) } as unknown as OracleSchemaService;
     const config = { get: jest.fn().mockReturnValue(300000) } as unknown as ConfigService;
     const repository = new LovOracleRepository(ora, schema, config);
 
@@ -76,7 +76,7 @@ describe('LovOracleRepository', () => {
     const hasColumn = jest
       .fn()
       .mockImplementation((_o: string, c: string) => Promise.resolve(c.toUpperCase() === 'LEAVE_TYPE'));
-    const schema = { hasColumn } as unknown as OracleSchemaService;
+    const schema = { hasColumn, isNumericColumn: jest.fn().mockResolvedValue(false) } as unknown as OracleSchemaService;
     const config = { get: jest.fn().mockReturnValue(300000) } as unknown as ConfigService;
     const repository = new LovOracleRepository(ora, schema, config);
 
@@ -103,7 +103,11 @@ describe('LovOracleRepository', () => {
       .mockImplementation((_o: string, c: string) =>
         Promise.resolve(['NAME', 'PERSON_ID'].includes(c.toUpperCase())),
       );
-    const schema = { hasColumn } as unknown as OracleSchemaService;
+    // PERSON_ID really is a NUMBER on this view
+    const schema = {
+      hasColumn,
+      isNumericColumn: jest.fn().mockResolvedValue(true),
+    } as unknown as OracleSchemaService;
     const config = { get: jest.fn().mockReturnValue(300000) } as unknown as ConfigService;
     const repository = new LovOracleRepository(ora, schema, config);
 
@@ -113,12 +117,15 @@ describe('LovOracleRepository', () => {
     });
 
     // NAME holds display strings ("Casual Leave|19-APR-2026|…") → contains
-    // match; both caller identifiers are offered to the PERSON_ID column.
+    // match. Only the numeric identifier reaches PERSON_ID: this case used to
+    // offer the username too, and Oracle then rejected the entire IN-list
+    // (ORA-01722), so the view's 15 rows came back as 0.
     expect(query).toHaveBeenCalledWith(
       expect.stringContaining('UPPER(NAME) LIKE :leaveType'),
-      expect.objectContaining({ u0: '26023', u1: 'AIBRAHIM39', leaveType: '%CASUAL LEAVE%' }),
+      expect.objectContaining({ u0: '26023', leaveType: '%CASUAL LEAVE%' }),
     );
-    expect((query.mock.calls[0] as unknown[])[0]).toContain('IN (:u0, :u1)');
+    expect((query.mock.calls[0] as unknown[])[0]).toContain('IN (:u0)');
+    expect(query.mock.calls[0][1]).not.toHaveProperty('u1');
   });
 
   it('falls back to the employee-number column when the view has no user column (LEAVE_AMEND_V)', async () => {
@@ -127,7 +134,7 @@ describe('LovOracleRepository', () => {
     const hasColumn = jest
       .fn()
       .mockImplementation((_o: string, c: string) => Promise.resolve(c.toUpperCase() === 'EMPLOYEE_NUMBER'));
-    const schema = { hasColumn } as unknown as OracleSchemaService;
+    const schema = { hasColumn, isNumericColumn: jest.fn().mockResolvedValue(false) } as unknown as OracleSchemaService;
     const config = { get: jest.fn().mockReturnValue(300000) } as unknown as ConfigService;
     const repository = new LovOracleRepository(ora, schema, config);
 
@@ -145,7 +152,7 @@ describe('LovOracleRepository', () => {
     const hasColumn = jest
       .fn()
       .mockImplementation((_o: string, c: string) => Promise.resolve(c.toUpperCase() === 'NAME'));
-    const schema = { hasColumn } as unknown as OracleSchemaService;
+    const schema = { hasColumn, isNumericColumn: jest.fn().mockResolvedValue(false) } as unknown as OracleSchemaService;
     const config = { get: jest.fn().mockReturnValue(300000) } as unknown as ConfigService;
     const repository = new LovOracleRepository(ora, schema, config);
 
@@ -161,13 +168,46 @@ describe('LovOracleRepository', () => {
     );
   });
 
+  it('filters a person-scoped view by PERSON_ID when personId is passed (CONTRACT_YEARS_V)', async () => {
+    const query = jest.fn().mockResolvedValue([{ CONTRACT_YEAR: '2026' }]);
+    const ora = { query } as unknown as OracleService;
+    const hasColumn = jest
+      .fn()
+      .mockImplementation((_o: string, c: string) => Promise.resolve(c.toUpperCase() === 'PERSON_ID'));
+    const schema = { hasColumn, isNumericColumn: jest.fn().mockResolvedValue(false) } as unknown as OracleSchemaService;
+    const config = { get: jest.fn().mockReturnValue(300000) } as unknown as ConfigService;
+    const repository = new LovOracleRepository(ora, schema, config);
+
+    await repository.readLov('XXHMC_SND_CONTRACT_YEARS_V', 'en', undefined, {
+      personId: ' 852709 ',
+    });
+
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining('WHERE person_id = :personId'),
+      { personId: '852709' },
+    );
+  });
+
+  it('ignores personId when the view has no PERSON_ID column', async () => {
+    const query = jest.fn().mockResolvedValue([]);
+    const ora = { query } as unknown as OracleService;
+    const hasColumn = jest.fn().mockResolvedValue(false);
+    const schema = { hasColumn, isNumericColumn: jest.fn().mockResolvedValue(false) } as unknown as OracleSchemaService;
+    const config = { get: jest.fn().mockReturnValue(300000) } as unknown as ConfigService;
+    const repository = new LovOracleRepository(ora, schema, config);
+
+    await repository.readLov('XXHMC_SND_YES_NO_LOV', 'en', undefined, { personId: '852709' });
+
+    expect(query).toHaveBeenCalledWith(expect.not.stringContaining('WHERE'), {});
+  });
+
   it('keeps the exact match on a dedicated LEAVE_TYPE column (op 13 unchanged)', async () => {
     const query = jest.fn().mockResolvedValue([]);
     const ora = { query } as unknown as OracleService;
     const hasColumn = jest
       .fn()
       .mockImplementation((_o: string, c: string) => Promise.resolve(c.toUpperCase() === 'LEAVE_TYPE'));
-    const schema = { hasColumn } as unknown as OracleSchemaService;
+    const schema = { hasColumn, isNumericColumn: jest.fn().mockResolvedValue(false) } as unknown as OracleSchemaService;
     const config = { get: jest.fn().mockReturnValue(300000) } as unknown as ConfigService;
     const repository = new LovOracleRepository(ora, schema, config);
 

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Query, HttpCode } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, HttpCode } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Lang } from '@core/i18n/lang.decorator';
 import type { Lang as LangCode } from '@shared/domain/lang';
@@ -12,8 +12,15 @@ import { ApiActionOkResponse } from '@shared/swagger/api-action-ok-response.deco
 import { ProfileService } from '../application/profile.service';
 import { UpdatePersonalRequestDto } from './dto/update-personal.request.dto';
 import {
+  NotificationHistoryQueryDto,
+  NotificationSummaryQueryDto,
+} from './dto/notifications-query.dto';
+import {
   PROFILE_GET_EXAMPLE,
   PROFILE_MARITAL_LOV_EXAMPLE,
+  PROFILE_NOTIFICATION_HISTORY_EXAMPLE,
+  PROFILE_NOTIFICATION_SUMMARY_EXAMPLE,
+  PROFILE_NOTIFICATIONS_EXAMPLE,
   PROFILE_UPDATE_PERSONAL_BODY,
   PROFILE_UPDATE_PERSONAL_EXAMPLE,
 } from './profile.examples';
@@ -44,6 +51,50 @@ export class ProfileController {
   ) {
     // Accepts the spec's UPDATE_PERSONAL_INFO_PR body (p_* keys, incl. attachments).
     return this.service.updatePersonal(body, user, lang);
+  }
+
+  /**
+   * Notification list (WORKLISTS_V, getworklist query). Same data as op 68
+   * `GET /approvals/worklist`, but reachable by every authenticated user —
+   * the approvals route is APPROVER/SUPERVISOR-only while notifications
+   * (FYI, RFMI answers) go to regular employees too.
+   */
+  @Get('notifications')
+  @ApiOperation({ summary: 'Notification list (WORKLISTS_V)', operationId: 'profile_notifications' })
+  @ApiReadOkResponse({ example: PROFILE_NOTIFICATIONS_EXAMPLE })
+  notifications(@Query() q: LovUserQueryDto) {
+    return this.service.notifications(q.username, q.lang);
+  }
+
+  /**
+   * op 69 getworklistsummary — one notification's WORKLISTS_V row (the list
+   * query + `NOTIFICATION_ID = :id`). Same data as `GET
+   * /approvals/worklist/summary` but without the APPROVER/SUPERVISOR gate.
+   */
+  @Get('notifications/summary')
+  @ApiOperation({
+    summary: 'op 69 — Notification summary (WORKLISTS_V by NOTIFICATION_ID)',
+    operationId: 'profile_notificationSummary',
+  })
+  @ApiReadOkResponse({ example: PROFILE_NOTIFICATION_SUMMARY_EXAMPLE })
+  notificationSummary(@Query() q: NotificationSummaryQueryDto) {
+    return this.service.notificationSummary(q.username, q.lang, q.notificationId);
+  }
+
+  /**
+   * op 70 getworklistactionhistory — `id` is the workflow ITEM_KEY that
+   * ACTION_HISTORY_V is keyed by (from the notification rows), NOT the
+   * notification id. Same data as `GET /approvals/worklist/:id/history` but
+   * without the APPROVER/SUPERVISOR gate.
+   */
+  @Get('notifications/:id/history')
+  @ApiOperation({
+    summary: 'op 70 — Notification action history (ACTION_HISTORY_V)',
+    operationId: 'profile_notificationHistory',
+  })
+  @ApiReadOkResponse({ example: PROFILE_NOTIFICATION_HISTORY_EXAMPLE })
+  notificationHistory(@Param('id') id: string, @Query() q: NotificationHistoryQueryDto) {
+    return this.service.notificationHistory(id, q.lang, q.itemType);
   }
 
   @Get('lov/marital-status')

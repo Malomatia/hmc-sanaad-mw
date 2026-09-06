@@ -4,6 +4,7 @@ import { OracleService } from '@core/database/oracle.service';
 import { OracleSchemaService } from '@core/database/oracle-schema.service';
 import { BaseOracleRepository } from '@core/database/base.repository';
 import { Lang, toOracleLanguage } from '@shared/domain/lang';
+import { str } from '@shared/utils/mapper.util';
 import { SubmitResult } from '@shared/domain/submit-result';
 import { ORACLE_OBJECTS, REQUEST_DETAIL_VIEWS } from '@shared/constants/oracle-objects';
 import {
@@ -29,6 +30,12 @@ import {
   RequestInfoCommand,
   WorklistRepository,
 } from '../../domain/approvals.repository';
+
+/**
+ * Route prefix the attachment URLs are built with — read from the environment
+ * so it follows `API_PREFIX`, with the same default `main.ts` uses.
+ */
+const API_PREFIX = (process.env.API_PREFIX ?? 'api/v1').replace(/^\/+|\/+$/g, '');
 
 /** APPROVE_REJECT_PR input params (Sanaad spec — ApproveReject request input). */
 const APPROVE_REJECT_PARAMS = [
@@ -67,8 +74,42 @@ export class ApprovalsOracleRepository extends BaseOracleRepository implements A
   /** Own logger — the base class keeps its instance private. */
   private static readonly log = new Logger(ApprovalsOracleRepository.name);
 
+  /** username → employee number, resolved once per process. */
+  private static readonly employeeNumbers = new Map<string, string | undefined>();
+
   constructor(ora: OracleService, schema: OracleSchemaService) {
     super(ora, schema);
+  }
+
+  /**
+   * Add the caller's employee number to `keys` when the JWT did not carry one.
+   *
+   * These views disagree about which form of a person they store —
+   * MY_REQEST_SUMMARY_V and APPROVE_SUMRY_V hold the employee NUMBER, while
+   * PNDNG_QID_V holds the login — so both forms have to be offered. The token
+   * only has the login today (`identity.employeeNumber` is not populated at
+   * login), and since ops 20/23 stopped trusting a client-supplied `?enum=`
+   * for security, the employee-number form went missing entirely: op 23
+   * answered 0 rows for a caller with 8.
+   *
+   * Resolved from the same view op 2 reads, so it is the caller's own identity
+   * rather than anything the client sent.
+   */
+  private async scopeKeys(keys: readonly string[]): Promise<string[]> {
+    const username = keys[0];
+    if (!username) return [...keys];
+
+    const cache = ApprovalsOracleRepository.employeeNumbers;
+    if (!cache.has(username)) {
+      const rows = await this.readByResolvedKey<{ EMPLOYEE_NUMBER?: unknown }>(
+        ORACLE_OBJECTS.PERSONAL_DETAILS_V,
+        username,
+        USERNAME_KEY_CANDIDATES,
+      ).catch(() => []);
+      cache.set(username, str(rows[0] ?? {}, 'EMPLOYEE_NUMBER'));
+    }
+    const employeeNumber = cache.get(username);
+    return [...new Set([...keys, ...(employeeNumber ? [employeeNumber] : [])])];
   }
 
   /**
@@ -78,19 +119,73 @@ export class ApprovalsOracleRepository extends BaseOracleRepository implements A
    * readByResolvedKeyAny).
    */
   async getSummary(keys: readonly string[], _lang: Lang): Promise<ApprovalsSummary> {
+    const scoped = await this.scopeKeys(keys);
     const [approvals, pendingQid] = await Promise.all([
       this.readByResolvedKeyAny<ApprovalRow>(
         ORACLE_OBJECTS.APPROVE_SUMRY_V,
-        keys,
+        scoped,
         APPROVER_KEY_CANDIDATES,
       ),
       this.readByResolvedKeyAny<ApprovalRow>(
         ORACLE_OBJECTS.PNDNG_QID_V,
-        keys,
+        scoped,
         APPROVER_KEY_CANDIDATES,
       ),
     ]);
     return { approvals, pendingQid };
+  }
+
+  /**
+   * Is this notification the caller's own — as its requestor OR its approver?
+   *
+   * op 21 and the attachment download resolve a request by NOTIFICATION ID
+   * alone, with no caller in the query, and the ids are sequential
+   * (123859430, 123859432, 123859449…). The role gate was the only thing
+   * standing between that and an employee walking the range to read every
+   * request in the organisation — salary certificates, QIDs, sick-leave
+   * reasons, uploaded documents. So opening those routes needs this check to
+   * take the gate's place.
+   */
+  async isOwnedBy(approvalId: string, keys: readonly string[]): Promise<boolean> {
+    const header = await this.findRequestHead(approvalId);
+    if (!header) return false;
+
+    const scoped = (await this.scopeKeys(keys)).map((k) => k.trim().toUpperCase());
+    return ['REQUESTOR_USER_NAME', 'APPROVER_USER_NAME', 'USER_NAME', 'EMPLOYEE_NUMBER']
+      .map((column) => str(header, column)?.trim().toUpperCase())
+      .some((value) => !!value && scoped.includes(value));
+  }
+
+  /** The ITEM_KEY an attachment belongs to, so its request can be checked. */
+  async itemKeyOfAttachment(attachedDocumentId: string): Promise<string | undefined> {
+    const rows = await this.query<Record<string, unknown>>(
+      `SELECT ${ITEM_KEY_COLUMN} FROM ${ORACLE_OBJECTS.HR_ATTACHMENTS_V}
+        WHERE attached_document_id = :id`,
+      { id: attachedDocumentId },
+    );
+    return str(rows[0] ?? {}, ITEM_KEY_COLUMN.toUpperCase());
+  }
+
+  /** Is a request identified by ITEM_KEY (not notification id) the caller's? */
+  async isItemOwnedBy(itemKey: string, keys: readonly string[]): Promise<boolean> {
+    const scoped = (await this.scopeKeys(keys)).map((k) => k.trim().toUpperCase());
+    for (const object of [
+      ORACLE_OBJECTS.MY_REQEST_SUMMARY_V,
+      ORACLE_OBJECTS.APPROVE_SUMRY_V,
+      ORACLE_OBJECTS.NOTYFY_APPR_V,
+    ]) {
+      const rows = await this.query<ApprovalRow>(
+        `SELECT * FROM ${object} WHERE ${ITEM_KEY_COLUMN} = :k`,
+        { k: itemKey },
+      );
+      const owned = rows.some((row) =>
+        ['REQUESTOR_USER_NAME', 'APPROVER_USER_NAME', 'USER_NAME', 'EMPLOYEE_NUMBER']
+          .map((column) => str(row, column)?.trim().toUpperCase())
+          .some((value) => !!value && scoped.includes(value)),
+      );
+      if (owned) return true;
+    }
+    return false;
   }
 
   /**
@@ -168,7 +263,10 @@ export class ApprovalsOracleRepository extends BaseOracleRepository implements A
       contentType: String(r.FILE_CONTENT_TYPE ?? 'application/octet-stream'),
       sizeBytes: r.SIZE_BYTES === null ? null : Number(r.SIZE_BYTES),
       uploadedAt: r.LAST_UPDATE_DATE ? new Date(r.LAST_UPDATE_DATE).toISOString() : null,
-      url: `/approvals/attachments/${r.ATTACHED_DOCUMENT_ID}`,
+      // Includes the API prefix. Without it the path answered 404 and every
+      // client had to know to prepend it — a URL a caller has to repair is
+      // not a URL.
+      url: `/${API_PREFIX}/approvals/attachments/${r.ATTACHED_DOCUMENT_ID}`,
     }));
   }
 
@@ -192,15 +290,16 @@ export class ApprovalsOracleRepository extends BaseOracleRepository implements A
 
   /** op 23 — what I submitted, so both views are filtered on the REQUESTOR side. */
   async getMyRequests(keys: readonly string[], _lang: Lang): Promise<MyRequests> {
+    const scoped = await this.scopeKeys(keys);
     const [requests, pendingQid] = await Promise.all([
       this.readByResolvedKeyAny<ApprovalRow>(
         ORACLE_OBJECTS.MY_REQEST_SUMMARY_V,
-        keys,
+        scoped,
         REQUESTOR_KEY_CANDIDATES,
       ),
       this.readByResolvedKeyAny<ApprovalRow>(
         ORACLE_OBJECTS.PNDNG_QID_V,
-        keys,
+        scoped,
         REQUESTOR_KEY_CANDIDATES,
       ),
     ]);

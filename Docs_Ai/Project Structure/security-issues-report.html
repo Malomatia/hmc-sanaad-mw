@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Security Issues — STRIDE Threat Analysis</title>
+<style>
+  @page {
+    size: A4;
+    margin: 20mm 16mm 18mm 16mm;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', Calibri, Arial, sans-serif;
+    color: #1a1a1a;
+    font-size: 10.5pt;
+    line-height: 1.5;
+  }
+  h1 {
+    font-size: 22pt;
+    color: #0b3d63;
+    margin-bottom: 2px;
+  }
+  .subtitle {
+    font-size: 11pt;
+    color: #555;
+    margin-top: 0;
+    margin-bottom: 18px;
+  }
+  .cover-meta {
+    border-top: 2px solid #0b3d63;
+    border-bottom: 2px solid #0b3d63;
+    padding: 10px 0;
+    margin-bottom: 24px;
+    font-size: 10pt;
+    color: #333;
+  }
+  .cover-meta table { width: 100%; }
+  .cover-meta td { padding: 3px 6px; }
+  .cover-meta td.label { font-weight: 600; width: 160px; color: #0b3d63; }
+
+  h2 {
+    font-size: 15pt;
+    color: #ffffff;
+    background: #0b3d63;
+    padding: 6px 10px;
+    margin-top: 26px;
+    margin-bottom: 10px;
+    border-radius: 3px;
+    page-break-after: avoid;
+  }
+  h2 .cat-icon { margin-right: 6px; }
+
+  h3 {
+    font-size: 11.5pt;
+    color: #0b3d63;
+    margin-top: 16px;
+    margin-bottom: 4px;
+    page-break-after: avoid;
+  }
+
+  p { margin: 4px 0 8px 0; }
+
+  table.findings {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 10px;
+    font-size: 9.5pt;
+  }
+  table.findings th {
+    background: #e7eef4;
+    color: #0b3d63;
+    text-align: left;
+    padding: 6px 8px;
+    border: 1px solid #c9d6e2;
+  }
+  table.findings td {
+    padding: 6px 8px;
+    border: 1px solid #dde5ec;
+    vertical-align: top;
+  }
+  table.findings tr:nth-child(even) td { background: #f7fafc; }
+
+  .sev {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 8.5pt;
+    font-weight: 600;
+    color: #fff;
+    white-space: nowrap;
+  }
+  .sev-high { background: #c0392b; }
+  .sev-medium { background: #d68910; }
+  .sev-low { background: #7f8c8d; }
+  .sev-mitigated { background: #1e8449; }
+
+  code, .code {
+    font-family: Consolas, 'Courier New', monospace;
+    background: #f0f2f5;
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-size: 9pt;
+    color: #a02020;
+  }
+  pre {
+    background: #1e1e1e;
+    color: #d4d4d4;
+    font-family: Consolas, 'Courier New', monospace;
+    font-size: 8.7pt;
+    padding: 10px 12px;
+    border-radius: 4px;
+    overflow-x: auto;
+    margin: 6px 0 12px 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .file-ref {
+    font-family: Consolas, 'Courier New', monospace;
+    font-size: 9pt;
+    color: #0b3d63;
+    background: #eef4f9;
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+
+  .callout {
+    border-left: 4px solid #0b3d63;
+    background: #eef4f9;
+    padding: 8px 12px;
+    margin: 10px 0;
+    font-size: 9.8pt;
+  }
+  .callout.mitigated { border-left-color: #1e8449; background: #eaf6ee; }
+  .callout.risk { border-left-color: #c0392b; background: #fbeceb; }
+
+  .summary-table td, .summary-table th { font-size: 9.5pt; }
+
+  .toc { margin: 6px 0 20px 0; }
+  .toc a { text-decoration: none; color: #0b3d63; }
+  .toc ul { list-style: none; padding-left: 6px; }
+  .toc li { padding: 3px 0; }
+
+  .page-break { page-break-before: always; }
+
+  footer.page-footer {
+    font-size: 8pt;
+    color: #999;
+    text-align: center;
+    margin-top: 30px;
+    border-top: 1px solid #ddd;
+    padding-top: 6px;
+  }
+
+  .badge-count {
+    display: inline-block;
+    background: #0b3d63;
+    color: #fff;
+    border-radius: 50%;
+    width: 22px;
+    height: 22px;
+    text-align: center;
+    line-height: 22px;
+    font-size: 9pt;
+    margin-right: 6px;
+  }
+</style>
+</head>
+<body>
+
+<h1>Security Issues — STRIDE Threat Analysis</h1>
+<p class="subtitle">HMC_BackEnd (Sanaad API) &amp; HMC_Gateway — prepared ahead of Microsoft Threat Modeling Tool (TMT) review</p>
+
+<div class="cover-meta">
+  <table>
+    <tr><td class="label">Scope</td><td>HMC_BackEnd (NestJS / Oracle) and HMC_Gateway (NestJS proxy + JWT validation)</td></tr>
+    <tr><td class="label">Methodology</td><td>Source-level review mapped to STRIDE categories (Spoofing, Tampering, Repudiation, Information Disclosure, Denial of Service, Elevation of Privilege)</td></tr>
+    <tr><td class="label">Date</td><td>2026-08-18</td></tr>
+    <tr><td class="label">Prepared by</td><td>Devin (AI Software Engineer)</td></tr>
+  </table>
+</div>
+
+<div class="toc">
+  <strong>Contents</strong>
+  <ul>
+    <li>1. Spoofing</li>
+    <li>2. Tampering</li>
+    <li>3. Repudiation</li>
+    <li>4. Information Disclosure</li>
+    <li>5. Denial of Service</li>
+    <li>6. Elevation of Privilege</li>
+    <li>7. Priority Remediation Summary</li>
+  </ul>
+</div>
+
+<!-- ============ SPOOFING ============ -->
+<h2>1. Spoofing</h2>
+
+<h3>1.1 JWT issuer / audience not validated</h3>
+<table class="findings">
+  <tr><th>Severity</th><td><span class="sev sev-high">High</span></td></tr>
+  <tr><th>Location</th><td><span class="file-ref">HMC_BackEnd/src/core/auth/jwt.strategy.ts:23-34</span><br/><span class="file-ref">HMC_Gateway/src/core/auth/jwt.strategy.ts</span></td></tr>
+</table>
+<p>Both strategies verify the token's signature and expiry only. The code comment states this is deliberate: "issuer/audience checks are intentionally relaxed until the auth spec lands." A token signed with the shared secret is accepted regardless of who issued it.</p>
+<pre>super({
+  jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+  ignoreExpiration: false,
+  secretOrKey: auth.jwtSecret,
+  // no issuer / audience check
+});</pre>
+<div class="callout risk">Risk: if the shared JWT_SECRET is ever exposed (log leak, misconfigured repo, shared with a third system), forged tokens are indistinguishable from real ones.</div>
+
+<h3>1.2 Weak hardcoded fallback JWT secret</h3>
+<table class="findings">
+  <tr><th>Severity</th><td><span class="sev sev-high">High</span></td></tr>
+  <tr><th>Location</th><td><span class="file-ref">HMC_BackEnd/src/core/config/env.validation.ts:34</span>, <span class="file-ref">configuration.ts:202</span><br/><span class="file-ref">HMC_Gateway/src/core/config/env.validation.ts:20</span>, <span class="file-ref">configuration.ts:59</span></td></tr>
+</table>
+<pre>JWT_SECRET: Joi.string().min(8).default('dev-only-secret-change-me')</pre>
+<p>Identical literal fallback on both projects, with only an 8-character minimum enforced — far too short for HS256. If an environment ever boots without <span class="code">JWT_SECRET</span> set, both services silently accept this well-known string.</p>
+
+<h3>1.3 Non-production bypass disables MPIN verification</h3>
+<table class="findings">
+  <tr><th>Severity</th><td><span class="sev sev-medium">Medium–High</span></td></tr>
+  <tr><th>Location</th><td><span class="file-ref">HMC_BackEnd/src/modules/auth/application/auth.service.ts:35-37</span> (same pattern in <span class="code">onboarding.service.ts</span>, <span class="code">mpin.service.ts</span>)</td></tr>
+</table>
+<pre>this.devBypass = authDisabled || nodeEnv !== 'production';</pre>
+<p>Any environment whose <span class="code">NODE_ENV</span> is not the literal string <span class="code">"production"</span> (e.g. <span class="code">staging</span>, <span class="code">uat</span>, <span class="code">qa</span>) skips MPIN verification entirely and issues a token for a dev identity.</p>
+
+<h3>1.4 MPIN / OTP persistence is unimplemented</h3>
+<table class="findings">
+  <tr><th>Severity</th><td><span class="sev sev-high">High (pre-production gap)</span></td></tr>
+  <tr><th>Location</th><td><span class="file-ref">.../auth/infrastructure/adapters/mpin-store.stub.repository.ts</span>, <span class="file-ref">otp.stub.repository.ts</span></td></tr>
+</table>
+<p>Both adapters throw <span class="code">NotImplementedException</span>. Today the dev bypass (1.3) is the only path that functions — this must be replaced with real persistence before any environment holding live credentials goes up.</p>
+
+<!-- ============ TAMPERING ============ -->
+<h2>2. Tampering</h2>
+
+<h3>2.1 JWT signing algorithm not pinned</h3>
+<table class="findings">
+  <tr><th>Severity</th><td><span class="sev sev-low">Low–Medium</span></td></tr>
+  <tr><th>Location</th><td>Same files as 1.1</td></tr>
+</table>
+<p>No explicit <span class="code">algorithms: ['HS256']</span> restriction is passed to the strategy. passport-jwt currently defaults sensibly, but pinning removes any dependency-upgrade or config-drift risk of algorithm-confusion attacks.</p>
+
+<h3>2.2 Gateway proxy path resolution has no allow-list</h3>
+<table class="findings">
+  <tr><th>Severity</th><td><span class="sev sev-medium">Medium</span></td></tr>
+  <tr><th>Location</th><td><span class="file-ref">HMC_Gateway/src/modules/proxy/proxy.service.ts</span> (<span class="code">resolveTargetPath</span>)</td></tr>
+</table>
+<pre>private resolveTargetPath(originalUrl, gatewayPrefix, backendPrefix) {
+  const suffix = originalUrl.startsWith(trimmedGatewayPrefix)
+    ? originalUrl.slice(trimmedGatewayPrefix.length)
+    : originalUrl;
+  return `${trimmedBackendPrefix}${suffix}`;
+}</pre>
+<p>The forwarded path is built with a simple prefix-strip, with no normalization or allow-list of expected backend routes before being handed to axios.</p>
+
+<div class="callout mitigated">
+  <strong>Already well-mitigated — no action needed:</strong>
+  <ul>
+    <li>Oracle procedure calls use named bind variables resolved from the data dictionary; no string concatenation into SQL (<span class="file-ref">base.repository.ts</span>).</li>
+    <li>Global <span class="code">ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true })</span> blocks mass-assignment / unknown fields (<span class="file-ref">core.module.ts</span>).</li>
+  </ul>
+</div>
+
+<!-- ============ REPUDIATION ============ -->
+<h2>3. Repudiation</h2>
+
+<h3>3.1 Diagnostics endpoints lack their own authorization guard</h3>
+<table class="findings">
+  <tr><th>Severity</th><td><span class="sev sev-high">High</span></td></tr>
+  <tr><th>Location</th><td><span class="file-ref">HMC_BackEnd/src/core/database/diagnostics.controller.ts</span></td></tr>
+</table>
+<p><span class="code">GET /diagnostics/oracle-object</span>, <span class="code">GET /diagnostics/oracle-logs</span>, <span class="code">GET /diagnostics/oracle-logs/stats</span> and <span class="code">DELETE /diagnostics/oracle-logs</span> carry no explicit <span class="code">@Roles</span> guard of their own — they inherit whatever the global guard default is. Worse, <span class="code">GET /diagnostics/oracle-logs/view</span> is explicitly marked <span class="code">@Public()</span> and relaxes the CSP to serve an interactive HTML table of every Oracle call the backend has made, including SQL text, bind values and correlation IDs, straight from an unauthenticated route.</p>
+<pre>@Public()
+@SkipEnvelope()
+@Get('oracle-logs/view')
+view(): string {
+  return ORACLE_LOG_VIEW_HTML;
+}</pre>
+<p>The source comment itself flags this: <em>"gate/remove it before production if the SQL log is sensitive."</em></p>
+
+<div class="callout mitigated">
+  <strong>Already well-mitigated:</strong>
+  <ul>
+    <li>Sensitive bind values (<span class="code">mpin/password/otp/secret/token</span>) are redacted with <span class="code">***</span> before logging (<span class="file-ref">oracle.service.ts</span>).</li>
+    <li>Every request carries a correlation ID and is captured by the audit interceptor with username/device/status (<span class="file-ref">core/http/correlation-id.middleware.ts</span>, <span class="file-ref">core/audit/*</span>).</li>
+  </ul>
+</div>
+
+<!-- ============ INFO DISCLOSURE ============ -->
+<h2 class="page-break">4. Information Disclosure</h2>
+
+<h3>4.1 Gateway relays backend responses byte-for-byte</h3>
+<table class="findings">
+  <tr><th>Severity</th><td><span class="sev sev-medium">Medium</span></td></tr>
+  <tr><th>Location</th><td><span class="file-ref">HMC_Gateway/src/modules/proxy/proxy.service.ts</span> — <span class="code">res.send(response.data)</span></td></tr>
+</table>
+<p>This is a deliberate architecture choice (documented in the project's own working notes), but it means the backend's exception filter is the <em>only</em> layer preventing an Oracle error, stack trace or internal path from reaching the public internet. Any regression there is immediately public.</p>
+
+<h3>4.2 CORS defaults to wildcard origin combined with credentials</h3>
+<table class="findings">
+  <tr><th>Severity</th><td><span class="sev sev-medium">Medium (High if shipped as-is)</span></td></tr>
+  <tr><th>Location</th><td><span class="file-ref">HMC_BackEnd/src/main.ts:18-21</span>, <span class="file-ref">HMC_Gateway/src/main.ts:18-21</span></td></tr>
+</table>
+<pre>app.enableCors({
+  origin: appCfg.corsOrigins.includes('*') ? true : appCfg.corsOrigins,
+  credentials: true,
+});</pre>
+<p><span class="code">CORS_ORIGINS=*</span> is the shipped <span class="code">.env.example</span> default on both projects and is translated into <span class="code">origin: true</span> (reflect any origin) while <span class="code">credentials: true</span> stays on — a classic pattern that enables cross-site credentialed requests if the default reaches a real deployment.</p>
+
+<h3>4.3 Swagger UI publicly reachable</h3>
+<table class="findings">
+  <tr><th>Severity</th><td><span class="sev sev-medium">Medium</span></td></tr>
+  <tr><th>Location</th><td><span class="file-ref">main.ts</span> in both projects — <span class="code">/docs</span></td></tr>
+</table>
+<p>The full route map, request/response shapes and operation IDs for all 71 Sanaad operations are exposed at <span class="code">/docs</span> without any gate on the UI itself (only calling an endpoint from within Swagger needs a bearer token).</p>
+
+<div class="callout mitigated">
+  <strong>Already well-mitigated:</strong>
+  <ul>
+    <li><span class="code">AllExceptionsFilter</span> strips ORA codes, SQL text, stack traces and internal messages before any error reaches the client (<span class="file-ref">all-exceptions.filter.ts</span>).</li>
+    <li><span class="code">helmet()</span> applied on both apps for baseline security headers.</li>
+  </ul>
+</div>
+
+<!-- ============ DOS ============ -->
+<h2>5. Denial of Service</h2>
+
+<h3>5.1 Rate limiting only exists on the gateway's auth endpoints</h3>
+<table class="findings">
+  <tr><th>Severity</th><td><span class="sev sev-medium">Medium</span></td></tr>
+  <tr><th>Location</th><td><span class="file-ref">HMC_Gateway/src/modules/auth/auth.controller.ts</span> (login/OTP/MPIN) — absent from <span class="file-ref">HMC_BackEnd/src/app.module.ts</span></td></tr>
+</table>
+<p>If the backend is ever reachable directly — misrouted firewall rule, internal network access, a misconfigured load balancer — there is no throttling protecting login attempts or any other endpoint.</p>
+
+<h3>5.2 No explicit request body size limit</h3>
+<table class="findings">
+  <tr><th>Severity</th><td><span class="sev sev-medium">Medium</span></td></tr>
+  <tr><th>Location</th><td><span class="file-ref">main.ts</span> in both projects</td></tr>
+</table>
+<p>Neither bootstrap configures an explicit body-size cap (e.g. <span class="code">express.json({ limit: '1mb' })</span>); both rely on Nest/Express platform defaults.</p>
+
+<div class="callout mitigated">
+  <strong>Already well-mitigated:</strong>
+  <ul>
+    <li>Oracle pool sizing (<span class="code">min=2, max=10</span>) plus <span class="code">ORACLE_CALL_TIMEOUT_MS</span> / <span class="code">ORACLE_QUEUE_TIMEOUT_MS</span> (both default 25s) bound how long a hung statement can occupy the pool.</li>
+  </ul>
+</div>
+
+<!-- ============ EOP ============ -->
+<h2>6. Elevation of Privilege</h2>
+
+<div class="callout risk">
+  <strong>This is the most concrete, exploitable category found in this review.</strong>
+</div>
+
+<h3>6.1 IDOR — identity taken from query parameters instead of the authenticated token</h3>
+<table class="findings">
+  <tr><th>Severity</th><td><span class="sev sev-high">High</span></td></tr>
+  <tr><th>Location</th><td>
+    <span class="file-ref">HMC_BackEnd/src/modules/profile/interface/profile.controller.ts</span> (<span class="code">GET /profile</span>)<br/>
+    <span class="file-ref">HMC_BackEnd/src/modules/payslip/interface/payslip.controller.ts</span> (<span class="code">GET /payslip/periods</span>, <span class="code">/count</span>, <span class="code">/</span>)<br/>
+    <span class="file-ref">HMC_BackEnd/src/modules/employee/interface/employee.controller.ts</span> (<span class="code">/performance</span>, <span class="code">/employment</span>, <span class="code">/basic</span>)
+  </td></tr>
+</table>
+<p>All of the endpoints above resolve <em>whose</em> data to return from a query-string value (<span class="code">username</span>, <span class="code">person_id</span>, <span class="code">enum</span>) rather than from <span class="code">@CurrentUser()</span> / the verified JWT claims. Verified directly in source, e.g.:</p>
+<pre>@Get()
+generate(@Query() q: PayslipQueryDto) {
+  return this.service.generate(q.person_id, q.lang, q.payperiod, q.assignmentid);
+  // q.person_id is attacker-controlled; never compared to the caller's identity
+}</pre>
+<p>Any authenticated user can view another employee's personal profile, payslip, or performance record simply by changing a query parameter. This directly contradicts the pattern already used correctly on write endpoints:</p>
+<pre>updatePersonal(
+  @Body() body: UpdatePersonalRequestDto,
+  @CurrentUser() user: AuthenticatedUser,   // correct — identity from the token
+  @Lang() lang: LangCode,
+) {
+  return this.service.updatePersonal(body, user, lang);
+}</pre>
+<div class="callout risk">Impact: exposure of PII and financial data (payslips) across employees — the highest-impact finding in this report.</div>
+
+<h3>6.2 Supervisor role check without relationship check</h3>
+<table class="findings">
+  <tr><th>Severity</th><td><span class="sev sev-medium">Medium</span></td></tr>
+  <tr><th>Location</th><td><span class="file-ref">HMC_BackEnd/src/modules/employee/interface/employee.controller.ts</span> — <span class="code">supervisorViews</span></td></tr>
+</table>
+<pre>@Get('supervisor/views')
+@Roles(Role.SUPERVISOR)
+supervisorViews(@Query() q: LovUserQueryDto) {
+  return this.supervisor.views(q.username, q.lang);
+}</pre>
+<p><span class="code">@Roles(Role.SUPERVISOR)</span> confirms the caller <em>is a</em> supervisor, but not that the target <span class="code">username</span> is one of their direct reports — a horizontal privilege-escalation gap within the role.</p>
+
+<h3>6.3 Function-level access guard defined but unused</h3>
+<table class="findings">
+  <tr><th>Severity</th><td><span class="sev sev-low">Low</span></td></tr>
+  <tr><th>Location</th><td><span class="code">FunctionAccessGuard</span> / <span class="code">@RequireFunction</span> decorator, not referenced by any controller</td></tr>
+</table>
+<p>The JWT payload already carries a <span class="code">functions</span> claim and a matching guard exists, but no controller applies it — fine-grained function-level authorization (e.g. "can access LEAVE but not PAYSLIP") is currently unenforced. Not independently exploitable today since role checks provide a coarser backstop, but it's a defense-in-depth gap worth closing alongside 6.1.</p>
+
+<div class="callout mitigated">
+  <strong>Already well-mitigated:</strong>
+  <ul>
+    <li>MPIN hashing uses <span class="code">scryptSync</span> with a random salt and <span class="code">timingSafeEqual</span> comparison (<span class="file-ref">mpin.hasher.ts</span>).</li>
+    <li><span class="code">RolesGuard</span> is applied globally via <span class="code">APP_GUARD</span>, so role checks can't be forgotten on a new controller (<span class="file-ref">core.module.ts</span>).</li>
+    <li>Write endpoints (<span class="code">updatePersonal</span>, dependents CRUD) correctly bind to <span class="code">@CurrentUser()</span> rather than trusting client-supplied identity.</li>
+  </ul>
+</div>
+
+<!-- ============ SUMMARY ============ -->
+<h2 class="page-break">7. Priority Remediation Summary</h2>
+
+<table class="findings summary-table">
+  <tr>
+    <th style="width:26px;">#</th>
+    <th>Finding</th>
+    <th style="width:70px;">Severity</th>
+    <th>Recommended fix</th>
+  </tr>
+  <tr>
+    <td>1</td>
+    <td>IDOR on profile / payslip / employee read endpoints</td>
+    <td><span class="sev sev-high">High</span></td>
+    <td>Derive the target identity from <span class="code">@CurrentUser()</span> (JWT claims), not from query parameters — mirror the pattern already used on write endpoints.</td>
+  </tr>
+  <tr>
+    <td>2</td>
+    <td>Public / unguarded diagnostics endpoints (Oracle logs, SQL, binds)</td>
+    <td><span class="sev sev-high">High</span></td>
+    <td>Remove <span class="code">@Public()</span> from <span class="code">oracle-logs/view</span> and add an explicit role guard to all <span class="code">/diagnostics/*</span> routes, or disable the module outside local/dev.</td>
+  </tr>
+  <tr>
+    <td>3</td>
+    <td>Hardcoded weak JWT secret fallback + missing issuer/audience/algorithm checks</td>
+    <td><span class="sev sev-high">High</span></td>
+    <td>Remove the default secret (fail fast if unset), require a long random value, and add <span class="code">issuer</span>/<span class="code">audience</span>/<span class="code">algorithms: ['HS256']</span> to the passport-jwt strategy on both services.</td>
+  </tr>
+  <tr>
+    <td>4</td>
+    <td>Non-production auth bypass tied to a string comparison on <span class="code">NODE_ENV</span></td>
+    <td><span class="sev sev-medium">Medium–High</span></td>
+    <td>Gate the bypass on an explicit, separately-audited flag rather than "not literally production"; complete the MPIN/OTP store implementation before any shared environment goes live.</td>
+  </tr>
+  <tr>
+    <td>5</td>
+    <td>CORS wildcard + credentials, public Swagger UI</td>
+    <td><span class="sev sev-medium">Medium</span></td>
+    <td>Set explicit allowed origins per environment; place <span class="code">/docs</span> behind auth or an internal-only network path in production.</td>
+  </tr>
+  <tr>
+    <td>6</td>
+    <td>No backend-side rate limiting or body size limit; supervisor relationship not checked</td>
+    <td><span class="sev sev-medium">Medium</span></td>
+    <td>Add a baseline <span class="code">ThrottlerModule</span> and explicit body limit to <span class="code">HMC_BackEnd</span>; validate the supervisor–employee relationship server-side before returning supervisor views.</td>
+  </tr>
+</table>
+
+<div class="callout mitigated">
+  <strong>Controls already in place and confirmed sound</strong> — no action required, and these can be marked as mitigated in the TMT model:
+  <ul>
+    <li>Parameterized Oracle procedure calls (no SQL string concatenation)</li>
+    <li>Global whitelist/forbid-non-whitelisted DTO validation</li>
+    <li>Sensitive-field redaction in Oracle call logs and application logs</li>
+    <li>Correlation-ID based audit trail</li>
+    <li>Client-facing exception filter that strips technical error detail</li>
+    <li><span class="code">helmet()</span> security headers</li>
+    <li>Oracle connection pool sizing and call/queue timeouts</li>
+    <li><span class="code">scrypt</span> + timing-safe MPIN hashing</li>
+    <li>Global <span class="code">RolesGuard</span></li>
+    <li>Correct use of <span class="code">@CurrentUser()</span> on write endpoints</li>
+  </ul>
+</div>
+
+<footer class="page-footer">HMC_BackEnd / HMC_Gateway — Security Issues Report — for internal use ahead of STRIDE modeling in Microsoft TMT</footer>
+
+</body>
+</html>

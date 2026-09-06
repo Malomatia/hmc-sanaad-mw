@@ -6,8 +6,11 @@ import { MotcSmsDbService } from '../database/motc-sms-db.service';
 import { Public } from '../auth/decorators/public.decorator';
 import { SkipEnvelope } from '../http/response.interceptor';
 import { DiagnosticsEnabledGuard } from '../http/diagnostics-enabled.guard';
+import { SkipIntegrity } from '../integrity/skip-integrity.decorator';
 
 @ApiTags('health')
+// Uptime probes are not the mobile app; App Check would fail them all.
+@SkipIntegrity()
 @Controller('health')
 export class HealthController {
   constructor(
@@ -44,13 +47,13 @@ export class HealthController {
 
   /**
    * `enabled` answers "are we configured to use it", NOT "did the pool come
-   * up" — those two were conflated, so a database that was switched off and
+   * up" â€” those two were conflated, so a database that was switched off and
    * one that was broken produced the identical `enabled:false,
    * reachable:false`. `status` states which of the three it is, so an outage
    * can be read straight off /health:
-   *   disabled    — switched off on purpose
-   *   unreachable — configured, but the pool never came up (check the config)
-   *   ok          — connected
+   *   disabled    â€” switched off on purpose
+   *   unreachable â€” configured, but the pool never came up (check the config)
+   *   ok          â€” connected
    */
   private describe(configured: boolean, reachable: boolean) {
     return {
@@ -62,7 +65,7 @@ export class HealthController {
 
   /**
    * Dedicated Oracle connectivity test. Acquires a real connection, runs a
-   * probe query, and reports latency, server version and DB time — or the
+   * probe query, and reports latency, server version and DB time â€” or the
    * exact failure reason (message + ORA code) when the database is unreachable.
    * Always responds 200; inspect `status`/`connected` for the result.
    * 404 with DIAGNOSTICS_ENABLED=false (plain /health stays on).
@@ -79,7 +82,7 @@ export class HealthController {
   }
 
   /**
-   * Dedicated Users DB (SQL Server) connectivity test — the auth-cycle
+   * Dedicated Users DB (SQL Server) connectivity test â€” the auth-cycle
    * database (device/MPIN/OTP + API-1 tables). Same contract as /health/db:
    * always 200, inspect `status`/`connected` and `error` for the reason.
    */
@@ -95,7 +98,7 @@ export class HealthController {
   }
 
   /**
-   * Dedicated MOTC SMS gateway DB connectivity test — the OTP push-table
+   * Dedicated MOTC SMS gateway DB connectivity test â€” the OTP push-table
    * database (MOTC_SMS_PushTable). Same contract as /health/users-db.
    */
   @UseGuards(DiagnosticsEnabledGuard)

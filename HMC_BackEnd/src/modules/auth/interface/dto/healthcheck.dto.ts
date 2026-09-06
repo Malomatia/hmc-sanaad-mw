@@ -1,11 +1,30 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Expose, Transform } from 'class-transformer';
 import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
-/** API-1 — Health Check request (app launch). Note: uses `deviceimei` (not `imeinumber`). */
+/**
+ * API-1 — Health Check request (app launch). Note: uses `deviceimei` (not
+ * `imeinumber`). `deviceid` is the preferred alias here too — see
+ * ClientContextDto for the WAF rationale; either key mirrors to `deviceimei`.
+ */
 export class HealthCheckRequestDto {
-  @ApiProperty({ example: '356789012345678', description: 'Device IMEI.' })
+  @ApiPropertyOptional({
+    example: 'a5b3d106-8d16-482f-bd4e-8c080a5da203',
+    description: 'Device identifier (preferred key — the perimeter WAF flags IMEI-named keys).',
+  })
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
+  deviceid?: string;
+
+  @ApiPropertyOptional({
+    example: '356789012345678',
+    description: 'Device IMEI (legacy key; required unless `deviceid` is sent).',
+  })
+  // @Expose so the Transform runs even when the key is absent — see ClientContextDto.
+  @Expose()
+  @Transform(({ value, obj }) => value ?? (obj as HealthCheckRequestDto).deviceid)
+  @IsString({ message: 'deviceid (or deviceimei) must be a string' })
+  @IsNotEmpty({ message: 'deviceid (or deviceimei) should not be empty' })
   deviceimei!: string;
 
   @ApiPropertyOptional({ example: 'Android' })

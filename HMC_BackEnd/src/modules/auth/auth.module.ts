@@ -22,6 +22,7 @@ import { MssqlMpinStoreRepository } from './infrastructure/adapters/mssql-mpin-s
 import { MssqlDeviceRegistryRepository } from './infrastructure/adapters/mssql-device-registry.repository';
 import { SmsOtpDeliveryAdapter } from './infrastructure/adapters/sms-otp-delivery.adapter';
 import { EmailOtpDeliveryAdapter } from './infrastructure/adapters/email-otp-delivery.adapter';
+import { MotcPushOtpDeliveryAdapter } from './infrastructure/adapters/motc-push-otp-delivery.adapter';
 import { MssqlFunctionAccessRepository } from './infrastructure/adapters/mssql-function-access.repository';
 import { MssqlUserRepository } from './infrastructure/adapters/mssql-user.repository';
 
@@ -40,13 +41,21 @@ import { MssqlUserRepository } from './infrastructure/adapters/mssql-user.reposi
  * Function-access reads the Users DB view named
  * by FUNCTION_ACCESS_VIEW (default HMC_Sanad_AppMaster_VW). The dev bypass
  * inside each application service triggers on AUTH_DISABLED=true only.
+ * is bound by OTP_STORE: `legacy` (default since 2026-09-03) stores/validates
+ * in HMC_RHAP_OTP_tbl and delivers through OTP_DELIVERY_PORT; `motc` makes
+ * MOTC_SMS_PushTable the store AND the delivery (MotcSmsOtpRepository).
+ * OTP_DELIVERY picks the delivery adapter for the legacy store: `motc`
+ * (default) INSERTs into the push table, `http` is the generic SMS adapter.
+ * Function-access reads the Users DB view named by FUNCTION_ACCESS_VIEW
+ * (default HMC_Sanad_AppMaster_VW). The dev bypass inside each application
+ * service triggers on AUTH_DISABLED=true only.
  *
  * The identity port (LDAP_USER_PORT) is bound at runtime by AUTH_DIRECTORY:
- * `entra` → Microsoft Graph (EntraGraphUserRepository), `usersdb` → the legacy
- * Users DB itself (MssqlUserRepository — no corporate directory, mirrors the
- * legacy userValidate device check), else LDAPS (LdapUserRepository, the
- * default/fallback). HttpModule backs the Graph and SMS adapters' outbound
- * calls.
+ * `entra` → Microsoft Graph (EntraGraphUserRepository), `usersdb` → the
+ * live-employee master view on the MOTC_SMS DB (MssqlUserRepository — no
+ * corporate directory; usernames absent from the view are refused), else
+ * LDAPS (LdapUserRepository, the default/fallback). HttpModule backs the
+ * Graph and SMS adapters' outbound calls.
  */
 @Module({
   imports: [HttpModule],
@@ -75,6 +84,17 @@ import { MssqlUserRepository } from './infrastructure/adapters/mssql-user.reposi
     { provide: OTP_DELIVERY_PORT, useClass: SmsOtpDeliveryAdapter },
     // Email fallback channel: OTP over SMTP when the user has no mobile number.
     { provide: OTP_EMAIL_DELIVERY_PORT, useClass: EmailOtpDeliveryAdapter },
+    SmsOtpDeliveryAdapter,
+    MotcPushOtpDeliveryAdapter,
+    {
+      provide: OTP_DELIVERY_PORT,
+      inject: [ConfigService, MotcPushOtpDeliveryAdapter, SmsOtpDeliveryAdapter],
+      useFactory: (
+        config: ConfigService,
+        motc: MotcPushOtpDeliveryAdapter,
+        http: SmsOtpDeliveryAdapter,
+      ) => (config.get<string>('otp.delivery') === 'http' ? http : motc),
+    },
     MssqlOtpRepository,
     MotcSmsOtpRepository,
     {
@@ -84,7 +104,7 @@ import { MssqlUserRepository } from './infrastructure/adapters/mssql-user.reposi
         config: ConfigService,
         motc: MotcSmsOtpRepository,
         legacy: MssqlOtpRepository,
-      ): OtpPort => (config.get<string>('otp.store') === 'legacy' ? legacy : motc),
+      ): OtpPort => (config.get<string>('otp.store') === 'motc' ? motc : legacy),
     },
     { provide: MPIN_STORE_PORT, useClass: MssqlMpinStoreRepository },
     { provide: DEVICE_REGISTRY_PORT, useClass: MssqlDeviceRegistryRepository },

@@ -30,10 +30,10 @@ export class LookupsService {
   }
 
   /** Generic `/lookups/lov?lovname=` — resolves via the LOV_OBJECT registry. */
-  getLov(lovname: string, lang: Lang, username?: string): Promise<LovItem[]> {
+  getLov(lovname: string, lang: Lang, username?: string, personId?: string): Promise<LovItem[]> {
     const object = resolveLovObject(lovname);
     if (!object) throw new BadRequestException(`Unknown LOV name: ${lovname}`);
-    return this.lov.readLov(object, lang, username);
+    return this.lov.readLov(object, lang, username, personId ? { personId } : undefined);
   }
 
   /** Generic `/lookups/master?lookupname=` — Cerner masters are served elsewhere. */

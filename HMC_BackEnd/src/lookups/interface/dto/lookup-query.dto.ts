@@ -13,6 +13,16 @@ export class LovLookupQueryDto extends LangQueryDto {
   @IsOptional()
   @IsString()
   username?: string;
+
+  @ApiPropertyOptional({
+    example: '852709',
+    description:
+      'Oracle PERSON_ID — filters person-scoped LOV views (WHERE PERSON_ID = :person_id); ' +
+      'ignored when the view has no PERSON_ID column.',
+  })
+  @IsOptional()
+  @IsString()
+  person_id?: string;
 }
 
 /** `/lookups/master?lookupname=...&lang=...` */

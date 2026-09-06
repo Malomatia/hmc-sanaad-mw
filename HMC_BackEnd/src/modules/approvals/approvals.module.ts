@@ -15,5 +15,8 @@ import {
     { provide: APPROVALS_REPOSITORY, useClass: ApprovalsOracleRepository },
     { provide: WORKLIST_REPOSITORY, useClass: WorklistOracleRepository },
   ],
+  // WorklistService is shared with the profile module (GET /profile/notifications
+  // reads the same WORKLISTS_V documented query) — the SQL lives here only.
+  exports: [WorklistService],
 })
 export class ApprovalsModule {}

@@ -8,6 +8,34 @@ import { ApprovalDecision, ReassignType } from '../../domain/approvals.repositor
 export class ApprovalDetailQueryDto extends LangQueryDto {}
 
 /**
+ * ops 20 and 23 — routes scoped to the authenticated caller, where a
+ * client-supplied identifier is deliberately ignored (see the controller).
+ *
+ * It still has to be ACCEPTED, though: the global pipe runs with
+ * `forbidNonWhitelisted`, so dropping the property would answer 400 "property
+ * enum should not exist" to every existing client, while keeping
+ * ProfileQueryDto's required `enum` would answer 400 to a client that
+ * correctly stops sending it. Optional here, so both work.
+ */
+export class OwnScopeQueryDto extends LangQueryDto {
+  @ApiPropertyOptional({
+    example: '037400',
+    description: 'Accepted for compatibility and IGNORED — rows follow the authenticated caller.',
+  })
+  @IsOptional()
+  @IsString()
+  enum?: string;
+
+  @ApiPropertyOptional({
+    example: 'AIBRAHIM39',
+    description: 'Accepted for compatibility and IGNORED — rows follow the authenticated caller.',
+  })
+  @IsOptional()
+  @IsString()
+  username?: string;
+}
+
+/**
  * op 70 — action history. ACTION_HISTORY_V is keyed by ITEM_TYPE + ITEM_KEY;
  * the path parameter carries the item key and the type defaults to the HR
  * self-service workflow.

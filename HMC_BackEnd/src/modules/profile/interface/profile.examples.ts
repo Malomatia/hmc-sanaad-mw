@@ -124,6 +124,76 @@ export const PROFILE_GET_EXAMPLE = {
   ],
 };
 
+/**
+ * GET /profile/notifications?username=&lang= — raw WORKLISTS_V rows, ALL
+ * columns relayed as-is (SELECT *, no mapping). Captured live 2026-09-01.
+ */
+export const PROFILE_NOTIFICATIONS_EXAMPLE = [
+  {
+    NOTIFICATION_ID: 123859434,
+    FROM_USER: 'SYSADMIN',
+    TO_USER: '037400    - Amir Ibrahim',
+    SUBJECT:
+      'Return from Leave has been forwarded for approval to 037911    - Rizwan Aboobacker',
+    LANGUAGE: 'US',
+    BEGIN_DATE: '2026-09-01T11:06:32.000Z',
+    DUE_DATE: null,
+    STATUS: 'OPEN',
+    RECIPIENT_ROLE: 'AIBRAHIM39',
+    END_DATE: null,
+    TYPE: 'HR',
+    MORE_INFO_ROLE: null,
+    FROM_ROLE: 'SYSADMIN',
+    MESSAGE_TYPE: 'HRSSA',
+    ITEM_KEY: '18876168',
+    MESSAGE_NAME: 'HR_EMBD_NTFY_APPROVAL_FWD_MSG',
+    MAIL_STATUS: 'MAIL',
+    ORIGINAL_RECIPIENT: 'AIBRAHIM39',
+  },
+];
+
+/**
+ * op 69 — GET /profile/notifications/summary?username=&notificationId=&lang= —
+ * the same raw WORKLISTS_V rows as /profile/notifications, scoped to one
+ * NOTIFICATION_ID (getworklistsummary).
+ */
+export const PROFILE_NOTIFICATION_SUMMARY_EXAMPLE = PROFILE_NOTIFICATIONS_EXAMPLE;
+
+/**
+ * op 70 — GET /profile/notifications/:id/history?itemType=&lang= — raw
+ * ACTION_HISTORY_V rows plus the query's `rownum sequence_num`
+ * (getworklistactionhistory). Row shape from the staging capture of the
+ * approvals history route (same repository read).
+ */
+export const PROFILE_NOTIFICATION_HISTORY_EXAMPLE = [
+  {
+    SEQUENCE_NUM: 1,
+    NOTIFICATION_ID: 0,
+    FROM_ROLE: 'AIBRAHIM39',
+    FROM_USER: '037400    - Amir Ibrahim',
+    TO_ROLE: null,
+    TO_USER: null,
+    ACTION_NAME: 'Submit',
+    ACTION_COMMENT: null,
+    ACTION_DATE: '2026-08-23T08:54:26.000Z',
+    ITEM_TYPE: 'HRSSA',
+    ITEM_KEY: '18875965',
+  },
+  {
+    SEQUENCE_NUM: 2,
+    NOTIFICATION_ID: 123859198,
+    FROM_ROLE: 'MIMRAN2',
+    FROM_USER: '048945    - Mohammed Imran',
+    TO_ROLE: null,
+    TO_USER: null,
+    ACTION_NAME: 'Pending',
+    ACTION_COMMENT: null,
+    ACTION_DATE: null,
+    ITEM_TYPE: 'HRSSA',
+    ITEM_KEY: '18875965',
+  },
+];
+
 /** op 63 — GET /profile/lov/marital-status?lang= */
 export const PROFILE_MARITAL_LOV_EXAMPLE = {
   items: [

@@ -59,8 +59,9 @@ export const envValidationSchema = Joi.object({
   MOTC_SMS_DB_ENCRYPT: Joi.boolean().default(true),
   MOTC_SMS_DB_TRUST_SERVER_CERT: Joi.boolean().default(false),
   MOTC_SMS_DB_DISABLED: Joi.boolean().default(false),
-  MOTC_SMS_SQL_ENABLED: Joi.boolean().default(false),
+  MOTC_SMS_SQL_ENABLED: Joi.boolean().default(true),
   MOTC_SMS_TABLE: Joi.string().default('MOTC_SMS_PushTable'),
+  MOTC_SMS_EMPLOYEE_MASTER_VIEW: Joi.string().default('HMC_SND_LIV_EMP_MASTER_VW'),
   MOTC_SMS_APP_ID: Joi.string().allow('').default(''),
   MOTC_SMS_FROM_ADDRESS: Joi.string().allow('').default(''),
   MOTC_SMS_SUBJECT_ID: Joi.string().allow('').default(''),
@@ -128,8 +129,14 @@ export const envValidationSchema = Joi.object({
   OTP_TTL_SECONDS: Joi.number().default(300),
   OTP_MAX_ATTEMPTS: Joi.number().default(5),
   OTP_RESEND_WINDOW_SECONDS: Joi.number().default(60),
-  // OTP store/delivery: MOTC push table (default) or the legacy Users-DB table.
-  OTP_STORE: Joi.string().valid('motc', 'legacy').default('motc'),
+  // OTP store/validation: legacy Users-DB table (default) or the MOTC push table.
+  OTP_STORE: Joi.string().valid('motc', 'legacy').default('legacy'),
+  // Delivery when OTP_STORE=legacy: MOTC push table (default) or the HTTP SMS adapter.
+  OTP_DELIVERY: Joi.string().valid('motc', 'http').default('motc'),
+  // TESTING: non-empty pins every OTP to this value (e.g. 123456). Empty = random.
+  OTP_STATIC_VALUE: Joi.string().allow('').default(''),
+  // OTP alphabet: digits only (default) or unambiguous uppercase letters + digits.
+  OTP_CHARSET: Joi.string().valid('numeric', 'alphanumeric').default('numeric'),
 
   // Auth framework — LDAP directory (corporate Active Directory)
   LDAP_ENABLED: Joi.boolean().default(false),

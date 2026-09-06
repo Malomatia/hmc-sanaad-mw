@@ -3,7 +3,12 @@ import { OracleQueryError, OracleUnavailableException } from '../database/oracle
 import { MssqlQueryError, MssqlUnavailableException } from '../database/mssql.error';
 import { SchemaColumnNotFoundException } from '../database/schema-column-not-found.error';
 import { ORA_NO_DATA_FOUND } from '@shared/constants/error-codes';
-import { CATEGORY_MESSAGE, CATEGORY_STATUS, ErrorCategory } from './error-category';
+import {
+  CATEGORY_MESSAGE,
+  CATEGORY_STATUS,
+  ErrorCategory,
+  extractBusinessRaiseText,
+} from './error-category';
 
 /** Result of classifying any thrown value into a safe, client-facing shape. */
 export interface ClassifiedError {
@@ -84,15 +89,24 @@ export function classifyException(exception: unknown): ClassifiedError {
 /** Oracle/PL-SQL errors: map a few well-known codes, everything else is a generic DB error. */
 function classifyOracle(ex: OracleQueryError): ClassifiedError {
   const code = ex.oraCode;
-  if (code === ORA_NO_DATA_FOUND) return of(ErrorCategory.NOT_FOUND);
-  // unique/integrity constraint or a custom ORA-20xxx business raise → business rule conflict
-  if (
-    code === 1 ||
-    code === 2290 ||
-    code === 2291 ||
-    code === 2292 ||
-    (code! >= 20000 && code! <= 20999)
-  ) {
+  // ORA-01403 only escapes from a SELECT INTO inside a procedure, i.e. one of
+  // the values we submitted did not resolve — the endpoint and the record are
+  // both fine. Answering 404 "The requested resource was not found" therefore
+  // pointed at the wrong thing: op 17 rejected a bad letter/language pair, an
+  // unknown delivery location and a mobile that is not the employee's ALL as
+  // 404, with nothing to say which field was at fault. It is a rejected input,
+  // so report it as one.
+  if (code === ORA_NO_DATA_FOUND) return of(ErrorCategory.UNRESOLVED_VALUE);
+  // A custom ORA-20xxx business raise carries user-facing validation text
+  // authored in the procedure (RAISE_APPLICATION_ERROR) — surface it when it is
+  // clean, mirroring toSubmitResult's handling of the same range in OUT params.
+  if (code! >= 20000 && code! <= 20999) {
+    return of(ErrorCategory.BUSINESS_RULE_ERROR, {
+      message: extractBusinessRaiseText(ex.message),
+    });
+  }
+  // unique/integrity constraint violations → business rule conflict
+  if (code === 1 || code === 2290 || code === 2291 || code === 2292) {
     return of(ErrorCategory.BUSINESS_RULE_ERROR);
   }
   return of(ErrorCategory.DATABASE_ERROR);

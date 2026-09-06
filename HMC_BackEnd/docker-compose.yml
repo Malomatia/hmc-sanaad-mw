@@ -16,13 +16,24 @@ services:
     #     message shown) if they are absent from both the server env and .env.
     #   * pool/disabled fall back to sensible defaults when unset.
     environment:
+      # ── Application ──
+      # NODE_ENV defaults to production here (matching the runtime image ENV);
+      # .env / host env still win via compose interpolation.
+      NODE_ENV: "${NODE_ENV:-production}"
+      PORT: "${PORT:-443}"
+      API_PREFIX: "${API_PREFIX:-api/v1}"
+      CORS_ORIGINS: "${CORS_ORIGINS:-*}"
+      SANAAD_GATEWAY_BASE_URL: "${SANAAD_GATEWAY_BASE_URL:-https://apigwuat.api.hamad.qa/sanaad}"
       ORACLE_USER: "${ORACLE_USER:?set ORACLE_USER in the jumpstation environment}"
       ORACLE_PASSWORD: "${ORACLE_PASSWORD:?set ORACLE_PASSWORD in the jumpstation environment}"
       ORACLE_DSN: "${ORACLE_DSN:?set ORACLE_DSN in the jumpstation environment}"
       ORACLE_POOL_MIN: "${ORACLE_POOL_MIN:-2}"
       ORACLE_POOL_MAX: "${ORACLE_POOL_MAX:-10}"
       ORACLE_POOL_TIMEOUT: "${ORACLE_POOL_TIMEOUT:-60}"
+      ORACLE_QUEUE_TIMEOUT_MS: "${ORACLE_QUEUE_TIMEOUT_MS:-25000}"
+      ORACLE_CALL_TIMEOUT_MS: "${ORACLE_CALL_TIMEOUT_MS:-25000}"
       ORACLE_DISABLED: "${ORACLE_DISABLED:-false}"
+      ORACLE_SQL_ENABLED: "${ORACLE_SQL_ENABLED:-true}"
       # Thick mode needs the Oracle Client libs baked into the image (see Dockerfile/DOCKER.md).
       ORACLE_THICK_MODE: "${ORACLE_THICK_MODE:-true}"
       ORACLE_CLIENT_LIB_DIR: "${ORACLE_CLIENT_LIB_DIR:-}"
@@ -80,6 +91,48 @@ services:
       USERS_DB_ENCRYPT: "${USERS_DB_ENCRYPT:-true}"
       USERS_DB_TRUST_SERVER_CERT: "${USERS_DB_TRUST_SERVER_CERT:-false}"
       USERS_DB_DISABLED: "${USERS_DB_DISABLED:-false}"
+      USERS_DB_SQL_ENABLED: "${USERS_DB_SQL_ENABLED:-false}"
+      # ── MOTC SMS gateway DB (OTP delivery via MOTC_SMS_PushTable) ──
+      # OTP_STORE=legacy (default since 2026-09-03) stores/validates OTPs in
+      # HMC_RHAP_OTP_tbl; OTP_DELIVERY picks the SMS path (motc = push table).
+      # OTP_STATIC_VALUE pins the OTP for testing — leave empty in production.
+      # MOTC_SMS_DB_PASSWORD must come from the host env, never a committed .env.
+      # Host may be `HOST\INSTANCE`; with a static port the instance part is
+      # informational (single-quoted so YAML keeps the backslash literal).
+      OTP_STORE: "${OTP_STORE:-legacy}"
+      OTP_DELIVERY: "${OTP_DELIVERY:-motc}"
+      OTP_STATIC_VALUE: "${OTP_STATIC_VALUE:-}"
+      OTP_CHARSET: "${OTP_CHARSET:-numeric}"
+      MOTC_SMS_DB_HOST: '${MOTC_SMS_DB_HOST:-HSHCL7VVSQ1\SQL1}'
+      MOTC_SMS_DB_PORT: "${MOTC_SMS_DB_PORT:-9001}"
+      MOTC_SMS_DB_NAME: "${MOTC_SMS_DB_NAME:-MOTC_SMS}"
+      MOTC_SMS_DB_USER: "${MOTC_SMS_DB_USER:-Sanaad_Liv_Usr}"
+      MOTC_SMS_DB_PASSWORD: "${MOTC_SMS_DB_PASSWORD:-}"
+      MOTC_SMS_DB_POOL_MIN: "${MOTC_SMS_DB_POOL_MIN:-2}"
+      MOTC_SMS_DB_POOL_MAX: "${MOTC_SMS_DB_POOL_MAX:-10}"
+      MOTC_SMS_DB_REQUEST_TIMEOUT_MS: "${MOTC_SMS_DB_REQUEST_TIMEOUT_MS:-25000}"
+      MOTC_SMS_DB_CONNECT_TIMEOUT_MS: "${MOTC_SMS_DB_CONNECT_TIMEOUT_MS:-15000}"
+      MOTC_SMS_DB_ENCRYPT: "${MOTC_SMS_DB_ENCRYPT:-true}"
+      MOTC_SMS_DB_TRUST_SERVER_CERT: "${MOTC_SMS_DB_TRUST_SERVER_CERT:-false}"
+      MOTC_SMS_DB_DISABLED: "${MOTC_SMS_DB_DISABLED:-false}"
+      MOTC_SMS_SQL_ENABLED: "${MOTC_SMS_SQL_ENABLED:-true}"
+      # Fixed columns of the documented INSERT (values pending from the client).
+      # Leave BUSINESS_PARAM1/2 empty so they carry username + IMEI (what lets
+      # validation find "the latest OTP for THIS user+device").
+      MOTC_SMS_TABLE: "${MOTC_SMS_TABLE:-MOTC_SMS_PushTable}"
+      MOTC_SMS_EMPLOYEE_MASTER_VIEW: "${MOTC_SMS_EMPLOYEE_MASTER_VIEW:-HMC_SND_LIV_EMP_MASTER_VW}"
+      MOTC_SMS_APP_ID: "${MOTC_SMS_APP_ID:-}"
+      MOTC_SMS_FROM_ADDRESS: "${MOTC_SMS_FROM_ADDRESS:-}"
+      MOTC_SMS_SUBJECT_ID: "${MOTC_SMS_SUBJECT_ID:-}"
+      MOTC_SMS_PRIORITY: "${MOTC_SMS_PRIORITY:-1}"
+      MOTC_SMS_LANGUAGE_ID: "${MOTC_SMS_LANGUAGE_ID:-1}"
+      MOTC_SMS_RECIPIENT_ADDRESS_TYPE: "${MOTC_SMS_RECIPIENT_ADDRESS_TYPE:-1}"
+      MOTC_SMS_PROCESSED_STATE: "${MOTC_SMS_PROCESSED_STATE:-0}"
+      MOTC_SMS_MESSAGE_EXPIRE_MINUTES: "${MOTC_SMS_MESSAGE_EXPIRE_MINUTES:-5}"
+      MOTC_SMS_CUSTOMER_ID: "${MOTC_SMS_CUSTOMER_ID:-}"
+      MOTC_SMS_MASK_MESSAGE_LOG: "${MOTC_SMS_MASK_MESSAGE_LOG:-1}"
+      MOTC_SMS_BUSINESS_PARAM1: "${MOTC_SMS_BUSINESS_PARAM1:-}"
+      MOTC_SMS_BUSINESS_PARAM2: "${MOTC_SMS_BUSINESS_PARAM2:-}"
       # ── SMS gateway (OTP delivery) ──
       # SMS_API_KEY must come from the host env. Empty SMS_API_BASE_URL is a
       # hard 503 on OTP sends in production (log-only in non-production).
@@ -90,6 +143,60 @@ services:
       SMS_MESSAGE_TEMPLATE: "${SMS_MESSAGE_TEMPLATE:-Your Sanaad verification code is {otp}}"
       # ── App-launch health check (API-1) — AppName matched in the Users DB ──
       APP_NAME: "${APP_NAME:-SanaadHealth}"
+      # ── Auth (JWT) — JWT_SECRET must come from the host env in production
+      # and MUST match the gateway's JWT_SECRET (shared validation). ──
+      JWT_SECRET: "${JWT_SECRET:-dev-only-secret-change-me}"
+      JWT_ISSUER: "${JWT_ISSUER:-sanaad}"
+      JWT_AUDIENCE: "${JWT_AUDIENCE:-sanaad-b2e}"
+      JWT_EXPIRES_IN: "${JWT_EXPIRES_IN:-1h}"
+      JWT_REFRESH_EXPIRES_IN: "${JWT_REFRESH_EXPIRES_IN:-7d}"
+      AUTH_DISABLED: "${AUTH_DISABLED:-false}"
+      # TESTING ONLY — never enable in production.
+      AUTH_STATIC_LOGIN: "${AUTH_STATIC_LOGIN:-false}"
+      # Login functionaccesslist source (Users DB, documented AppMaster query).
+      FUNCTION_ACCESS_VIEW: "${FUNCTION_ACCESS_VIEW:-HMC_Sanad_AppMaster_VW}"
+      FUNCTION_ACCESS_APP_ID: "${FUNCTION_ACCESS_APP_ID:-1}"
+      # ── Cerner (appointments ops 41-44) — empty = endpoints answer 503 ──
+      CERNER_BASE_URL: "${CERNER_BASE_URL:-}"
+      CERNER_TIMEOUT_MS: "${CERNER_TIMEOUT_MS:-10000}"
+      # ── Push notifications (FCM) ──
+      # The Firebase Admin service account: a PRIVATE KEY, so it must come from
+      # the host env, never a committed .env or the image. Provide ONE of the
+      # two — inline wins. Inline takes the raw JSON or its base64, since a
+      # private key spans lines and most environments only accept single-line
+      # values:  FIREBASE_SERVICE_ACCOUNT=$(base64 -w0 <key>.json)
+      # Use the *_PATH form only with the volume mount below, pointing at the
+      # path INSIDE the container.
+      # Unset = sending disabled; registrations are still accepted and stored,
+      # so tokens are in place when the key arrives.
+      FIREBASE_SERVICE_ACCOUNT: "${FIREBASE_SERVICE_ACCOUNT:-}"
+      FIREBASE_SERVICE_ACCOUNT_PATH: "${FIREBASE_SERVICE_ACCOUNT_PATH:-}"
+      # ── Device attestation (Apple App Attest + Google Play Integrity) ──
+      # off (default) | observe (verify + log only) | enforce (401 on failure).
+      # ROLL OUT VIA observe: enforcing rejects real devices — no Play
+      # Services, rooted, sideloaded, simulators. Independent of the gateway's
+      # own GATEWAY_INTEGRITY_MODE.
+      APP_INTEGRITY_MODE: "${APP_INTEGRITY_MODE:-off}"
+      # iOS needs NO Apple secret — verification is local against Apple's
+      # public root CA, so these two identifiers are the whole setup.
+      APPLE_TEAM_ID: "${APPLE_TEAM_ID:-}"
+      APPLE_BUNDLE_ID: "${APPLE_BUNDLE_ID:-com.hmc.sanaad}"
+      # Never true in production: it is what separates a real device from an
+      # Xcode debug build.
+      APPLE_APP_ATTEST_ALLOW_DEVELOPMENT: "${APPLE_APP_ATTEST_ALLOW_DEVELOPMENT:-false}"
+      # Android. The credential needs the `playintegrity` scope and the Cloud
+      # project linked in Google Play Console — the Firebase service account
+      # above qualifies once the Play Integrity API is enabled on that project,
+      # so this may simply reuse it.
+      ANDROID_PACKAGE_NAME: "${ANDROID_PACKAGE_NAME:-com.hmc.sanaad}"
+      PLAY_INTEGRITY_SERVICE_ACCOUNT: "${PLAY_INTEGRITY_SERVICE_ACCOUNT:-}"
+      PLAY_INTEGRITY_SERVICE_ACCOUNT_PATH: "${PLAY_INTEGRITY_SERVICE_ACCOUNT_PATH:-}"
+      APP_INTEGRITY_CHALLENGE_TTL_MS: "${APP_INTEGRITY_CHALLENGE_TTL_MS:-300000}"
+      # ── Diagnostics / misc ──
+      DIAGNOSTICS_ENABLED: "${DIAGNOSTICS_ENABLED:-true}"
+      REQUEST_TIMEOUT_MS: "${REQUEST_TIMEOUT_MS:-30000}"
+      LOV_CACHE_TTL_MS: "${LOV_CACHE_TTL_MS:-300000}"
+      LOG_LEVEL: "${LOG_LEVEL:-debug}"
     # Host:container port mapping stays in sync with PORT in .env.
     ports:
       - "${PORT:-443}:${PORT:-443}"
@@ -97,10 +204,14 @@ services:
     # ORACLE_DSN=host.docker.internal:1521/<service>.
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    # Uncomment to mount the LDAPS CA cert file from the host/jumpstation into
-    # the container, then set LDAP_CA_CERT_PATH=/certs/hmc-ad-ca.pem above.
+    # Uncomment to mount files from the host/jumpstation into the container.
+    # Each needs the matching *_PATH variable above set to the CONTAINER path.
+    #
+    # The Firebase key is only needed here if you prefer a file to the inline
+    # form; `FIREBASE_SERVICE_ACCOUNT` as base64 needs no mount at all.
     # volumes:
     #   - ${LDAP_CA_CERT_HOST_PATH:-./certs/hmc-ad-ca.pem}:/certs/hmc-ad-ca.pem:ro
+    #   - ${FIREBASE_SERVICE_ACCOUNT_HOST_PATH:-./secrets/firebase-service-account.json}:/secrets/firebase-service-account.json:ro
     healthcheck:
       test:
         - "CMD"

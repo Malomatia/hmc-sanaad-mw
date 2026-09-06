@@ -33,7 +33,7 @@ export class LookupsController {
   @ApiOperation({ summary: 'Generic LOV read by name', operationId: 'lookups_lov' })
   @ApiOkResponse({ type: LovResponseDto })
   async lov(@Query() q: LovLookupQueryDto): Promise<LovResponseDto> {
-    return { items: await this.service.getLov(q.lovname, q.lang, q.username) };
+    return { items: await this.service.getLov(q.lovname, q.lang, q.username, q.person_id) };
   }
 
   @Get('master')

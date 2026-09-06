@@ -16,6 +16,9 @@ import { AppConfig } from '@core/config/configuration';
  */
 const BODY_LIMIT = '25mb';
 
+/** Express request carrying the untouched body bytes (see `verify` below). */
+type RawBodyRequest = { rawBody?: Buffer };
+
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   const config = app.get(ConfigService);
@@ -23,7 +26,18 @@ async function bootstrap(): Promise<void> {
 
   // Attachments reach the submits as base64 inside the JSON body (~4/3 of the
   // file size, and op 65 accepts ten), which the 100kb default cannot hold.
-  app.useBodyParser('json', { limit: BODY_LIMIT });
+  //
+  // `verify` keeps the RAW bytes alongside the parsed object. Play Integrity
+  // binds a token to a SHA-256 the client computed over exactly what it sent,
+  // so hashing a re-serialized body would compare two different strings and
+  // reject every honest request. It also lets the proxy forward the original
+  // bytes rather than axios's re-encoding of them.
+  app.useBodyParser('json', {
+    limit: BODY_LIMIT,
+    verify: (req: RawBodyRequest, _res: unknown, buf: Buffer) => {
+      if (buf?.length) req.rawBody = Buffer.from(buf);
+    },
+  });
   app.useBodyParser('urlencoded', { limit: BODY_LIMIT, extended: true });
 
   // Security & performance hardening

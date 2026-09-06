@@ -12,9 +12,12 @@ import {
  *  - `p_letter_name` + `p_letter_language` must be a VALID PAIR (line 180):
  *    the lookup is `flex_value_meaning = p_letter_name AND UPPER(description) =
  *    UPPER(p_letter_language)`, and each letter exists in exactly ONE language.
- *    GET /letters/lov returns them together (`name[].code` + its
- *    `description`), e.g. "Bank letter with details with effective date" is
- *    English-only while "Basic Salary Certificate" is Arabic-only.
+ *    Take BOTH from the same LOV row: GET /letters/lov → `name[]`, where
+ *    `used_value` is the name and `description` is its language ("Bank letter
+ *    with details with effective date" is English-only, "Basic Salary
+ *    Certificate" is Arabic-only). Do not pair a name with `language[]`,
+ *    which is just the list of the two languages — that is how a valid-looking
+ *    request ends up rejected.
  *  - `p_country` must be OMITTED for every letter except the Saudi passage one:
  *    the country lookup at line 201 is guarded by
  *    `AND 'Passage to Saudi Arabia' = <letter>`, so sending a country with any

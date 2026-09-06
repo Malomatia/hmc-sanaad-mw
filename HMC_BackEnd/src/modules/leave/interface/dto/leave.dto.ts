@@ -318,15 +318,21 @@ defineOptionalStringFields(LeaveCancelRequestDto, ['p_remarks', ...ATTACHMENT_FI
 
 /** op 56 — POST /leave/return (RET_FRM_LEAV_PR request template). */
 export class LeaveReturnRequestDto {
-  // SHORT composite 'Leave Type|DD-MON-YYYY|DD-MON-YYYY' (type|start|end).
-  // Confirmed from the procedure source: line 60 declares
-  // `lc_segment5 VARCHAR2(60)` and line 196 assigns `lc_segment5 :=
-  // p_leave_details`, so the op 55 LOV's 75-character display string
-  // ('Casual Leave|Leave Start Date : … and Leave End Date : …') overflows it
-  // → ORA-06502. The short composite (36 chars) fits and resolves. Success
-  // additionally requires the caller to have submitted the Policy Awareness
-  // questionnaire.
-  @RequiredString('Casual Leave|19-APR-2026|19-APR-2026')
+  /**
+   * The leave's ABSENCE_ATTENDANCE_ID, as a numeric string.
+   *
+   * Verified live 2026-09-01: '56949953' → successflag S, while every text
+   * form ('Casual Leave|19-APR-2026|19-APR-2026', the op 55 display string,
+   * the bare type) answers ORA-01722 — the procedure runs TO_NUMBER on this
+   * argument. An earlier note here described a short composite; that was the
+   * shape that stopped overflowing VARCHAR2(60), not the shape that resolves.
+   *
+   * Read it from GET /leave/lov/return → `id`. That field was added for this
+   * (`code`/`meaning`/`used_value` still carry the display string, so nothing
+   * changed for clients that do not need the id). Success additionally
+   * requires the caller to have submitted the Policy Awareness questionnaire.
+   */
+  @RequiredString('56949953')
   p_leave_details!: string;
 
   /** Return date — `yyyy-MM-dd` or `dd-Mon-yyyy` (DATE formals bind natively). */

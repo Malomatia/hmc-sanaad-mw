@@ -194,10 +194,7 @@ export class OnboardingService {
    * SMS goes out via the MOTC push table. The returned requestid pairs with
    * /auth/otp/validate.
    */
-  async sendOtp(
-    dto: SendOtpRequestDto,
-    lang: Lang = DEFAULT_LANG,
-  ): Promise<SendOtpResponseDto> {
+  async sendOtp(dto: SendOtpRequestDto, lang: Lang = DEFAULT_LANG): Promise<SendOtpResponseDto> {
     const ctx = {
       username: dto.username,
       deviceImei: dto.imeinumber,

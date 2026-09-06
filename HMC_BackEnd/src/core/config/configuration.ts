@@ -667,8 +667,7 @@ export default (): RootConfig => ({
     tlsRejectUnauthorized: toBool(process.env.SMTP_TLS_REJECT_UNAUTHORIZED ?? 'true'),
     from: process.env.EMAIL_FROM ?? '',
     otpSubject: process.env.EMAIL_OTP_SUBJECT ?? 'Sanaad verification code',
-    messageTemplate:
-      process.env.EMAIL_MESSAGE_TEMPLATE ?? 'OTP to register in Sanaad App is {otp}',
+    messageTemplate: process.env.EMAIL_MESSAGE_TEMPLATE ?? 'OTP to register in Sanaad App is {otp}',
     messageTemplateAr:
       process.env.EMAIL_MESSAGE_TEMPLATE_AR ?? 'رمز التحقق لتسجيل الدخول في تطبيق سند هو {otp}',
     timeoutMs: Number(process.env.SMTP_TIMEOUT_MS ?? 25000),

@@ -73,10 +73,7 @@ export class AuthController {
     operationId: 'auth_sendOtp',
   })
   @ApiOkResponse({ type: SendOtpResponseDto })
-  sendOtp(
-    @Body() dto: SendOtpRequestDto,
-    @Lang() lang: LangCode,
-  ): Promise<SendOtpResponseDto> {
+  sendOtp(@Body() dto: SendOtpRequestDto, @Lang() lang: LangCode): Promise<SendOtpResponseDto> {
     return this.onboarding.sendOtp(dto, lang);
   }
 

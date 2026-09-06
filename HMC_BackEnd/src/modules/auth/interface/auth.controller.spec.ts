@@ -12,7 +12,9 @@ describe('AuthController OTP language', () => {
     validateUser: jest.fn().mockResolvedValue({ status: 'success' }),
     sendOtp: jest.fn().mockResolvedValue({ status: 'success' }),
   };
-  const mpin = { forgotInitiate: jest.fn().mockResolvedValue({ status: 'initiated successfully' }) };
+  const mpin = {
+    forgotInitiate: jest.fn().mockResolvedValue({ status: 'initiated successfully' }),
+  };
   const body = { username: 'hmc1', imeinumber: 'imei-1', platform: 'android' };
 
   beforeAll(async () => {

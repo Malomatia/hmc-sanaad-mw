@@ -10,6 +10,7 @@ const IDENTITY = {
   employeeNumber: '011759',
   employeeName: 'Mouna Bent Abdelkerim Khoja',
   department: 'Cardiothoracic Surgery.Heart Hospital',
+  facility: 'Heart Hospital',
   jobName: 'Cardiac Technologist.HMC',
   email: 'MKHOJA@hamad.qa',
   phoneNumber: '55372169',
@@ -18,7 +19,14 @@ const IDENTITY = {
   roles: ['employee'],
 };
 
-const DTO = { username: 'MKHOJA', imeinumber: 'imei-1', platform: 'Android', version: '1.0.0' };
+const DTO = {
+  username: 'MKHOJA',
+  imeinumber: 'imei-1',
+  platform: 'Android',
+  version: '1.0.0',
+  devicemodel: 'SM-G965F',
+  osversion: '13',
+};
 
 function makeService(overrides?: { identity?: Partial<typeof IDENTITY> }) {
   const ldap = {
@@ -35,6 +43,7 @@ function makeService(overrides?: { identity?: Partial<typeof IDENTITY> }) {
     bind: jest.fn().mockResolvedValue(undefined),
     isBound: jest.fn(),
     find: jest.fn(),
+    touch: jest.fn().mockResolvedValue(undefined),
   } as unknown as jest.Mocked<DeviceRegistryPort>;
   const audit = { lifecycle: jest.fn() } as unknown as jest.Mocked<AuditService>;
   const config = { get: jest.fn().mockReturnValue(false) } as unknown as ConfigService;
@@ -96,6 +105,9 @@ describe('OnboardingService.validateUser (reworked initiate, 2026-09-03)', () =>
       username: 'MKHOJA',
       imei: 'imei-1',
       platform: 'Android',
+      deviceModel: 'SM-G965F',
+      osVersion: '13',
+      department: 'Heart Hospital',
     });
     expect(otp.send).toHaveBeenCalledWith(
       expect.objectContaining({

@@ -1,7 +1,14 @@
 export interface DeviceBindingCommand {
   username: string;
   imei: string;
+  /** Request `platform` — stored as MobileType (e.g. android / iPhone). */
   platform?: string;
+  /** Request `devicemodel` — stored as DeviceModel. */
+  deviceModel?: string;
+  /** Request `osversion` — stored as OSVersion. */
+  osVersion?: string;
+  /** FACILITY_NAME from the employee view — stored as Department. */
+  department?: string;
 }
 
 /** Registration row for a user↔device pair (HMC_Sanad_DeviceRegn_tbl). */
@@ -24,6 +31,8 @@ export interface DeviceRegistryPort {
   isBound(username: string, imei: string): Promise<boolean>;
   /** The registration row for this exact user+device, or undefined. */
   find(username: string, imei: string): Promise<DeviceRegistration | undefined>;
+  /** Stamp LastActive = now (called after a successful login). */
+  touch(username: string, imei: string): Promise<void>;
 }
 
 export const DEVICE_REGISTRY_PORT = Symbol('DEVICE_REGISTRY_PORT');

@@ -108,6 +108,7 @@ export class MssqlUserRepository implements LdapUserPort {
       employeeNumber: pick(row, MssqlUserRepository.EMPNO_COLUMNS),
       employeeName: pick(row, MssqlUserRepository.NAME_COLUMNS) ?? query.username,
       department: pick(row, ['department_desc', 'department']),
+      facility: pick(row, ['facility_name', 'facility']),
       jobName: pick(row, ['job_name', 'jobname']),
       isEmployee: true,
       isNewUser: true,

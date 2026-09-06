@@ -8,6 +8,7 @@ import { AuthService } from './auth.service';
 import { MpinStorePort } from '../domain/ports/mpin-store.port';
 import { LdapUserPort } from '../domain/ports/ldap-user.port';
 import { FunctionAccessPort } from '../domain/ports/function-access.port';
+import { DeviceRegistryPort } from '../domain/ports/device-registry.port';
 
 const AUTH_CFG = {
   jwtSecret: 'test_secret_test_secret_test_secret_12',
@@ -39,6 +40,12 @@ function makeService(overrides: Partial<typeof AUTH_CFG> = {}) {
     }),
   } as unknown as LdapUserPort;
   const functionAccess = { list: jest.fn().mockResolvedValue([]) } as unknown as FunctionAccessPort;
+  const devices = {
+    bind: jest.fn(),
+    isBound: jest.fn(),
+    find: jest.fn(),
+    touch: jest.fn().mockResolvedValue(undefined),
+  } as unknown as DeviceRegistryPort;
   const audit = { lifecycle: jest.fn() } as unknown as AuditService;
   const revocation = new TokenRevocationService();
   const config = {
@@ -47,8 +54,17 @@ function makeService(overrides: Partial<typeof AUTH_CFG> = {}) {
     ),
     getOrThrow: jest.fn(() => authCfg),
   } as unknown as ConfigService;
-  const service = new AuthService(jwt, mpinStore, ldap, functionAccess, audit, revocation, config);
-  return { service, jwt, revocation };
+  const service = new AuthService(
+    jwt,
+    mpinStore,
+    ldap,
+    functionAccess,
+    devices,
+    audit,
+    revocation,
+    config,
+  );
+  return { service, jwt, revocation, devices };
 }
 
 const LOGIN = {

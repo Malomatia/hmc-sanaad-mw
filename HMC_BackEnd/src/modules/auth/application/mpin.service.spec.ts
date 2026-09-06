@@ -31,6 +31,7 @@ function makeService({ authDisabled = false } = {}) {
     bind: jest.fn().mockResolvedValue(undefined),
     isBound: jest.fn().mockResolvedValue(true),
     find: jest.fn().mockResolvedValue(undefined),
+    touch: jest.fn().mockResolvedValue(undefined),
   };
   const ldap: jest.Mocked<LdapUserPort> = {
     validate: jest.fn().mockResolvedValue(IDENTITY),

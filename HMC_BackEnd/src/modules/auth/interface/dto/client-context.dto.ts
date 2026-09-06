@@ -44,6 +44,22 @@ export class ClientContextDto {
   @IsString()
   platform?: string;
 
+  @ApiPropertyOptional({
+    example: 'SM-G965F',
+    description: 'Handset model — stored on the device registration (DeviceModel).',
+  })
+  @IsOptional()
+  @IsString()
+  devicemodel?: string;
+
+  @ApiPropertyOptional({
+    example: '13',
+    description: 'OS version — stored on the device registration (OSVersion).',
+  })
+  @IsOptional()
+  @IsString()
+  osversion?: string;
+
   @ApiPropertyOptional({ example: 'Sanaad' })
   @IsOptional()
   @IsString()

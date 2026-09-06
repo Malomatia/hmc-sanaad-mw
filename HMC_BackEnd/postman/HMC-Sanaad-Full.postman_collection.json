@@ -207,6 +207,11 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "lang",
+                "value": "en",
+                "description": "Response message language: en | ar (default en)."
               }
             ],
             "url": {
@@ -221,18 +226,18 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"username\": \"hmc12345\",\n  \"imeinumber\": \"356789012345678\",\n  \"platform\": \"Android\",\n  \"appname\": \"Sanaad\",\n  \"version\": \"1.0.0\",\n  \"sysdate\": \"2026-01-02T14:20:00\"\n}",
+              "raw": "{\n  \"username\": \"hmc12345\",\n  \"imeinumber\": \"356789012345678\",\n  \"platform\": \"Android\",\n  \"devicemodel\": \"SM-G965F\",\n  \"osversion\": \"13\",\n  \"appname\": \"Sanaad\",\n  \"version\": \"1.0.0\",\n  \"sysdate\": \"2026-01-02T14:20:00\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
                 }
               }
             },
-            "description": "**Purpose:** API-2 — User validate (LDAP + send OTP). PUBLIC.\n\n**Staging note:** dev bypass is active — identity is synthesized and no real OTP is sent; `requestid` is a generated UUID.\n\n**Verified against staging — examples below are real captured responses unless labeled \"Expected\".**"
+            "description": "**Purpose:** API-2 — User validate + send OTP. PUBLIC.\n\n**Reworked flow (client changes 2026-09-03..06):**\n1. Username checked against `HMC_SND_LIV_EMP_MASTER_VW` (MOTC_SMS DB, `UserName` column). Unknown → `status=error`, `Invalid Username.` (Arabic when header `lang: ar`).\n2. Device registration read from `HMC_Sanad_DeviceRegn_tbl` (LoginID+IMEINumber). Registered WITH an MPIN → full identity from both tables, `newuser=No`, `vflag=Exist`, NO OTP.\n3. Otherwise a missing registration row is created (MPIN NULL, Status `Inactive`, MobileType/DeviceModel/OSVersion from `platform`/`devicemodel`/`osversion`, Department = the view's FACILITY_NAME, AddedBy=NODEJS), then the OTP is UPSERTED into `HMC_RHAP_OTP_tbl` (one row per user+device): fresh code → `vflag=New`; a still-valid unused one is kept → `vflag=Pending` (same `requestid`, no new SMS).\n\n**Response keys:** `vflag` New|Pending|Exist · `otpmode` SMS (MOTC push table) | Email (SMTP fallback when the view has no MOBILE_NUMBER) · `elapsedtimeinmins` = minutes the OTP is still valid (full TTL for New, remaining for Pending) · `employeephonenumber`/`email` are MASKED (`5537XXXX`, `MK****@hamad.qa`).\n\n**Testing:** `OTP_STATIC_VALUE` (e.g. 123456) pins every generated OTP; `requestid` = the OTP row's SeqNo — echo it on `/auth/otp/validate`."
           },
           "response": [
             {
-              "name": "Success (200)",
+              "name": "New user — OTP sent (vflag=New)",
               "originalRequest": {
                 "method": "POST",
                 "header": [],
@@ -248,7 +253,7 @@
                 },
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"username\": \"hmc12345\",\n  \"imeinumber\": \"356789012345678\",\n  \"platform\": \"Android\",\n  \"appname\": \"Sanaad\",\n  \"version\": \"1.0.0\",\n  \"sysdate\": \"2026-01-02T14:20:00\"\n}",
+                  "raw": "{\n  \"username\": \"hmc12345\",\n  \"imeinumber\": \"356789012345678\",\n  \"platform\": \"Android\",\n  \"devicemodel\": \"SM-G965F\",\n  \"osversion\": \"13\",\n  \"appname\": \"Sanaad\",\n  \"version\": \"1.0.0\",\n  \"sysdate\": \"2026-01-02T14:20:00\"\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -266,7 +271,123 @@
                 }
               ],
               "cookie": [],
-              "body": "{\n  \"employeeusername\": \"employee nt id\",\n  \"employeename\": \"Name of employee\",\n  \"newuser\": \"Yes\",\n  \"employeeflag\": \"Yes\",\n  \"employeephonenumber\": \"7786XXXX\",\n  \"requestid\": \"35233177903C44859C82269212F48088\",\n  \"status\": \"error\",\n  \"message\": \"Invalid employee id received.\"\n}"
+              "body": "{\n  \"status\": \"success\",\n  \"message\": \"OTP sent successfully\",\n  \"employeeusername\": \"MKHOJA\",\n  \"employeename\": \"Mouna Bent Abdelkerim Khoja\",\n  \"employeenumber\": \"011759\",\n  \"jobname\": \"Cardiac and Cardiovascular Surgery Technologist.H\",\n  \"email\": \"MK****@hamad.qa\",\n  \"department\": \"Cardiothoracic Surgery.Heart Hospital\",\n  \"employeeflag\": \"Yes\",\n  \"employeephonenumber\": \"5537XXXX\",\n  \"devicestatus\": \"Inactive\",\n  \"newuser\": \"Yes\",\n  \"vflag\": \"New\",\n  \"otpmode\": \"SMS\",\n  \"elapsedtimeinmins\": 5,\n  \"requestid\": \"335\"\n}"
+            },
+            {
+              "name": "Existing user — no OTP (vflag=Exist)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/auth/initiate",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "auth",
+                    "initiate"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"username\": \"hmc12345\",\n  \"imeinumber\": \"356789012345678\",\n  \"platform\": \"Android\",\n  \"devicemodel\": \"SM-G965F\",\n  \"osversion\": \"13\",\n  \"appname\": \"Sanaad\",\n  \"version\": \"1.0.0\",\n  \"sysdate\": \"2026-01-02T14:20:00\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"status\": \"success\",\n  \"employeeusername\": \"MKHOJA\",\n  \"employeename\": \"Mouna Bent Abdelkerim Khoja\",\n  \"employeenumber\": \"011759\",\n  \"jobname\": \"Cardiac and Cardiovascular Surgery Technologist.H\",\n  \"email\": \"MK****@hamad.qa\",\n  \"department\": \"Cardiothoracic Surgery.Heart Hospital\",\n  \"employeeflag\": \"Yes\",\n  \"employeephonenumber\": \"5537XXXX\",\n  \"devicestatus\": \"Active\",\n  \"newuser\": \"No\",\n  \"vflag\": \"Exist\"\n}"
+            },
+            {
+              "name": "OTP still valid — kept (vflag=Pending)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/auth/initiate",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "auth",
+                    "initiate"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"username\": \"hmc12345\",\n  \"imeinumber\": \"356789012345678\",\n  \"platform\": \"Android\",\n  \"devicemodel\": \"SM-G965F\",\n  \"osversion\": \"13\",\n  \"appname\": \"Sanaad\",\n  \"version\": \"1.0.0\",\n  \"sysdate\": \"2026-01-02T14:20:00\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"status\": \"success\",\n  \"message\": \"An OTP was already sent and is still valid\",\n  \"employeeusername\": \"MKHOJA\",\n  \"employeename\": \"Mouna Bent Abdelkerim Khoja\",\n  \"employeenumber\": \"011759\",\n  \"jobname\": \"Cardiac and Cardiovascular Surgery Technologist.H\",\n  \"email\": \"MK****@hamad.qa\",\n  \"department\": \"Cardiothoracic Surgery.Heart Hospital\",\n  \"employeeflag\": \"Yes\",\n  \"employeephonenumber\": \"5537XXXX\",\n  \"devicestatus\": \"Inactive\",\n  \"newuser\": \"Yes\",\n  \"vflag\": \"Pending\",\n  \"otpmode\": \"SMS\",\n  \"elapsedtimeinmins\": 4,\n  \"requestid\": \"335\"\n}"
+            },
+            {
+              "name": "Unknown username (200, status=error)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "lang",
+                    "value": "en"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/auth/initiate",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "auth",
+                    "initiate"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"username\": \"nosuchuser\",\n  \"imeinumber\": \"356789012345678\",\n  \"platform\": \"Android\",\n  \"version\": \"1.0.0\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"status\": \"error\",\n  \"message\": \"Invalid Username.\"\n}"
             },
             {
               "name": "Validation Error (400) — username/imeinumber required",
@@ -350,14 +471,14 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"username\": \"AIBRAHIM39\",\n  \"imeinumber\": \"356789012345678\",\n  \"phonenumber\": \"55123456\",\n  \"platform\": \"Android\",\n  \"version\": \"1.0.0\"\n}",
+              "raw": "{\n  \"username\": \"AIBRAHIM39\",\n  \"imeinumber\": \"356789012345678\",\n  \"phonenumber\": \"55123456\",\n  \"email\": \"aibrahim39@hamad.qa\",\n  \"platform\": \"Android\",\n  \"version\": \"1.0.0\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
                 }
               }
             },
-            "description": "**Purpose:** Standalone OTP send (added 2026-08-31). Generates the OTP and INSERTs it into `MOTC_SMS_PushTable` — the government SMS gateway fires the SMS from their side. `requestid` = the push-table MessageID; echo it (with the same username + imeinumber) on `POST /auth/otp/validate`.\n\nSame policy as the OTP step inside /auth/initiate: resend window, TTL, max attempts (`OTP_*` env). Throttled at the gateway (SMS-spam surface). With `AUTH_DISABLED=true` (dev bypass) no row is inserted and requestid is a synthesized UUID."
+            "description": "**Purpose:** Standalone OTP send (added 2026-08-31, reworked 2026-09-05). Same machinery as /auth/initiate's OTP step: the code is UPSERTED into `HMC_RHAP_OTP_tbl` (one row per username+imeinumber; a still-valid unused OTP is kept — PENDING) and delivered as a row in `MOTC_SMS_PushTable` (the gateway fires the SMS). `requestid` = the OTP row's SeqNo; echo it (with the same username + imeinumber) on `POST /auth/otp/validate`.\n\n`phonenumber` is now OPTIONAL: omit it and provide `email` to deliver the OTP over SMTP instead (fallback channel); neither → 409. TTL/max attempts from `OTP_*` env; `OTP_STATIC_VALUE` pins the code for testing. With `AUTH_DISABLED=true` (dev bypass) nothing is stored and requestid is a synthesized UUID."
           },
           "response": []
         },
@@ -512,7 +633,7 @@
                 }
               }
             },
-            "description": "**Purpose:** API-4 — Set MPIN (first-time). PUBLIC. Staging (dev bypass): not persisted.\n\n**Verified against staging — examples below are real captured responses unless labeled \"Expected\".**"
+            "description": "**Purpose:** API-4 — Set MPIN (first-time). PUBLIC. Staging (dev bypass): not persisted.\n\n**Since 2026-09-03:** the update also ACTIVATES the device registration — `UPDATE HMC_Sanad_DeviceRegn_tbl SET DateFirstRegistered = GETDATE(), MPIN = @mpin, Status = 'Active' WHERE LoginID + IMEINumber` (initiate created the row as `Inactive` with MPIN NULL).\n\n**Verified against staging — examples below are real captured responses unless labeled \"Expected\".**"
           },
           "response": [
             {
@@ -616,7 +737,7 @@
                 }
               }
             },
-            "description": "**Purpose:** API-5 — Login (MPIN → JWT + functionaccesslist). PUBLIC.\n\n**Staging note:** dev bypass — MPIN not verified; a real signed JWT is returned (save it into {{token}}).\n\n**Verified against staging — examples below are real captured responses unless labeled \"Expected\".**"
+            "description": "**Purpose:** API-5 — Login (MPIN → JWT + functionaccesslist). PUBLIC.\n\n**Since 2026-09-06:** a successful (non-bypass) login also stamps the device registration's `LastActive = GETDATE()` (best-effort — never fails the login).\n\n**Staging note:** dev bypass — MPIN not verified; a real signed JWT is returned (save it into {{token}}).\n\n**Verified against staging — examples below are real captured responses unless labeled \"Expected\".**"
           },
           "response": [
             {

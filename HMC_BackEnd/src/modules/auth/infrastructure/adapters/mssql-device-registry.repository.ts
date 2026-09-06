@@ -23,13 +23,25 @@ export class MssqlDeviceRegistryRepository implements DeviceRegistryPort {
   async bind(cmd: DeviceBindingCommand): Promise<void> {
     // Idempotent registration: create the row only when this user↔device pair
     // is not registered yet (the MPIN is written separately by the MPIN store).
+    // Device context (MobileType/DeviceModel/OSVersion) comes from the request,
+    // Department is the employee view's FACILITY_NAME, AddedBy marks the writer.
     await this.db.execute(
       `IF NOT EXISTS (
          SELECT 1 FROM HMC_Sanad_DeviceRegn_tbl WHERE LoginID = @username AND IMEINumber = @imei
        )
-       INSERT INTO HMC_Sanad_DeviceRegn_tbl (LoginID, IMEINumber, DateFirstRegistered, AddedDt, Status)
-       VALUES (@username, @imei, GETDATE(), GETDATE(), 'Inactive')`,
-      { username: cmd.username, imei: cmd.imei },
+       INSERT INTO HMC_Sanad_DeviceRegn_tbl
+         (LoginID, IMEINumber, MobileType, DeviceModel, OSVersion,
+          DateFirstRegistered, AddedDt, AddedBy, Status, Department)
+       VALUES (@username, @imei, @mobileType, @deviceModel, @osVersion,
+               GETDATE(), GETDATE(), 'NODEJS', 'Inactive', @department)`,
+      {
+        username: cmd.username,
+        imei: cmd.imei,
+        mobileType: cmd.platform ?? null,
+        deviceModel: cmd.deviceModel ?? null,
+        osVersion: cmd.osVersion ?? null,
+        department: cmd.department ?? null,
+      },
     );
   }
 
@@ -41,6 +53,15 @@ export class MssqlDeviceRegistryRepository implements DeviceRegistryPort {
       { username, imei },
     );
     return rows.length > 0;
+  }
+
+  async touch(username: string, imei: string): Promise<void> {
+    await this.db.execute(
+      `UPDATE HMC_Sanad_DeviceRegn_tbl
+          SET LastActive = GETDATE()
+        WHERE LoginID = @username AND IMEINumber = @imei`,
+      { username, imei },
+    );
   }
 
   async find(username: string, imei: string): Promise<DeviceRegistration | undefined> {

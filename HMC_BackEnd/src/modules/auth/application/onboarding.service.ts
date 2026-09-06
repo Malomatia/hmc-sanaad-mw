@@ -117,11 +117,16 @@ export class OnboardingService {
 
     // Step 3b — first time on this device: create the registration with no
     // MPIN and Status 'Inactive' (activated when the MPIN is set, API-4).
+    // Device context comes from the request; Department is the employee
+    // view's FACILITY_NAME.
     if (!this.devBypass && !device) {
       await this.devices.bind({
         username: dto.username,
         imei: dto.imeinumber,
         platform: dto.platform,
+        deviceModel: dto.devicemodel,
+        osVersion: dto.osversion,
+        department: identity.facility,
       });
     }
 

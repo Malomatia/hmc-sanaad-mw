@@ -10,6 +10,7 @@ import { AuthLifecycleEvent } from '@core/audit/audit-event';
 import { MPIN_STORE_PORT, MpinStorePort } from '../domain/ports/mpin-store.port';
 import { LDAP_USER_PORT, LdapUserPort } from '../domain/ports/ldap-user.port';
 import { FUNCTION_ACCESS_PORT, FunctionAccessPort } from '../domain/ports/function-access.port';
+import { DEVICE_REGISTRY_PORT, DeviceRegistryPort } from '../domain/ports/device-registry.port';
 import { EmployeeIdentity, FunctionAccess, FunctionStatus } from '../domain/auth-identity';
 import {
   LoginRequestDto,
@@ -51,6 +52,7 @@ export class AuthService {
     @Inject(MPIN_STORE_PORT) private readonly mpinStore: MpinStorePort,
     @Inject(LDAP_USER_PORT) private readonly ldap: LdapUserPort,
     @Inject(FUNCTION_ACCESS_PORT) private readonly functionAccess: FunctionAccessPort,
+    @Inject(DEVICE_REGISTRY_PORT) private readonly devices: DeviceRegistryPort,
     private readonly audit: AuditService,
     private readonly revocation: TokenRevocationService,
     config: ConfigService,
@@ -99,6 +101,12 @@ export class AuthService {
         platform: dto.platform,
       });
       functionList = await this.functionAccess.list(identity.employeeNumber ?? dto.username);
+
+      // Stamp the device registration's LastActive. A side effect of an
+      // already-successful login: best-effort, never fails the request.
+      this.devices.touch(dto.username, dto.imeinumber).catch((err: Error) => {
+        this.logger.warn(`Could not update LastActive for "${dto.username}": ${err.message}`);
+      });
     }
 
     const roles = (identity.roles as Role[] | undefined) ?? [Role.EMPLOYEE];

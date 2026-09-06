@@ -29,4 +29,10 @@ export class DeviceRegistryStubRepository implements DeviceRegistryPort {
       'Device registry is not wired yet — provide the device-binding store spec. [TODO(spec)]',
     );
   }
+
+  touch(_username: string, _imei: string): Promise<void> {
+    throw new NotImplementedException(
+      'Device registry is not wired yet — provide the device-binding store spec. [TODO(spec)]',
+    );
+  }
 }

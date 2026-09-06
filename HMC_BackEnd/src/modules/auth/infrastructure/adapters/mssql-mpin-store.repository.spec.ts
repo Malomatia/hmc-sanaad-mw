@@ -84,16 +84,58 @@ describe('MssqlDeviceRegistryRepository', () => {
     );
   });
 
-  it('bind() registers the pair only when it does not exist yet, as Inactive', async () => {
+  it('bind() registers the pair only when it does not exist yet, as Inactive with device context', async () => {
+    const db = makeDb();
+    db.execute.mockResolvedValue({ rowsAffected: 1, rows: [] });
+
+    await new MssqlDeviceRegistryRepository(db).bind({
+      username: 'hmc1',
+      imei: 'imei-1',
+      platform: 'android',
+      deviceModel: 'SM-G965F',
+      osVersion: '13',
+      department: 'Heart Hospital',
+    });
+
+    expect(db.execute).toHaveBeenCalledWith(
+      expect.stringMatching(
+        /IF NOT EXISTS[\s\S]*INSERT INTO HMC_Sanad_DeviceRegn_tbl[\s\S]*'NODEJS', 'Inactive'/,
+      ),
+      {
+        username: 'hmc1',
+        imei: 'imei-1',
+        mobileType: 'android',
+        deviceModel: 'SM-G965F',
+        osVersion: '13',
+        department: 'Heart Hospital',
+      },
+    );
+  });
+
+  it('bind() stores NULL device context when the request omits it', async () => {
     const db = makeDb();
     db.execute.mockResolvedValue({ rowsAffected: 1, rows: [] });
 
     await new MssqlDeviceRegistryRepository(db).bind({ username: 'hmc1', imei: 'imei-1' });
 
+    expect(db.execute).toHaveBeenCalledWith(expect.any(String), {
+      username: 'hmc1',
+      imei: 'imei-1',
+      mobileType: null,
+      deviceModel: null,
+      osVersion: null,
+      department: null,
+    });
+  });
+
+  it('touch() stamps LastActive for the user+device pair', async () => {
+    const db = makeDb();
+    db.execute.mockResolvedValue({ rowsAffected: 1, rows: [] });
+
+    await new MssqlDeviceRegistryRepository(db).touch('hmc1', 'imei-1');
+
     expect(db.execute).toHaveBeenCalledWith(
-      expect.stringMatching(
-        /IF NOT EXISTS[\s\S]*INSERT INTO HMC_Sanad_DeviceRegn_tbl[\s\S]*AddedDt[\s\S]*'Inactive'/,
-      ),
+      expect.stringMatching(/UPDATE HMC_Sanad_DeviceRegn_tbl[\s\S]*SET LastActive = GETDATE\(\)/),
       { username: 'hmc1', imei: 'imei-1' },
     );
   });

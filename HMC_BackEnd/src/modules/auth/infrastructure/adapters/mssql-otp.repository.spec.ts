@@ -36,16 +36,23 @@ const SEND = {
 };
 
 describe('MssqlOtpRepository', () => {
-  describe('send', () => {
-    it('stores a new OTP row and delivers it by SMS', async () => {
+  describe('send (upsert, 2026-09-05)', () => {
+    it('INSERTs the first OTP row for a user+device and delivers it by SMS', async () => {
       const { repo, db, delivery } = makeRepo();
       db.query.mockResolvedValue([]); // no previous OTP
-      db.execute.mockResolvedValue({ rowsAffected: 1, rows: [{ SeqNo: 42 }] });
+      db.execute
+        .mockResolvedValueOnce({ rowsAffected: 0, rows: [] }) // UPDATE hits nothing
+        .mockResolvedValueOnce({ rowsAffected: 1, rows: [{ SeqNo: 42 }] }); // INSERT
 
       const result = await repo.send(SEND);
 
-      expect(result.requestId).toBe('42');
-      expect(db.execute).toHaveBeenCalledWith(
+      expect(result).toEqual({
+        requestId: '42',
+        status: 'NEW',
+        mode: 'SMS',
+        validForSeconds: 300,
+      });
+      expect(db.execute).toHaveBeenLastCalledWith(
         expect.stringContaining('INSERT INTO HMC_RHAP_OTP_tbl'),
         expect.objectContaining({
           username: 'hmc1',
@@ -56,58 +63,123 @@ describe('MssqlOtpRepository', () => {
           appVersion: '1.0.0',
           appDatetime: expect.any(Date),
           requestType: 'USER_REG',
+          sendMode: 'SMS',
         }),
       );
-      const otp = (db.execute.mock.calls[0][1] as { otp: string }).otp;
+      const otp = (db.execute.mock.calls[1][1] as { otp: string }).otp;
       expect(delivery.sendOtpSms).toHaveBeenCalledWith('77861234', otp, 'ONBOARDING');
     });
 
-    it('rejects a resend inside the resend window with 429', async () => {
-      const { repo, db, delivery } = makeRepo();
-      db.query.mockResolvedValue([{ SeqNo: 41, DiffInSeconds: 30, OTPValue: '111111' }]);
+    it('UPDATEs the existing newest row when the previous OTP expired', async () => {
+      const { repo, db } = makeRepo();
+      db.query.mockResolvedValue([{ SeqNo: 41, DiffInSeconds: 301, OTPValue: '111111' }]);
+      db.execute.mockResolvedValue({ rowsAffected: 1, rows: [{ SeqNo: 41 }] });
 
-      await expect(repo.send(SEND)).rejects.toMatchObject({ status: 429 });
+      const result = await repo.send(SEND);
+
+      expect(result).toEqual({
+        requestId: '41',
+        status: 'NEW',
+        mode: 'SMS',
+        validForSeconds: 300,
+      });
+      expect(db.execute).toHaveBeenCalledTimes(1);
+      expect(db.execute).toHaveBeenCalledWith(
+        expect.stringMatching(/UPDATE HMC_RHAP_OTP_tbl[\s\S]*OTPStatus = '1'[\s\S]*SELECT MAX\(SeqNo\)/),
+        expect.objectContaining({ username: 'hmc1', imei: 'imei-1' }),
+      );
+    });
+
+    it('keeps a still-valid unused OTP and answers PENDING without writing or sending', async () => {
+      const { repo, db, delivery } = makeRepo();
+      db.query.mockResolvedValue([
+        { SeqNo: 41, DiffInSeconds: 30, OTPValue: '111111', OTPStatus: '1', OTPSendMode: 'SMS' },
+      ]);
+
+      await expect(repo.send(SEND)).resolves.toEqual({
+        requestId: '41',
+        status: 'PENDING',
+        mode: 'SMS',
+        validForSeconds: 270, // ttl 300 - 30 elapsed
+      });
       expect(db.execute).not.toHaveBeenCalled();
       expect(delivery.sendOtpSms).not.toHaveBeenCalled();
     });
 
-    it('allows a resend once the window elapsed', async () => {
+    it('replaces a used OTP (OTPStatus=0) even inside the TTL', async () => {
       const { repo, db } = makeRepo();
-      db.query.mockResolvedValue([{ SeqNo: 41, DiffInSeconds: 61, OTPValue: '111111' }]);
-      db.execute.mockResolvedValue({ rowsAffected: 1, rows: [{ SeqNo: 42 }] });
+      db.query.mockResolvedValue([
+        { SeqNo: 41, DiffInSeconds: 30, OTPValue: '111111', OTPStatus: '0' },
+      ]);
+      db.execute.mockResolvedValue({ rowsAffected: 1, rows: [{ SeqNo: 41 }] });
 
-      await expect(repo.send(SEND)).resolves.toEqual({ requestId: '42' });
+      await expect(repo.send(SEND)).resolves.toMatchObject({ status: 'NEW' });
     });
 
-    it('rejects when the user has no phone number', async () => {
+    it('records the Email channel when the user has no phone (no SMS is sent)', async () => {
+      const { repo, db, delivery } = makeRepo();
+      db.query.mockResolvedValue([]);
+      db.execute
+        .mockResolvedValueOnce({ rowsAffected: 0, rows: [] })
+        .mockResolvedValueOnce({ rowsAffected: 1, rows: [{ SeqNo: 50 }] });
+
+      const result = await repo.send({ ...SEND, phoneNumber: undefined, email: 'u@hamad.qa' });
+
+      expect(result).toEqual({
+        requestId: '50',
+        status: 'NEW',
+        mode: 'Email',
+        validForSeconds: 300,
+      });
+      expect(db.execute).toHaveBeenLastCalledWith(
+        expect.any(String),
+        expect.objectContaining({ sendMode: 'Email' }),
+      );
+      expect(delivery.sendOtpSms).not.toHaveBeenCalled();
+    });
+
+    it('rejects when the user has neither phone nor email', async () => {
       const { repo, db } = makeRepo();
       db.query.mockResolvedValue([]);
 
-      await expect(repo.send({ ...SEND, phoneNumber: undefined })).rejects.toBeInstanceOf(
-        HttpException,
-      );
+      await expect(
+        repo.send({ ...SEND, phoneNumber: undefined, email: undefined }),
+      ).rejects.toBeInstanceOf(HttpException);
       expect(db.execute).not.toHaveBeenCalled();
     });
   });
 
   describe('verify', () => {
     const row = (overrides = {}) => [
-      { SeqNo: 42, DiffInSeconds: 10, OTPValue: '123456', ...overrides },
+      { SeqNo: 42, DiffInSeconds: 10, OTPValue: '123456', OTPStatus: '1', ...overrides },
     ];
     const VERIFY = { username: 'hmc1', imei: 'imei-1', requestId: '42', otp: '123456' };
 
-    it('accepts the right OTP for the issued request', async () => {
+    it('accepts the right OTP and durably marks the row used', async () => {
       const { repo, db } = makeRepo();
       db.query.mockResolvedValue(row());
+      db.execute.mockResolvedValue({ rowsAffected: 1, rows: [] });
 
       await expect(repo.verify(VERIFY)).resolves.toBe(true);
+      expect(db.execute).toHaveBeenCalledWith(
+        expect.stringMatching(/OTPValidationAttemptCount[\s\S]*OTPStatus = '0'/),
+        { seqNo: 42 },
+      );
     });
 
     it('is single-use: a verified OTP cannot be replayed', async () => {
       const { repo, db } = makeRepo();
       db.query.mockResolvedValue(row());
+      db.execute.mockResolvedValue({ rowsAffected: 1, rows: [] });
 
       await expect(repo.verify(VERIFY)).resolves.toBe(true);
+      await expect(repo.verify(VERIFY)).resolves.toBe(false);
+    });
+
+    it('rejects a durably used OTP (OTPStatus=0) even with a cold cache', async () => {
+      const { repo, db } = makeRepo();
+      db.query.mockResolvedValue(row({ OTPStatus: '0' }));
+
       await expect(repo.verify(VERIFY)).resolves.toBe(false);
     });
 
@@ -128,6 +200,7 @@ describe('MssqlOtpRepository', () => {
     it('locks the request after maxAttempts wrong codes', async () => {
       const { repo, db } = makeRepo();
       db.query.mockResolvedValue(row());
+      db.execute.mockResolvedValue({ rowsAffected: 1, rows: [] });
 
       for (let i = 0; i < 3; i++) {
         await expect(repo.verify({ ...VERIFY, otp: '000000' })).resolves.toBe(false);
@@ -139,6 +212,7 @@ describe('MssqlOtpRepository', () => {
     it('compares numeric OTPValue columns as strings', async () => {
       const { repo, db } = makeRepo();
       db.query.mockResolvedValue(row({ OTPValue: 123456 }));
+      db.execute.mockResolvedValue({ rowsAffected: 1, rows: [] });
 
       await expect(repo.verify(VERIFY)).resolves.toBe(true);
     });

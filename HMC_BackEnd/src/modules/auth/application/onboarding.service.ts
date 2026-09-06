@@ -20,6 +20,18 @@ import {
 } from '../interface/dto/onboarding.dto';
 import { StatusMessageDto } from '../interface/dto/auth.dto';
 import { devIdentity } from './dev-fallback';
+import { maskEmail, maskPhone } from './mask.util';
+import { DEFAULT_LANG, Lang } from '@shared/domain/lang';
+
+/** User-facing initiate messages, per the request's `lang` header/query. */
+const MESSAGES: Record<'invalidUsername' | 'otpSent' | 'otpPending', Record<Lang, string>> = {
+  invalidUsername: { en: 'Invalid Username.', ar: 'اسم المستخدم غير صحيح.' },
+  otpSent: { en: 'OTP sent successfully', ar: 'تم إرسال رمز التحقق بنجاح' },
+  otpPending: {
+    en: 'An OTP was already sent and is still valid',
+    ar: 'تم إرسال رمز التحقق مسبقاً وما زال صالحاً',
+  },
+};
 
 /**
  * API-2 (User Validate) + API-3 (Validate OTP). Reworked flow (client request
@@ -27,7 +39,7 @@ import { devIdentity } from './dev-fallback';
  *
  *  1. The username is resolved through the identity port (AUTH_DIRECTORY=
  *     usersdb → HMC_SND_LIV_EMP_MASTER_VW on the MOTC_SMS DB). Unknown user →
- *     "User not found." error.
+ *     "Invalid Username." error.
  *  2. The exact user+device registration is read from HMC_Sanad_DeviceRegn_tbl.
  *  3. Registered WITH an MPIN → existing user: the response carries the full
  *     identity from both tables and NO OTP is sent (they log in with MPIN).
@@ -42,6 +54,8 @@ import { devIdentity } from './dev-fallback';
 export class OnboardingService {
   private readonly logger = new Logger(OnboardingService.name);
   private readonly devBypass: boolean;
+  /** OTP TTL for the dev-bypass response's elapsedtimeinmins. */
+  private readonly otpTtlSeconds: number;
 
   constructor(
     @Inject(LDAP_USER_PORT) private readonly ldap: LdapUserPort,
@@ -51,9 +65,13 @@ export class OnboardingService {
     config: ConfigService,
   ) {
     this.devBypass = config.get<boolean>('auth.disabled', false);
+    this.otpTtlSeconds = config.get<number>('otp.ttlSeconds', 300);
   }
 
-  async validateUser(dto: UserValidateRequestDto): Promise<UserValidateResponseDto> {
+  async validateUser(
+    dto: UserValidateRequestDto,
+    lang: Lang = DEFAULT_LANG,
+  ): Promise<UserValidateResponseDto> {
     const ctx = {
       username: dto.username,
       deviceImei: dto.imeinumber,
@@ -77,7 +95,7 @@ export class OnboardingService {
 
     if (!identity.isEmployee) {
       this.audit.lifecycle(AuthLifecycleEvent.USER_VALIDATE_FAILURE, { ...ctx, status: 'error' });
-      return { status: 'error', message: 'User not found.' };
+      return { status: 'error', message: MESSAGES.invalidUsername[lang] };
     }
 
     // Step 2 — this exact user+device registration.
@@ -85,14 +103,15 @@ export class OnboardingService {
       ? undefined
       : await this.devices.find(dto.username, dto.imeinumber);
 
-    // Step 3 — registered with an MPIN: existing user, no OTP. Everything the
-    // client needs comes back from both tables.
+    // Step 3 — registered with an MPIN: existing user, no OTP (vflag=Exist).
+    // Everything the client needs comes back from both tables.
     if (device?.mpinSet) {
       this.audit.lifecycle(AuthLifecycleEvent.USER_VALIDATE_SUCCESS, { ...ctx, status: 'success' });
       return {
         status: 'success',
         ...this.userData(identity, device),
         newuser: 'No',
+        vflag: 'Exist',
       };
     }
 
@@ -106,56 +125,68 @@ export class OnboardingService {
       });
     }
 
-    // Step 4 — store the OTP (HMC_RHAP_OTP_tbl) and deliver it (MOTC push
-    // table / configured delivery).
-    const requestid = this.devBypass
-      ? randomUUID().replace(/-/g, '').toUpperCase()
-      : (
-          await this.otp.send({
-            username: dto.username,
-            phoneNumber: identity.phoneNumber,
-            imei: dto.imeinumber,
-            purpose: 'ONBOARDING',
-            appName: dto.appname,
-            appVersion: dto.version,
-            appDatetime: dto.sysdate,
-          })
-        ).requestId;
+    // Step 4 — the OTP upsert (HMC_RHAP_OTP_tbl) + delivery. NEW = a fresh
+    // code was stored (vflag=New); PENDING = a valid unused one was kept
+    // (vflag=Pending, same requestid).
+    const sent = this.devBypass
+      ? {
+          requestId: randomUUID().replace(/-/g, '').toUpperCase(),
+          status: 'NEW' as const,
+          mode: 'SMS' as const,
+          validForSeconds: this.otpTtlSeconds,
+        }
+      : await this.otp.send({
+          username: dto.username,
+          phoneNumber: identity.phoneNumber,
+          email: identity.email,
+          imei: dto.imeinumber,
+          purpose: 'ONBOARDING',
+          appName: dto.appname,
+          appVersion: dto.version,
+          appDatetime: dto.sysdate,
+        });
 
     this.audit.lifecycle(AuthLifecycleEvent.USER_VALIDATE_SUCCESS, { ...ctx, status: 'success' });
     this.audit.lifecycle(AuthLifecycleEvent.OTP_SENT, ctx);
 
     return {
       status: 'success',
-      message: 'OTP sent successfully',
+      message: sent.status === 'PENDING' ? MESSAGES.otpPending[lang] : MESSAGES.otpSent[lang],
       ...this.userData(identity, device),
       newuser: 'Yes',
-      requestid,
+      vflag: sent.status === 'PENDING' ? 'Pending' : 'New',
+      otpmode: sent.mode,
+      // Minutes this OTP is still usable for (rounded up to a whole minute).
+      elapsedtimeinmins: Math.ceil(sent.validForSeconds / 60),
+      requestid: sent.requestId,
     };
   }
 
-  /** Response fields drawn from the employee view + the device registration. */
+  /**
+   * Response fields drawn from the employee view + the device registration.
+   * Contact data goes out MASKED (client request 2026-09-05) — the clear
+   * phone/email never leave the server.
+   */
   private userData(identity: EmployeeIdentity, device?: DeviceRegistration) {
     return {
       employeeusername: identity.username,
       employeename: identity.employeeName,
       employeenumber: identity.employeeNumber,
       jobname: identity.jobName,
-      email: identity.email,
+      email: maskEmail(identity.email),
       department: identity.department,
       employeeflag: 'Yes',
-      employeephonenumber: identity.phoneNumber,
+      employeephonenumber: maskPhone(identity.phoneNumber),
       devicestatus: device?.status,
     };
   }
 
   /**
    * POST /auth/send-otp — standalone OTP send (client request 2026-08-31).
-   * Same machinery as API-2's OTP step: OtpPort.send generates the code and,
-   * with the default OTP_STORE=motc, INSERTs it into MOTC_SMS_PushTable
-   * (the insert IS the SMS — the gateway fires it from their side). The
-   * resend window / TTL / attempts policy applies unchanged, and the
-   * returned requestid (= MessageID) pairs with /auth/otp/validate.
+   * Same machinery as API-2's OTP step: OtpPort.send upserts the code into
+   * HMC_RHAP_OTP_tbl (a still-valid unused OTP is kept — PENDING) and the
+   * SMS goes out via the MOTC push table. The returned requestid pairs with
+   * /auth/otp/validate.
    */
   async sendOtp(dto: SendOtpRequestDto): Promise<SendOtpResponseDto> {
     const ctx = {

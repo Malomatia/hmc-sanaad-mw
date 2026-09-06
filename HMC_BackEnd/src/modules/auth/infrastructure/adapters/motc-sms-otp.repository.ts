@@ -96,7 +96,12 @@ export class MotcSmsOtpRepository implements OtpPort {
     const messageBody = this.messageTemplate.replace('{otp}', otp);
     const messageId = await this.insertMessage(cmd, messageBody);
     this.logger.log(`OTP push row queued (${cmd.purpose}) as MessageID=${messageId}.`);
-    return { requestId: String(messageId) };
+    return {
+      requestId: String(messageId),
+      status: 'NEW',
+      mode: 'SMS',
+      validForSeconds: this.cfg.ttlSeconds,
+    };
   }
 
   async verify(cmd: VerifyOtpCommand): Promise<boolean> {

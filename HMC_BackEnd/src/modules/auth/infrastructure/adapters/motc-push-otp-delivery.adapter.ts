@@ -1,5 +1,6 @@
 import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { randomUUID } from 'node:crypto';
 import { MotcSmsDbService } from '@core/database/motc-sms-db.service';
 import { MssqlQueryError } from '@core/database/mssql.error';
 import { MotcSmsConfig, SmsConfig } from '@core/config/configuration';
@@ -18,9 +19,12 @@ const INSERT_RETRIES = 5;
  * of the OTP live in the OtpPort store (HMC_RHAP_OTP_tbl with
  * OTP_STORE=legacy), so this adapter keeps no state and returns nothing.
  *
- * MessageID is generated as MAX+1 and retried on a duplicate-key race — the
- * same scheme the MOTC store adapter uses. The raw OTP travels only inside
- * MessageBody and is never logged (MotcSmsDbService redacts the param).
+ * MessageID is a fresh UUID hex string (e.g. FFED0DF0C75F4E84A56133874EB78B8B)
+ * — the column is a varchar and other applications already write GUID-style
+ * ids, so a MAX+1 numeric scheme fails converting them to int (seen live
+ * 2026-09-04). A duplicate-key race simply regenerates the id. The raw OTP
+ * travels only inside MessageBody and is never logged (MotcSmsDbService
+ * redacts the param).
  */
 @Injectable()
 export class MotcPushOtpDeliveryAdapter implements OtpDeliveryPort {
@@ -43,10 +47,7 @@ export class MotcPushOtpDeliveryAdapter implements OtpDeliveryPort {
     const messageBody = this.messageTemplate.replace('{otp}', otp);
     const appId = this.motc.appId || null;
     for (let attempt = 1; attempt <= INSERT_RETRIES; attempt++) {
-      const next = await this.db.query<{ NextId: number }>(
-        `SELECT ISNULL(MAX(MessageID), 0) + 1 AS NextId FROM ${this.motc.table} WITH (NOLOCK)`,
-      );
-      const messageId = next[0]?.NextId ?? 1;
+      const messageId = randomUUID().replace(/-/g, '').toUpperCase();
       try {
         await this.db.execute(
           `INSERT INTO ${this.motc.table}
@@ -86,7 +87,7 @@ export class MotcPushOtpDeliveryAdapter implements OtpDeliveryPort {
         const sqlError = (err as MssqlQueryError).sqlErrorNumber;
         if (sqlError !== undefined && DUPLICATE_KEY_ERRORS.has(sqlError) && attempt < INSERT_RETRIES) {
           this.logger.warn(
-            `MessageID ${messageId} raced a concurrent insert — retrying (${attempt}/${INSERT_RETRIES}).`,
+            `MessageID ${messageId} collided — regenerating (${attempt}/${INSERT_RETRIES}).`,
           );
           continue;
         }

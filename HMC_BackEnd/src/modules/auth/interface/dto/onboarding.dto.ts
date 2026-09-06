@@ -15,7 +15,7 @@ export class UserValidateRequestDto extends ClientContextDto {}
  * user (device registered with an MPIN): full identity from the employee view
  * + device registration, newuser=No, no OTP. New user/device: registration
  * created, OTP sent, requestid + "OTP sent successfully". Unknown username:
- * status=error, "User not found.".
+ * status=error, "Invalid Username.".
  */
 export class UserValidateResponseDto {
   @ApiPropertyOptional({ example: 'employee nt id' })
@@ -30,7 +30,7 @@ export class UserValidateResponseDto {
   @ApiPropertyOptional({ example: 'HICT Programmer.HMC' })
   jobname?: string;
 
-  @ApiPropertyOptional({ example: 'MKHOJA@hamad.qa' })
+  @ApiPropertyOptional({ example: 'MK****@hamad.qa', description: 'Masked — first 2 characters visible.' })
   email?: string;
 
   @ApiPropertyOptional({ example: 'Cardiothoracic Surgery.Heart Hospital' })
@@ -42,11 +42,34 @@ export class UserValidateResponseDto {
   @ApiPropertyOptional({ example: 'Yes', description: 'Valid-employee flag.' })
   employeeflag?: string;
 
-  @ApiPropertyOptional({ example: '7786XXXX' })
+  @ApiPropertyOptional({ example: '7786XXXX', description: 'Masked — first 4 digits visible.' })
   employeephonenumber?: string;
 
   @ApiPropertyOptional({ example: 'Active', description: 'Device registration status.' })
   devicestatus?: string;
+
+  @ApiPropertyOptional({
+    example: 'New',
+    enum: ['New', 'Pending', 'Exist'],
+    description:
+      'New = a fresh OTP was stored (inserted/overwritten) · Pending = a still-valid unused ' +
+      'OTP already existed and was kept (same requestid) · Exist = existing user (newuser=No), no OTP.',
+  })
+  vflag?: string;
+
+  @ApiPropertyOptional({
+    example: 'SMS',
+    enum: ['SMS', 'Email'],
+    description: 'Channel of the OTP: SMS to the registered mobile, Email when no phone exists.',
+  })
+  otpmode?: string;
+
+  @ApiPropertyOptional({
+    example: 5,
+    description:
+      'Minutes the OTP is still valid for: full TTL when vflag=New, remaining time when vflag=Pending.',
+  })
+  elapsedtimeinmins?: number;
 
   @ApiPropertyOptional({ example: '12345', description: 'Present when an OTP was sent.' })
   requestid?: string;

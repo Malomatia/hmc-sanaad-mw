@@ -113,7 +113,12 @@ describe('MotcSmsOtpRepository', () => {
         .mockResolvedValueOnce([{ NextId: 42 }]);
       db.execute.mockResolvedValue({ rowsAffected: 1, rows: [] });
 
-      await expect(repo.send(SEND)).resolves.toEqual({ requestId: '42' });
+      await expect(repo.send(SEND)).resolves.toEqual({
+        requestId: '42',
+        status: 'NEW',
+        mode: 'SMS',
+        validForSeconds: 300,
+      });
     });
 
     it('rejects when the user has no phone number', async () => {
@@ -137,7 +142,12 @@ describe('MotcSmsOtpRepository', () => {
         .mockRejectedValueOnce(duplicate)
         .mockResolvedValueOnce({ rowsAffected: 1, rows: [] });
 
-      await expect(repo.send(SEND)).resolves.toEqual({ requestId: '43' });
+      await expect(repo.send(SEND)).resolves.toEqual({
+        requestId: '43',
+        status: 'NEW',
+        mode: 'SMS',
+        validForSeconds: 300,
+      });
       expect(db.execute).toHaveBeenCalledTimes(2);
     });
 

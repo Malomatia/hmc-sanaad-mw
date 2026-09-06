@@ -72,6 +72,7 @@ const LOGIN = {
   mpin: '123456',
   imeinumber: 'imei-1',
   platform: 'iOS',
+  appname: 'Sanaad',
   version: '1.0.0',
 };
 
@@ -88,16 +89,30 @@ describe('AuthService refresh + logout', () => {
     expect(refresh.typ).toBe('refresh');
     expect(refresh.jti).toBeDefined();
     expect(refresh.jti).not.toBe(access.jti);
+    for (const claims of [access, refresh]) {
+      expect(claims).toMatchObject({
+        deviceImei: 'imei-1',
+        appName: 'Sanaad',
+        appVersion: '1.0.0',
+        platform: 'iOS',
+      });
+      expect(claims).not.toHaveProperty('mpin');
+    }
   });
 
   it('refresh exchanges a valid refresh token for a new pair and rotates it', async () => {
-    const { service } = makeService();
+    const { service, jwt } = makeService();
     const login = await service.login(LOGIN);
 
     const refreshed = await service.refresh({ refreshtoken: login.refreshtoken! });
     expect(refreshed.status).toBe('success');
     expect(refreshed.token).toBeDefined();
     expect(refreshed.refreshtoken).toBeDefined();
+    expect(jwt.decode(refreshed.token!)).toMatchObject({
+      deviceImei: 'imei-1',
+      appName: 'Sanaad',
+      appVersion: '1.0.0',
+    });
 
     // One-time use: the same refresh token is now revoked.
     const replay = await service.refresh({ refreshtoken: login.refreshtoken! });

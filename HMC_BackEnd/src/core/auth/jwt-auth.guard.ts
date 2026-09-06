@@ -76,6 +76,7 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
         username: String(username),
         employeeNumber: claims.employeeNumber ? String(claims.employeeNumber) : undefined,
         employeeName: claims.name ? String(claims.name) : DEV_USER.employeeName,
+        claims,
       } as AuthenticatedUser;
     } catch {
       return undefined;

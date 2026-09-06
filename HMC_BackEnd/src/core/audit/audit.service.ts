@@ -27,9 +27,11 @@ export class AuditService {
       ...partial,
     };
     try {
-      void this.sink.write(record);
+      void Promise.resolve(this.sink.write(record)).catch((err: unknown) => {
+        this.logger.error(`Audit sink failed: ${err instanceof Error ? err.message : String(err)}`);
+      });
     } catch (err) {
-      this.logger.error(`Audit sink failed: ${(err as Error).message}`);
+      this.logger.error(`Audit sink failed: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 

@@ -123,6 +123,10 @@ export class AuthService {
       name: identity.employeeName,
       dept: identity.department,
       company: identity.company,
+      deviceImei: dto.imeinumber,
+      appName: dto.appname,
+      appVersion: dto.version,
+      platform: dto.platform,
       // Static-login testing: the FULL user data travels inside the token so
       // the client can decode everything from the JWT alone.
       ...(this.staticLogin && {

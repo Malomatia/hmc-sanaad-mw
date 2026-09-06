@@ -42,7 +42,9 @@ export interface AuditContext {
   username?: string;
   deviceImei?: string;
   platform?: string;
+  appName?: string;
   appVersion?: string;
+  functionId?: string;
   source?: string;
   correlationId?: string;
   status?: string;

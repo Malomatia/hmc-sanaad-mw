@@ -111,10 +111,14 @@ export class MotcSmsOtpRepository implements OtpPort {
       this.logger.log(
         `OTP push row stored (${cmd.purpose}) as MessageID=${messageId} — delivered by email.`,
       );
-    } else {
-      this.logger.log(`OTP push row queued (${cmd.purpose}) as MessageID=${messageId}.`);
     }
-    return { requestId: String(messageId) };
+    this.logger.log(`OTP push row queued (${cmd.purpose}) as MessageID=${messageId}.`);
+    return {
+      requestId: String(messageId),
+      status: 'NEW',
+      mode: 'SMS',
+      validForSeconds: this.cfg.ttlSeconds,
+    };
   }
 
   async verify(cmd: VerifyOtpCommand): Promise<boolean> {

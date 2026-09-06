@@ -1,5 +1,7 @@
 import { Body, Controller, Get, HttpCode, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Lang } from '@core/i18n/lang.decorator';
+import type { Lang as LangCode } from '@shared/domain/lang';
 import { Public } from '@core/auth/decorators/public.decorator';
 import { CurrentUser } from '@core/auth/decorators/current-user.decorator';
 import { SkipEnvelope } from '@core/http/response.interceptor';
@@ -50,8 +52,11 @@ export class AuthController {
   @Post('initiate')
   @ApiOperation({ summary: 'API-2 — User Validate (LDAP + send OTP)', operationId: 'auth_initiate' })
   @ApiOkResponse({ type: UserValidateResponseDto })
-  initiate(@Body() dto: UserValidateRequestDto): Promise<UserValidateResponseDto> {
-    return this.onboarding.validateUser(dto);
+  initiate(
+    @Body() dto: UserValidateRequestDto,
+    @Lang() lang: LangCode,
+  ): Promise<UserValidateResponseDto> {
+    return this.onboarding.validateUser(dto, lang);
   }
 
   /**

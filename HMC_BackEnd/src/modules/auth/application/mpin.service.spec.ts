@@ -22,7 +22,9 @@ function makeService({ authDisabled = false } = {}) {
     exists: jest.fn(),
   };
   const otp: jest.Mocked<OtpPort> = {
-    send: jest.fn().mockResolvedValue({ requestId: '42' }),
+    send: jest
+      .fn()
+      .mockResolvedValue({ requestId: '42', status: 'NEW', mode: 'SMS', validForSeconds: 300 }),
     verify: jest.fn().mockResolvedValue(true),
   };
   const devices: jest.Mocked<DeviceRegistryPort> = {

@@ -4,6 +4,7 @@ import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { MssqlService } from '@core/database/mssql.service';
 import { OtpConfig } from '@core/config/configuration';
 import {
+  OtpMode,
   OtpPort,
   SendOtpCommand,
   SendOtpResult,
@@ -21,25 +22,33 @@ interface OtpRow {
   SeqNo: number;
   DiffInSeconds: number;
   OTPValue: string | number;
+  OTPStatus?: string | number | null;
+  OTPSendMode?: string | null;
 }
 
 /**
- * OTP storage backed by the legacy `HMC_RHAP_OTP_tbl` (LoginID +
- * DeviceIMEINumber, newest row wins) with SMS delivery via OtpDeliveryPort.
- * Queries follow the client's service mapping (TOP 1 + DATEDIFF from
- * OTPSentDateTime); the OTP value is stored as-is for legacy compatibility —
- * per the confirmed decision — but is never logged (MssqlService redacts it).
+ * OTP storage backed by the legacy `HMC_RHAP_OTP_tbl` — ONE row per
+ * (LoginID, DeviceIMEINumber), per the reworked flow (client request
+ * 2026-09-05): sending an OTP UPDATEs the user+device's newest row in place
+ * (INSERT only when none exists), and a still-valid unused OTP is KEPT and
+ * reported as PENDING instead of overwritten (the old 429 resend window is
+ * gone). The OTP value is stored as-is for legacy compatibility — per the
+ * confirmed decision — but is never logged (MssqlService redacts it).
  *
- * Policy comes from OtpConfig: TTL, resend window, and max verify attempts
- * (attempts are tracked in-memory per SeqNo — the legacy table has no attempt
- * column). A verified OTP is marked consumed in-memory so it cannot be
- * replayed within its TTL.
+ * Channel: SMS when the employee has a phone; Email is recorded
+ * (OTPSendMode='Email') when they only have an email address — actual email
+ * delivery is NOT wired yet, the row is stored and a warning logged.
+ *
+ * Used/attempts state is durable where the table allows: a successful verify
+ * marks OTPStatus='0' (used) and every verify attempt increments
+ * OTPValidationAttemptCount; the in-memory maps remain the authoritative
+ * fast path within one process.
  */
 @Injectable()
 export class MssqlOtpRepository implements OtpPort {
   private readonly logger = new Logger(MssqlOtpRepository.name);
   private readonly cfg: OtpConfig;
-  /** Failed verify attempts per SeqNo (legacy table has no attempts column). */
+  /** Failed verify attempts per SeqNo (mirrored best-effort into the table). */
   private readonly attempts = new Map<string, number>();
   /** SeqNos already verified successfully — single-use within the TTL. */
   private readonly consumed = new Set<string>();
@@ -55,45 +64,73 @@ export class MssqlOtpRepository implements OtpPort {
 
   async send(cmd: SendOtpCommand): Promise<SendOtpResult> {
     const latest = await this.latestRow(cmd.username, cmd.imei);
-    if (latest && latest.DiffInSeconds < this.cfg.resendWindowSeconds) {
-      throw new HttpException(
-        'An OTP was sent recently. Please wait before requesting another.',
-        HttpStatus.TOO_MANY_REQUESTS,
-      );
+    // A still-valid, unused OTP is kept: the client can re-enter it, so the
+    // caller answers vflag=Pending instead of getting a new code (or a 429).
+    if (latest && this.isPending(latest)) {
+      return {
+        requestId: String(latest.SeqNo),
+        status: 'PENDING',
+        mode: latest.OTPSendMode === 'Email' ? 'Email' : 'SMS',
+        validForSeconds: Math.max(this.cfg.ttlSeconds - latest.DiffInSeconds, 0),
+      };
     }
     if (!cmd.phoneNumber && !cmd.email) {
       throw new HttpException(
         'No registered phone number or email address found for this user.',
+
+    const mode: OtpMode | undefined = cmd.phoneNumber ? 'SMS' : cmd.email ? 'Email' : undefined;
+    if (!mode) {
+      throw new HttpException(
+        'No registered phone number or email found for this user.',
         HttpStatus.CONFLICT,
       );
     }
 
     const otp = generateOtp(this.cfg);
-    // Every legacy column is populated except OTPSendMode (client decision
-    // 2026-09-04): RequestId is NOT NULL — a fresh opaque correlation id per
-    // row (UUID hex, e.g. 04D0B9C63F2142BD84E8D5A9D527AC7D); the mobile
-    // `requestid` stays SeqNo, the documented validation key. AppName/
-    // AppVersion/AppDatetime mirror the client context from the request.
-    const inserted = await this.db.execute<{ SeqNo: number }>(
-      `INSERT INTO HMC_RHAP_OTP_tbl
-         (LoginID, DeviceIMEINumber, OTPValue, OTPSentDateTime, RequestId,
-          AppName, AppVersion, AppDatetime, OTPValidationAttemptCount,
-          RequestType, OTPStatus)
+    // Every legacy column is populated except a NULL OTPSendMode is no more —
+    // it now records the channel. RequestId is NOT NULL — a fresh opaque
+    // correlation id per send (UUID hex, e.g. 04D0B9C63F2142BD84E8D5A9D527AC7D);
+    // the mobile `requestid` stays SeqNo, the documented validation key.
+    // AppName/AppVersion/AppDatetime mirror the client context.
+    const params = {
+      username: cmd.username,
+      imei: cmd.imei,
+      otp,
+      requestId: randomUUID().replace(/-/g, '').toUpperCase(),
+      appName: cmd.appName || 'Sanaad',
+      appVersion: cmd.appVersion || '1.0.0',
+      appDatetime: MssqlOtpRepository.safeDate(cmd.appDatetime),
+      requestType: MssqlOtpRepository.REQUEST_TYPE[cmd.purpose],
+      sendMode: mode,
+    };
+
+    // Upsert (client request 2026-09-05): overwrite the user+device's newest
+    // row instead of accumulating one row per send; INSERT only the first time.
+    const updated = await this.db.execute<{ SeqNo: number }>(
+      `UPDATE HMC_RHAP_OTP_tbl
+          SET OTPValue = @otp, OTPSentDateTime = GETDATE(), RequestId = @requestId,
+              AppName = @appName, AppVersion = @appVersion, AppDatetime = @appDatetime,
+              OTPValidationAttemptCount = 0, RequestType = @requestType,
+              OTPStatus = '1', OTPSendMode = @sendMode
        OUTPUT INSERTED.SeqNo AS SeqNo
-       VALUES (@username, @imei, @otp, GETDATE(), @requestId,
-               @appName, @appVersion, @appDatetime, 0, @requestType, '1')`,
-      {
-        username: cmd.username,
-        imei: cmd.imei,
-        otp,
-        requestId: randomUUID().replace(/-/g, '').toUpperCase(),
-        appName: cmd.appName || 'Sanaad',
-        appVersion: cmd.appVersion || '1.0.0',
-        appDatetime: MssqlOtpRepository.safeDate(cmd.appDatetime),
-        requestType: MssqlOtpRepository.REQUEST_TYPE[cmd.purpose],
-      },
+        WHERE SeqNo = (SELECT MAX(SeqNo) FROM HMC_RHAP_OTP_tbl
+                        WHERE LoginID = @username AND DeviceIMEINumber = @imei)`,
+      params,
     );
-    const seqNo = inserted.rows[0]?.SeqNo ?? (await this.latestRow(cmd.username, cmd.imei))?.SeqNo;
+    let seqNo = updated.rows[0]?.SeqNo;
+    if (updated.rowsAffected === 0) {
+      const inserted = await this.db.execute<{ SeqNo: number }>(
+        `INSERT INTO HMC_RHAP_OTP_tbl
+           (LoginID, DeviceIMEINumber, OTPValue, OTPSentDateTime, RequestId,
+            AppName, AppVersion, AppDatetime, OTPValidationAttemptCount,
+            RequestType, OTPStatus, OTPSendMode)
+         OUTPUT INSERTED.SeqNo AS SeqNo
+         VALUES (@username, @imei, @otp, GETDATE(), @requestId,
+                 @appName, @appVersion, @appDatetime, 0, @requestType, '1', @sendMode)`,
+        params,
+      );
+      seqNo = inserted.rows[0]?.SeqNo ?? (await this.latestRow(cmd.username, cmd.imei))?.SeqNo;
+    }
     if (seqNo === undefined) {
       throw new HttpException(
         'Could not create the OTP request.',
@@ -108,7 +145,22 @@ export class MssqlOtpRepository implements OtpPort {
     } else if (cmd.email) {
       await this.emailDelivery.sendOtpEmail(cmd.email, otp, cmd.purpose);
     }
-    return { requestId: String(seqNo) };
+    // The SeqNo is reused on an overwrite, so its in-memory verify state
+    // (consumed / failed attempts) belongs to the PREVIOUS code — reset it.
+    const requestId = String(seqNo);
+    this.attempts.delete(requestId);
+    this.consumed.delete(requestId);
+
+    if (mode === 'SMS') {
+      // Raw OTP goes only to the delivery port — never logged, never returned.
+      await this.delivery.sendOtpSms(cmd.phoneNumber!, otp, cmd.purpose);
+    } else {
+      this.logger.warn(
+        `No phone for "${cmd.username}" — OTP stored with OTPSendMode=Email, but email ` +
+          'delivery is not wired yet: no message was sent.',
+      );
+    }
+    return { requestId, status: 'NEW', mode, validForSeconds: this.cfg.ttlSeconds };
   }
 
   async verify(cmd: VerifyOtpCommand): Promise<boolean> {
@@ -118,6 +170,10 @@ export class MssqlOtpRepository implements OtpPort {
     // The verification must target the OTP the client was actually issued.
     if (cmd.requestId !== requestId) return false;
     if (this.consumed.has(requestId)) return false;
+    // OTPStatus '0' = already used (durable across restarts).
+    if (row.OTPStatus !== null && row.OTPStatus !== undefined && String(row.OTPStatus) === '0') {
+      return false;
+    }
     if (row.DiffInSeconds > this.cfg.ttlSeconds) return false;
 
     const failed = this.attempts.get(requestId) ?? 0;
@@ -128,11 +184,13 @@ export class MssqlOtpRepository implements OtpPort {
 
     if (!MssqlOtpRepository.safeEquals(String(row.OTPValue).trim(), cmd.otp.trim())) {
       this.attempts.set(requestId, failed + 1);
+      await this.recordAttempt(row.SeqNo, false);
       return false;
     }
 
     this.attempts.delete(requestId);
     this.consumed.add(requestId);
+    await this.recordAttempt(row.SeqNo, true);
     return true;
   }
 
@@ -141,13 +199,42 @@ export class MssqlOtpRepository implements OtpPort {
     const rows = await this.db.query<OtpRow>(
       `SELECT TOP 1 SeqNo,
               DATEDIFF(SECOND, OTPSentDateTime, GETDATE()) AS DiffInSeconds,
-              OTPValue
+              OTPValue, OTPStatus, OTPSendMode
          FROM HMC_RHAP_OTP_tbl WITH (NOLOCK)
         WHERE LoginID = @username AND DeviceIMEINumber = @imei
         ORDER BY SeqNo DESC`,
       { username, imei },
     );
     return rows[0];
+  }
+
+  /** Unexpired, not yet used (durably or in this process). */
+  private isPending(row: OtpRow): boolean {
+    if (row.DiffInSeconds > this.cfg.ttlSeconds) return false;
+    if (this.consumed.has(String(row.SeqNo))) return false;
+    if (row.OTPStatus !== null && row.OTPStatus !== undefined && String(row.OTPStatus) !== '1') {
+      return false;
+    }
+    return true;
+  }
+
+  /**
+   * Best-effort durable verify state: every attempt bumps
+   * OTPValidationAttemptCount; success also marks the row used
+   * (OTPStatus='0'). A failure here must not change the verify outcome.
+   */
+  private async recordAttempt(seqNo: number, success: boolean): Promise<void> {
+    try {
+      await this.db.execute(
+        `UPDATE HMC_RHAP_OTP_tbl
+            SET OTPValidationAttemptCount = ISNULL(OTPValidationAttemptCount, 0) + 1
+                ${success ? ", OTPStatus = '0'" : ''}
+          WHERE SeqNo = @seqNo`,
+        { seqNo },
+      );
+    } catch (err) {
+      this.logger.warn(`Could not persist verify state for SeqNo ${seqNo}: ${(err as Error).message}`);
+    }
   }
 
   /** Legacy RequestType values per OTP purpose. */

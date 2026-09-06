@@ -1,9 +1,13 @@
 export type OtpPurpose = 'ONBOARDING' | 'FORGOT_MPIN';
 
+/** Channel the OTP goes out on (mobile SMS vs. email). */
+export type OtpMode = 'SMS' | 'Email';
+
 export interface SendOtpCommand {
   username: string;
   phoneNumber?: string;
   /** Fallback channel: used when the user has no phone number but has email. */
+  /** Email fallback channel when the employee has no registered phone. */
   email?: string;
   imei: string;
   purpose: OtpPurpose;
@@ -17,6 +21,18 @@ export interface SendOtpCommand {
 export interface SendOtpResult {
   /** Correlation id echoed back by the client on OTP verification. */
   requestId: string;
+  /**
+   * NEW = a fresh OTP was stored (inserted or overwrote the previous one);
+   * PENDING = a still-valid, unused OTP already existed and was kept.
+   */
+  status: 'NEW' | 'PENDING';
+  /** Channel used (or recorded) for this OTP. */
+  mode: OtpMode;
+  /**
+   * How long this OTP remains valid, in seconds: the full TTL for a NEW one,
+   * the remaining time for a PENDING one.
+   */
+  validForSeconds: number;
 }
 
 export interface VerifyOtpCommand {

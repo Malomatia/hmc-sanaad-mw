@@ -6,7 +6,7 @@ import { OnboardingService } from '../application/onboarding.service';
 import { MpinService } from '../application/mpin.service';
 import { AuthController } from './auth.controller';
 
-describe('AuthController OTP language', () => {
+describe('AuthController', () => {
   let app: INestApplication;
   const onboarding = {
     validateUser: jest.fn().mockResolvedValue({ status: 'success' }),
@@ -14,6 +14,9 @@ describe('AuthController OTP language', () => {
   };
   const mpin = {
     forgotInitiate: jest.fn().mockResolvedValue({ status: 'initiated successfully' }),
+    setMpin: jest
+      .fn()
+      .mockResolvedValue({ status: 'success', message: 'MPIN updated successfully' }),
   };
   const body = { username: 'hmc1', imeinumber: 'imei-1', platform: 'android' };
 
@@ -39,6 +42,40 @@ describe('AuthController OTP language', () => {
 
   afterAll(async () => {
     await app?.close();
+  });
+
+  describe('POST /auth/mpin/update', () => {
+    it('accepts an opaque client hash with the required user/device context', async () => {
+      const requestBody = {
+        username: body.username,
+        imeinumber: body.imeinumber,
+        mpin: 'client-hashed-test-value+/=',
+      };
+
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/mpin/update')
+        .send(requestBody)
+        .expect(200)
+        .expect({ status: 'success', message: 'MPIN updated successfully' });
+
+      expect(mpin.setMpin).toHaveBeenCalledWith(expect.objectContaining(requestBody));
+    });
+
+    it.each([
+      { label: 'missing', value: undefined },
+      { label: 'null', value: null },
+      { label: 'empty', value: '' },
+      { label: 'number', value: 1234 },
+      { label: 'object', value: {} },
+      { label: 'array', value: ['1234'] },
+    ])('rejects a $label MPIN before calling the service', async ({ value }) => {
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/mpin/update')
+        .send({ ...body, mpin: value })
+        .expect(400);
+
+      expect(mpin.setMpin).not.toHaveBeenCalled();
+    });
   });
 
   describe.each([

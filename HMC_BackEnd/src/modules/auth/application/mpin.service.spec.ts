@@ -53,6 +53,43 @@ function makeService({ authDisabled = false } = {}) {
 
 const DTO = { username: 'hmc1', imeinumber: 'imei-1', platform: 'Android' };
 
+describe('MpinService.setMpin (API-4)', () => {
+  it.each([
+    { label: 'client-hashed value', mpin: 'client-hashed-test-value+/=' },
+    { label: 'short string', mpin: '1' },
+    { label: 'long numeric string', mpin: '1234567890' },
+  ])('passes a $label to the store unchanged', async ({ mpin }) => {
+    const { service, store, devices } = makeService();
+
+    await expect(service.setMpin({ ...DTO, mpin })).resolves.toEqual({
+      status: 'success',
+      message: 'MPIN updated successfully',
+    });
+
+    expect(devices.bind).toHaveBeenCalledWith({
+      username: DTO.username,
+      imei: DTO.imeinumber,
+      platform: DTO.platform,
+    });
+    expect(store.set).toHaveBeenCalledWith({
+      username: DTO.username,
+      imei: DTO.imeinumber,
+      mpin,
+    });
+  });
+
+  it('accepts a client hash in dev bypass without persisting it', async () => {
+    const { service, store, devices } = makeService({ authDisabled: true });
+
+    await expect(
+      service.setMpin({ ...DTO, mpin: 'client-hashed-test-value+/=' }),
+    ).resolves.toMatchObject({ status: 'success' });
+
+    expect(store.set).not.toHaveBeenCalled();
+    expect(devices.bind).not.toHaveBeenCalled();
+  });
+});
+
 describe('MpinService.forgotInitiate (API-6)', () => {
   it('requires the device to be registered for the user (legacy forgetMPIN check)', async () => {
     const { service, devices, otp } = makeService();

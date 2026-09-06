@@ -44,7 +44,6 @@ export class MpinService {
 
   async setMpin(dto: SetMpinRequestDto): Promise<StatusMessageDto> {
     const ctx = this.ctx(dto);
-    if (!this.isValidMpin(dto.mpin)) return this.policyError();
 
     if (this.devBypass) {
       this.logger.warn(`DEV bypass: MPIN set for "${dto.username}" not persisted.`);

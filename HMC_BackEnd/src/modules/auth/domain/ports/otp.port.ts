@@ -6,7 +6,6 @@ export type OtpMode = 'SMS' | 'Email';
 export interface SendOtpCommand {
   username: string;
   phoneNumber?: string;
-  /** Fallback channel: used when the user has no phone number but has email. */
   /** Email fallback channel when the employee has no registered phone. */
   email?: string;
   imei: string;

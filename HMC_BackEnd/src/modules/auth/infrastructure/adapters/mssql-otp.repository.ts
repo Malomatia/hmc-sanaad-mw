@@ -35,9 +35,9 @@ interface OtpRow {
  * gone). The OTP value is stored as-is for legacy compatibility — per the
  * confirmed decision — but is never logged (MssqlService redacts it).
  *
- * Channel: SMS when the employee has a phone; Email is recorded
- * (OTPSendMode='Email') when they only have an email address — actual email
- * delivery is NOT wired yet, the row is stored and a warning logged.
+ * Channel: SMS when the employee has a phone (OtpDeliveryPort); Email
+ * (OtpEmailDeliveryPort → SMTP EmailService, OTPSendMode='Email') when they
+ * only have an email address.
  *
  * Used/attempts state is durable where the table allows: a successful verify
  * marks OTPStatus='0' (used) and every verify attempt increments
@@ -74,14 +74,11 @@ export class MssqlOtpRepository implements OtpPort {
         validForSeconds: Math.max(this.cfg.ttlSeconds - latest.DiffInSeconds, 0),
       };
     }
-    if (!cmd.phoneNumber && !cmd.email) {
-      throw new HttpException(
-        'No registered phone number or email address found for this user.',
 
     const mode: OtpMode | undefined = cmd.phoneNumber ? 'SMS' : cmd.email ? 'Email' : undefined;
     if (!mode) {
       throw new HttpException(
-        'No registered phone number or email found for this user.',
+        'No registered phone number or email address found for this user.',
         HttpStatus.CONFLICT,
       );
     }
@@ -138,27 +135,18 @@ export class MssqlOtpRepository implements OtpPort {
       );
     }
 
-    // Raw OTP goes only to the delivery ports — never logged, never returned.
-    // SMS when the user has a phone; email is the no-mobile fallback channel.
-    if (cmd.phoneNumber) {
-      await this.delivery.sendOtpSms(cmd.phoneNumber, otp, cmd.purpose);
-    } else if (cmd.email) {
-      await this.emailDelivery.sendOtpEmail(cmd.email, otp, cmd.purpose);
-    }
     // The SeqNo is reused on an overwrite, so its in-memory verify state
     // (consumed / failed attempts) belongs to the PREVIOUS code — reset it.
     const requestId = String(seqNo);
     this.attempts.delete(requestId);
     this.consumed.delete(requestId);
 
+    // Raw OTP goes only to the delivery ports — never logged, never returned.
+    // SMS when the user has a phone; email is the no-mobile fallback channel.
     if (mode === 'SMS') {
-      // Raw OTP goes only to the delivery port — never logged, never returned.
       await this.delivery.sendOtpSms(cmd.phoneNumber!, otp, cmd.purpose);
     } else {
-      this.logger.warn(
-        `No phone for "${cmd.username}" — OTP stored with OTPSendMode=Email, but email ` +
-          'delivery is not wired yet: no message was sent.',
-      );
+      await this.emailDelivery.sendOtpEmail(cmd.email!, otp, cmd.purpose);
     }
     return { requestId, status: 'NEW', mode, validForSeconds: this.cfg.ttlSeconds };
   }

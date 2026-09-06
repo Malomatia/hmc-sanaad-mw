@@ -32,20 +32,14 @@ import { MssqlUserRepository } from './infrastructure/adapters/mssql-user.reposi
  *
  * MPIN / device-registry are backed by the legacy Sanaad SQL Server tables
  * (HMC_Sanad_DeviceRegn_tbl) via the global MssqlService pool. The OTP port
- * is bound by OTP_STORE: `motc` (default) generates, delivers AND validates
- * the OTP through the MOTC_SMS_PushTable outbox (MotcSmsOtpRepository — the
- * insert is the SMS); `legacy` restores HMC_RHAP_OTP_tbl + the HTTP SMS
- * adapter (instant rollback). Either store falls back to EMAIL delivery
- * (OTP_EMAIL_DELIVERY_PORT → EmailOtpDeliveryAdapter → core SMTP EmailService)
- * when the directory has no mobile number but has a corporate email.
- * Function-access reads the Users DB view named
- * by FUNCTION_ACCESS_VIEW (default HMC_Sanad_AppMaster_VW). The dev bypass
- * inside each application service triggers on AUTH_DISABLED=true only.
  * is bound by OTP_STORE: `legacy` (default since 2026-09-03) stores/validates
  * in HMC_RHAP_OTP_tbl and delivers through OTP_DELIVERY_PORT; `motc` makes
  * MOTC_SMS_PushTable the store AND the delivery (MotcSmsOtpRepository).
  * OTP_DELIVERY picks the delivery adapter for the legacy store: `motc`
  * (default) INSERTs into the push table, `http` is the generic SMS adapter.
+ * Either store falls back to EMAIL delivery (OTP_EMAIL_DELIVERY_PORT →
+ * EmailOtpDeliveryAdapter → core SMTP EmailService) when the directory has no
+ * mobile number but has a corporate email.
  * Function-access reads the Users DB view named by FUNCTION_ACCESS_VIEW
  * (default HMC_Sanad_AppMaster_VW). The dev bypass inside each application
  * service triggers on AUTH_DISABLED=true only.
@@ -81,7 +75,6 @@ import { MssqlUserRepository } from './infrastructure/adapters/mssql-user.reposi
         return directory === 'entra' ? entra : directory === 'usersdb' ? usersDb : ldap;
       },
     },
-    { provide: OTP_DELIVERY_PORT, useClass: SmsOtpDeliveryAdapter },
     // Email fallback channel: OTP over SMTP when the user has no mobile number.
     { provide: OTP_EMAIL_DELIVERY_PORT, useClass: EmailOtpDeliveryAdapter },
     SmsOtpDeliveryAdapter,

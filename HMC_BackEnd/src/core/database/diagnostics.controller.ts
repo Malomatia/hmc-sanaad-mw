@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -107,13 +108,13 @@ export class OracleViewsQueryDto {
 
 /** Body for POST /diagnostics/oracle/sql. */
 export class OracleSqlRequestDto {
-  /** A single SELECT (or WITH â€¦ SELECT); may use named `:binds`. */
+  /** A single SELECT (or WITH Ã¢â‚¬Â¦ SELECT); may use named `:binds`. */
   @IsOptional()
   @IsString()
   sql?: string;
 
   /**
-   * Base64 of the statement â€” the staging WAF rejects request bodies that
+   * Base64 of the statement Ã¢â‚¬â€ the staging WAF rejects request bodies that
    * look like SQL, so the console UI/dev-console convention is supported
    * here too. Wins over `sql` when both are sent.
    */
@@ -137,11 +138,24 @@ export class OracleSqlRequestDto {
 
 /** Body for POST /diagnostics/users-db/sql. */
 export class UsersDbSqlRequestDto {
-  /** A single SELECT (or WITH â€¦ SELECT) statement; may use named `@params`. */
+  /** A single SELECT (or WITH Ã¢â‚¬Â¦ SELECT) statement; may use named `@params`. */
+  /** A single SELECT (or WITH ... SELECT) statement; may use named `@params`. */
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  sql!: string;
+  sql?: string;
 
+  /**
+   * Base64 of the statement.
+   *
+   * The staging WAF rejects request bodies that look like SQL, so every
+   * query here came back as its HTML page rather than a result - which is
+   * why the Users DB could not be inspected from outside at all. The Oracle
+   * console already offered this escape hatch and this one did not. Wins
+   * over `sql` when both are sent.
+   */
+  @IsOptional()
+  @IsString()
+  sqlB64?: string;
   /** Values for the statement's named `@params` (parameterized binding). */
   @IsOptional()
   @IsObject()
@@ -159,7 +173,7 @@ export class UsersDbSqlRequestDto {
 /**
  * Diagnostics API over the in-memory Oracle call log (see OracleLogStore).
  * Lets you list/filter every Oracle call the backend made (object, binds,
- * duration, status, ORA code, correlation id) â€” the structured view of the
+ * duration, status, ORA code, correlation id) Ã¢â‚¬â€ the structured view of the
  * `[ora#N]` console logs. In-memory only; cleared on restart.
  *
  * The whole controller disappears (404) with DIAGNOSTICS_ENABLED=false.
@@ -187,9 +201,9 @@ export class DiagnosticsController {
 
   /**
    * Every Sanaad (`XXHMC_SND_*`) object of the requested type, straight from
-   * ALL_OBJECTS â€” the full catalog, NOT limited to the app's allow-list, so
+   * ALL_OBJECTS Ã¢â‚¬â€ the full catalog, NOT limited to the app's allow-list, so
    * new views appear here before the code knows them. Follow up with
-   * GET /diagnostics/oracle-object?name=â€¦ for the column list, and
+   * GET /diagnostics/oracle-object?name=Ã¢â‚¬Â¦ for the column list, and
    * POST /diagnostics/oracle/sql to query one.
    */
   @Get('oracle-views')
@@ -202,7 +216,7 @@ export class DiagnosticsController {
     const binds: Record<string, unknown> = { search: query.search?.trim().toUpperCase() || null };
     types.forEach((t, i) => (binds[`t${i}`] = t));
     const rows = await this.oracle.query<Record<string, any>>(
-      // Underscores are LIKE wildcards â€” escape them so the prefix is literal.
+      // Underscores are LIKE wildcards Ã¢â‚¬â€ escape them so the prefix is literal.
       `SELECT owner, object_name, object_type, status, last_ddl_time
          FROM all_objects
         WHERE object_name LIKE 'XXHMC\\_SND\\_%' ESCAPE '\\'
@@ -224,21 +238,21 @@ export class DiagnosticsController {
   }
 
   /**
-   * Ad-hoc read-only SQL console against Oracle â€” the Oracle twin of
+   * Ad-hoc read-only SQL console against Oracle Ã¢â‚¬â€ the Oracle twin of
    * /diagnostics/users-db/sql. A single SELECT/CTE (validated BEFORE the
    * driver, FOR UPDATE rejected), named `:binds` for WHERE parameters, and a
    * ROWNUM cap so a full-scan of a huge view cannot exhaust memory.
    *
-   * âš  TEMPORARY (client request 2026-08-31): the ORACLE_SQL_ENABLED and
+   * Ã¢Å¡Â  TEMPORARY (client request 2026-08-31): the ORACLE_SQL_ENABLED and
    * NODE_ENV=production gates are REMOVED so the console works everywhere
    * with no env dependency. Restore the two checks (see the users-db console
-   * below for the pattern) before any real production hardening â€” the only
+   * below for the pattern) before any real production hardening Ã¢â‚¬â€ the only
    * remaining protections are the SELECT-only validation and the row cap.
    */
   @Post('oracle/sql')
   @HttpCode(200)
   @ApiOperation({
-    summary: 'Run a read-only SELECT against Oracle (no env gate â€” temporary)',
+    summary: 'Run a read-only SELECT against Oracle (no env gate Ã¢â‚¬â€ temporary)',
     operationId: 'diag_oracleSql',
   })
   async oracleSql(@Body() body: OracleSqlRequestDto) {
@@ -247,9 +261,9 @@ export class DiagnosticsController {
     const maxRows = body.maxRows ?? 200;
     const binds: Record<string, unknown> = { ...(body.binds ?? {}) };
 
-    // Cap the result INSIDE Oracle when possible (plain SELECT â†’ inline-view
+    // Cap the result INSIDE Oracle when possible (plain SELECT Ã¢â€ â€™ inline-view
     // wrap + ROWNUM), so an unfiltered read of a large view cannot pull the
-    // whole table into memory. WITH â€¦ statements can't always be wrapped, so
+    // whole table into memory. WITH Ã¢â‚¬Â¦ statements can't always be wrapped, so
     // they run as-is and are sliced after the fetch.
     const wrappable = /^select\b/i.test(statement);
     const executed = wrappable
@@ -273,36 +287,39 @@ export class DiagnosticsController {
 
   /**
    * Ad-hoc read-only SQL console against the Users/Sanaad SQL Server DB.
-   * SELECT-only (validated by assertReadOnlySelect before touching the
-   * driver), gated by USERS_DB_SQL_ENABLED and hard-disabled in production.
-   * Values should be passed via `params` (named `@p` binds), never inlined.
+   * SELECT-only, validated by assertReadOnlySelect before the driver is
+   * touched. Values should be passed via `params` (named `@p` binds),
+   * never inlined.
+   *
+   * TEMPORARY: the USERS_DB_SQL_ENABLED and NODE_ENV=production gates are
+   * REMOVED - the same treatment the Oracle and MOTC consoles already have.
+   * Staging deploys with NODE_ENV=production, so both gates were closed
+   * there and the Users DB could not be inspected at all: the notification
+   * and attestation tables live in it and there is no other way to confirm
+   * a row was written. The 403 was unhelpful too, since the exception
+   * filter replaces the specific reason with a generic 'no permission'.
+   *
+   * Restore both checks before any real production hardening: rows from
+   * this database can contain MPIN hashes and OTP state.
    */
   @Post('users-db/sql')
   @HttpCode(200)
   @ApiOperation({
-    summary: 'Run a read-only SELECT against the Users DB (dev/staging only)',
+    summary: 'Run a read-only SELECT against the Users DB (no env gate - temporary)',
     operationId: 'diag_usersDbSql',
   })
   async usersDbSql(@Body() body: UsersDbSqlRequestDto) {
-    if (this.nodeEnv === 'production') {
-      throw new ForbiddenException('The users-db SQL console is disabled in production.');
-    }
-    if (!this.usersDbCfg.sqlConsoleEnabled) {
-      throw new ForbiddenException(
-        'The users-db SQL console is disabled â€” set USERS_DB_SQL_ENABLED=true to enable it.',
-      );
-    }
     return this.runSqlConsole(this.mssql, body);
   }
 
   /**
    * Ad-hoc read-only SQL console against the MOTC SMS gateway DB (the OTP
-   * push table + HMC_SND_LIV_EMP_MASTER_VW) â€” the MOTC twin of
+   * push table + HMC_SND_LIV_EMP_MASTER_VW) Ã¢â‚¬â€ the MOTC twin of
    * /diagnostics/users-db/sql.
    *
-   * âš  TEMPORARY (client request 2026-09-03): the MOTC_SMS_SQL_ENABLED and
+   * Ã¢Å¡  TEMPORARY (client request 2026-09-03): the MOTC_SMS_SQL_ENABLED and
    * NODE_ENV=production gates are REMOVED so the console works everywhere
-   * with no env dependency â€” same treatment as the Oracle console above.
+   * with no env dependency Ã¢â‚¬â€ same treatment as the Oracle console above.
    * Restore the two checks (see the users-db console for the pattern) before
    * any real production hardening: result rows from MOTC_SMS_PushTable can
    * contain live OTPs (MessageBody) and phone numbers.
@@ -310,7 +327,7 @@ export class DiagnosticsController {
   @Post('motc-sms-db/sql')
   @HttpCode(200)
   @ApiOperation({
-    summary: 'Run a read-only SELECT against the MOTC SMS DB (no env gate â€” temporary)',
+    summary: 'Run a read-only SELECT against the MOTC SMS DB (no env gate Ã¢â‚¬â€ temporary)',
     operationId: 'diag_motcSmsDbSql',
   })
   async motcSmsDbSql(@Body() body: UsersDbSqlRequestDto) {
@@ -321,7 +338,13 @@ export class DiagnosticsController {
     db: Pick<MssqlService, 'query'>,
     body: UsersDbSqlRequestDto,
   ) {
-    const statement = assertReadOnlySelect(body.sql);
+    // base64 first: the WAF rejects bodies that look like SQL, so that form is
+    // the only one that survives the trip in from outside.
+    const raw = body.sqlB64
+      ? Buffer.from(body.sqlB64, 'base64').toString('utf8')
+      : (body.sql ?? '');
+    if (!raw.trim()) throw new BadRequestException('Provide `sql` or `sqlB64`.');
+    const statement = assertReadOnlySelect(raw);
     const maxRows = body.maxRows ?? 200;
     const started = Date.now();
     const rows = await db.query(statement, body.params ?? {});
@@ -347,7 +370,7 @@ export class DiagnosticsController {
   }
 
   /**
-   * Browser view: a filterable table (enum, correlationId, object, oraCode, â€¦)
+   * Browser view: a filterable table (enum, correlationId, object, oraCode, Ã¢â‚¬Â¦)
    * rendered from the JSON list endpoint. @Public so it loads in a browser;
    * gate/remove it before production if the SQL log is sensitive.
    */

@@ -73,7 +73,8 @@ export class MpinService {
         return { status: 'error', message: 'Device is not registered for this user.' };
       }
       // Phone number for the OTP SMS comes from the corporate directory
-      // (LDAP/Entra) — the same identity source API-2 uses.
+      // (LDAP/Entra) — the same identity source API-2 uses. Email is the
+      // fallback channel when the directory has no mobile for the user.
       const identity = await this.ldap.validate({
         username: dto.username,
         imei: dto.imeinumber,
@@ -83,6 +84,7 @@ export class MpinService {
         await this.otp.send({
           username: dto.username,
           phoneNumber: identity.phoneNumber,
+          email: identity.email,
           imei: dto.imeinumber,
           purpose: 'FORGOT_MPIN',
           appName: dto.appname,

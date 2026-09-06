@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsNotEmpty, IsString } from 'class-validator';
+import { IsEmail, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 import { ClientContextDto } from './client-context.dto';
 
 /**
@@ -88,10 +88,24 @@ export class UserValidateResponseDto {
  * returned requestid (= MessageID) is what /auth/otp/validate expects.
  */
 export class SendOtpRequestDto extends ClientContextDto {
-  @ApiProperty({ example: '55123456', description: 'Destination phone number (ToAddress).' })
+  @ApiPropertyOptional({
+    example: '55123456',
+    description: 'Destination phone number (ToAddress). Omit to deliver by email instead.',
+  })
+  @IsOptional()
   @IsString()
   @IsNotEmpty()
-  phonenumber!: string;
+  phonenumber?: string;
+
+  @ApiPropertyOptional({
+    example: 'aibrahim39@hamad.qa',
+    description:
+      'Fallback channel for users with NO mobile: the OTP is emailed over SMTP. ' +
+      'Used only when phonenumber is absent; one of the two is required (409 otherwise).',
+  })
+  @IsOptional()
+  @IsEmail()
+  email?: string;
 }
 
 export class SendOtpResponseDto {

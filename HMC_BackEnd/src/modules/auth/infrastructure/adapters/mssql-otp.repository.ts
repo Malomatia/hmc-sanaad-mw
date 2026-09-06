@@ -11,6 +11,10 @@ import {
   VerifyOtpCommand,
 } from '../../domain/ports/otp.port';
 import { OTP_DELIVERY_PORT, OtpDeliveryPort } from '../../domain/ports/otp-delivery.port';
+import {
+  OTP_EMAIL_DELIVERY_PORT,
+  OtpEmailDeliveryPort,
+} from '../../domain/ports/otp-email-delivery.port';
 import { generateOtp } from './otp-generator.util';
 
 /** Latest OTP row for a user+device (legacy OTPValidate/OTPResend projection). */
@@ -52,6 +56,7 @@ export class MssqlOtpRepository implements OtpPort {
   constructor(
     private readonly db: MssqlService,
     @Inject(OTP_DELIVERY_PORT) private readonly delivery: OtpDeliveryPort,
+    @Inject(OTP_EMAIL_DELIVERY_PORT) private readonly emailDelivery: OtpEmailDeliveryPort,
     config: ConfigService,
   ) {
     this.cfg = config.getOrThrow<OtpConfig>('otp');
@@ -69,6 +74,9 @@ export class MssqlOtpRepository implements OtpPort {
         validForSeconds: Math.max(this.cfg.ttlSeconds - latest.DiffInSeconds, 0),
       };
     }
+    if (!cmd.phoneNumber && !cmd.email) {
+      throw new HttpException(
+        'No registered phone number or email address found for this user.',
 
     const mode: OtpMode | undefined = cmd.phoneNumber ? 'SMS' : cmd.email ? 'Email' : undefined;
     if (!mode) {
@@ -130,6 +138,13 @@ export class MssqlOtpRepository implements OtpPort {
       );
     }
 
+    // Raw OTP goes only to the delivery ports — never logged, never returned.
+    // SMS when the user has a phone; email is the no-mobile fallback channel.
+    if (cmd.phoneNumber) {
+      await this.delivery.sendOtpSms(cmd.phoneNumber, otp, cmd.purpose);
+    } else if (cmd.email) {
+      await this.emailDelivery.sendOtpEmail(cmd.email, otp, cmd.purpose);
+    }
     // The SeqNo is reused on an overwrite, so its in-memory verify state
     // (consumed / failed attempts) belongs to the PREVIOUS code — reset it.
     const requestId = String(seqNo);

@@ -202,6 +202,7 @@ export class OnboardingService {
           await this.otp.send({
             username: dto.username,
             phoneNumber: dto.phonenumber,
+            email: dto.email,
             imei: dto.imeinumber,
             purpose: 'ONBOARDING',
             appName: dto.appname,

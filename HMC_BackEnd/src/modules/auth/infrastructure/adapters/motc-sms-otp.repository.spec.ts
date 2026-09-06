@@ -4,6 +4,7 @@ import { MotcSmsDbService } from '@core/database/motc-sms-db.service';
 import { MssqlQueryError } from '@core/database/mssql.error';
 import { MotcSmsConfig, OtpConfig } from '@core/config/configuration';
 import { MotcSmsOtpRepository } from './motc-sms-otp.repository';
+import { OtpEmailDeliveryPort } from '../../domain/ports/otp-email-delivery.port';
 
 const OTP_CFG: OtpConfig = {
   length: 6,
@@ -30,12 +31,16 @@ const MOTC_CFG: Partial<MotcSmsConfig> = {
   maskMessageLog: '1',
   businessParam1: '',
   businessParam2: '',
+  emailProcessedState: '1',
 };
 
 const TEMPLATE = 'Your Sanaad verification code is {otp}';
 
 function makeRepo(otpCfg: Partial<OtpConfig> = {}, motcCfg: Partial<MotcSmsConfig> = {}) {
   const db = { query: jest.fn(), execute: jest.fn() } as unknown as jest.Mocked<MotcSmsDbService>;
+  const emailDelivery: jest.Mocked<OtpEmailDeliveryPort> = {
+    sendOtpEmail: jest.fn().mockResolvedValue(undefined),
+  };
   const config = {
     getOrThrow: jest.fn((key: string) => {
       if (key === 'otp') return { ...OTP_CFG, ...otpCfg };
@@ -44,8 +49,8 @@ function makeRepo(otpCfg: Partial<OtpConfig> = {}, motcCfg: Partial<MotcSmsConfi
       throw new Error(`unexpected config key ${key}`);
     }),
   } as unknown as ConfigService;
-  const repo = new MotcSmsOtpRepository(db, config);
-  return { repo, db };
+  const repo = new MotcSmsOtpRepository(db, emailDelivery, config);
+  return { repo, db, emailDelivery };
 }
 
 const SEND = {
@@ -121,7 +126,7 @@ describe('MotcSmsOtpRepository', () => {
       });
     });
 
-    it('rejects when the user has no phone number', async () => {
+    it('rejects when the user has neither a phone number nor an email', async () => {
       const { repo, db } = makeRepo();
       db.query.mockResolvedValue([]);
 
@@ -129,6 +134,35 @@ describe('MotcSmsOtpRepository', () => {
         HttpException,
       );
       expect(db.execute).not.toHaveBeenCalled();
+    });
+
+    it('does not use the email channel when the user has a phone number', async () => {
+      const { repo, db, emailDelivery } = makeRepo();
+      primeSend(db, 42);
+
+      await repo.send({ ...SEND, email: 'hmc1@hamad.qa' });
+
+      expect(emailDelivery.sendOtpEmail).not.toHaveBeenCalled();
+    });
+
+    it('falls back to email: stores a non-pushable row and delivers over SMTP', async () => {
+      const { repo, db, emailDelivery } = makeRepo();
+      primeSend(db, 42);
+
+      const result = await repo.send({
+        ...SEND,
+        phoneNumber: undefined,
+        email: 'hmc1@hamad.qa',
+      });
+
+      expect(result.requestId).toBe('42');
+      const [, params] = db.execute.mock.calls[0] as [string, Record<string, unknown>];
+      expect(params).toMatchObject({
+        toAddress: 'hmc1@hamad.qa',
+        processedState: '1', // emailProcessedState — the SMS gateway must not push it
+      });
+      const otp = /(\d{6})$/.exec(String(params.messageBody))?.[1];
+      expect(emailDelivery.sendOtpEmail).toHaveBeenCalledWith('hmc1@hamad.qa', otp, 'ONBOARDING');
     });
 
     it('retries with a fresh MessageID when the MAX+1 insert races a duplicate', async () => {
@@ -176,10 +210,10 @@ describe('MotcSmsOtpRepository', () => {
       db.query.mockResolvedValue(row());
 
       await expect(repo.verify(VERIFY)).resolves.toBe(true);
-      expect(db.query).toHaveBeenCalledWith(
-        expect.stringContaining('BusinessParam1 = @username'),
-        { username: 'hmc1', imei: 'imei-1' },
-      );
+      expect(db.query).toHaveBeenCalledWith(expect.stringContaining('BusinessParam1 = @username'), {
+        username: 'hmc1',
+        imei: 'imei-1',
+      });
     });
 
     it('is single-use: a verified OTP cannot be replayed', async () => {

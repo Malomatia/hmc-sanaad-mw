@@ -176,9 +176,7 @@ export class EntraGraphUserRepository implements LdapUserPort {
   private toIdentity(username: string, user?: GraphUser): EmployeeIdentity {
     const employeeNumber = user?.employeeId || undefined;
     const fullName =
-      user?.displayName ||
-      [user?.givenName, user?.surname].filter(Boolean).join(' ') ||
-      undefined;
+      user?.displayName || [user?.givenName, user?.surname].filter(Boolean).join(' ') || undefined;
     return {
       username: user?.userPrincipalName ?? username,
       employeeNumber,
@@ -186,6 +184,7 @@ export class EntraGraphUserRepository implements LdapUserPort {
       department: user?.department || undefined,
       company: user?.companyName || undefined,
       phoneNumber: user?.mobilePhone || user?.businessPhones?.[0] || undefined,
+      email: user?.mail || undefined,
       // Valid employee = resolved in Entra AND carries an employee id, matching
       // the LDAP adapter's rule (missing id => "Invalid employee id received.").
       isEmployee: user !== undefined && !!employeeNumber,

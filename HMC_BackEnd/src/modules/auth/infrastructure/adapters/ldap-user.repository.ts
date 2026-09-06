@@ -171,6 +171,7 @@ export class LdapUserRepository implements LdapUserPort {
       department: read('department'),
       company: read('company'),
       phoneNumber: read('mobile') ?? read('telephoneNumber'),
+      email: read('mail'),
       // Valid employee (API-2 "employeeflag") = found in the directory AND
       // carries an employee id. Missing id => "Invalid employee id received."
       isEmployee: entry !== undefined && !!employeeNumber,

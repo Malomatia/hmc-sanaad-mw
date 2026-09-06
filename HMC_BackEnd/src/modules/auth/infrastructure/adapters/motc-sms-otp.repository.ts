@@ -1,4 +1,4 @@
-import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
+import { HttpException, HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { timingSafeEqual } from 'node:crypto';
 import { MotcSmsDbService } from '@core/database/motc-sms-db.service';
@@ -10,6 +10,10 @@ import {
   SendOtpResult,
   VerifyOtpCommand,
 } from '../../domain/ports/otp.port';
+import {
+  OTP_EMAIL_DELIVERY_PORT,
+  OtpEmailDeliveryPort,
+} from '../../domain/ports/otp-email-delivery.port';
 import { generateOtp, otpCharClass } from './otp-generator.util';
 
 /** Latest OTP push row for a user+device (or by MessageID). */
@@ -42,6 +46,10 @@ const INSERT_RETRIES = 5;
  * - Policy comes from OtpConfig: TTL, resend window, and max verify attempts
  *   (attempts + single-use are tracked in-memory per MessageID — the push
  *   table has no columns for them, same trade-off as the legacy adapter).
+ * - EMAIL FALLBACK: a user with no phone number but an email still gets a push
+ *   row (so validation works unchanged), stored with MOTC_SMS_EMAIL_PROCESSED_STATE
+ *   so the SMS gateway does not push it; the OTP itself is delivered over SMTP
+ *   via OtpEmailDeliveryPort.
  */
 @Injectable()
 export class MotcSmsOtpRepository implements OtpPort {
@@ -58,6 +66,7 @@ export class MotcSmsOtpRepository implements OtpPort {
 
   constructor(
     private readonly db: MotcSmsDbService,
+    @Inject(OTP_EMAIL_DELIVERY_PORT) private readonly emailDelivery: OtpEmailDeliveryPort,
     config: ConfigService,
   ) {
     this.cfg = config.getOrThrow<OtpConfig>('otp');
@@ -84,9 +93,9 @@ export class MotcSmsOtpRepository implements OtpPort {
         HttpStatus.TOO_MANY_REQUESTS,
       );
     }
-    if (!cmd.phoneNumber) {
+    if (!cmd.phoneNumber && !cmd.email) {
       throw new HttpException(
-        'No registered phone number found for this user.',
+        'No registered phone number or email address found for this user.',
         HttpStatus.CONFLICT,
       );
     }
@@ -95,6 +104,14 @@ export class MotcSmsOtpRepository implements OtpPort {
     // Raw OTP goes only into MessageBody — never logged, never returned.
     const messageBody = this.messageTemplate.replace('{otp}', otp);
     const messageId = await this.insertMessage(cmd, messageBody);
+    if (!cmd.phoneNumber && cmd.email) {
+      // No mobile: the row is stored for VALIDATION only (emailProcessedState
+      // keeps the SMS gateway from pushing it) — delivery happens over SMTP.
+      await this.emailDelivery.sendOtpEmail(cmd.email, otp, cmd.purpose);
+      this.logger.log(
+        `OTP push row stored (${cmd.purpose}) as MessageID=${messageId} — delivered by email.`,
+      );
+    }
     this.logger.log(`OTP push row queued (${cmd.purpose}) as MessageID=${messageId}.`);
     return {
       requestId: String(messageId),
@@ -159,9 +176,12 @@ export class MotcSmsOtpRepository implements OtpPort {
               @businessParam1, @businessParam2)`,
           {
             messageId,
-            toAddress: cmd.phoneNumber,
+            toAddress: cmd.phoneNumber ?? cmd.email,
             messageBody,
-            processedState: this.motc.processedState,
+            // Email-delivered rows get a state the SMS gateway does NOT push.
+            processedState: cmd.phoneNumber
+              ? this.motc.processedState
+              : this.motc.emailProcessedState,
             priority: this.motc.priority,
             serviceId: appId,
             subjectId: this.motc.subjectId || null,
@@ -179,7 +199,11 @@ export class MotcSmsOtpRepository implements OtpPort {
         return messageId;
       } catch (err) {
         const sqlError = (err as MssqlQueryError).sqlErrorNumber;
-        if (sqlError !== undefined && DUPLICATE_KEY_ERRORS.has(sqlError) && attempt < INSERT_RETRIES) {
+        if (
+          sqlError !== undefined &&
+          DUPLICATE_KEY_ERRORS.has(sqlError) &&
+          attempt < INSERT_RETRIES
+        ) {
           this.logger.warn(
             `MessageID ${messageId} raced a concurrent insert — retrying (${attempt}/${INSERT_RETRIES}).`,
           );
@@ -191,10 +215,11 @@ export class MotcSmsOtpRepository implements OtpPort {
     throw new HttpException('Could not create the OTP request.', HttpStatus.INTERNAL_SERVER_ERROR);
   }
 
-  /** Resend-window lookup: by user+device when correlating, else by phone. */
+  /** Resend-window lookup: by user+device when correlating, else by recipient. */
   private async latestRowForSend(cmd: SendOtpCommand): Promise<PushRow | undefined> {
     if (this.correlates) return this.latestRowFor(cmd.username, cmd.imei);
-    if (!cmd.phoneNumber) return undefined;
+    const recipient = cmd.phoneNumber ?? cmd.email;
+    if (!recipient) return undefined;
     const rows = await this.db.query<PushRow>(
       `SELECT TOP 1 MessageID,
               DATEDIFF(SECOND, AddedTimeStamp, GETDATE()) AS DiffInSeconds,
@@ -202,7 +227,7 @@ export class MotcSmsOtpRepository implements OtpPort {
          FROM ${this.motc.table} WITH (NOLOCK)
         WHERE ToAddress = @toAddress
         ORDER BY MessageID DESC`,
-      { toAddress: cmd.phoneNumber },
+      { toAddress: recipient },
     );
     return rows[0];
   }

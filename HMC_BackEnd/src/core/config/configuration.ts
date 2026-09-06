@@ -241,6 +241,38 @@ export interface MotcSmsConfig {
    */
   businessParam1: string;
   businessParam2: string;
+  /**
+   * ProcessedState written for EMAIL-delivered OTP rows: the row is stored for
+   * validation exactly like an SMS OTP, but with a state the SMS gateway does
+   * NOT push (we deliver by SMTP ourselves). Default '1' (= already
+   * processed); confirm the gateway's skip value with the MOTC team.
+   */
+  emailProcessedState: string;
+}
+
+/**
+ * SMTP email delivery: the OTP fallback channel for users with no mobile
+ * number in the directory, and the diagnostics test email. Unset SMTP_HOST =
+ * masked log-only in non-production, hard failure in production (same
+ * contract as the SMS adapter).
+ */
+export interface EmailConfig {
+  smtpHost: string;
+  smtpPort: number;
+  /** Implicit TLS (SMTPS, usually port 465); false = STARTTLS when offered. */
+  smtpSecure: boolean;
+  smtpUser: string;
+  smtpPassword: string;
+  /** Accept self-signed server certs (internal relays) when false. */
+  tlsRejectUnauthorized: boolean;
+  /** From header, e.g. "Sanaad <no-reply@hamad.qa>". */
+  from: string;
+  /** Subject line of the OTP email. */
+  otpSubject: string;
+  /** OTP email body; `{otp}` is substituted with the raw OTP at send time. */
+  messageTemplate: string;
+  /** SMTP connection/greeting/socket timeout (ms). */
+  timeoutMs: number;
 }
 
 export interface MpinConfig {
@@ -426,6 +458,7 @@ export interface RootConfig {
   usersDb: UsersDbConfig;
   motcSms: MotcSmsConfig;
   sms: SmsConfig;
+  email: EmailConfig;
   auth: AuthConfig;
   cerner: CernerConfig;
   appLaunch: AppLaunchConfig;
@@ -615,6 +648,7 @@ export default (): RootConfig => ({
     maskMessageLog: process.env.MOTC_SMS_MASK_MESSAGE_LOG ?? '1',
     businessParam1: process.env.MOTC_SMS_BUSINESS_PARAM1 ?? '',
     businessParam2: process.env.MOTC_SMS_BUSINESS_PARAM2 ?? '',
+    emailProcessedState: process.env.MOTC_SMS_EMAIL_PROCESSED_STATE ?? '1',
   },
   sms: {
     baseUrl: process.env.SMS_API_BASE_URL ?? '',
@@ -622,6 +656,19 @@ export default (): RootConfig => ({
     senderId: process.env.SMS_SENDER_ID ?? '',
     timeoutMs: Number(process.env.SMS_API_TIMEOUT_MS ?? 25000),
     messageTemplate: process.env.SMS_MESSAGE_TEMPLATE ?? 'Your Sanaad verification code is {otp}',
+  },
+  email: {
+    smtpHost: process.env.SMTP_HOST ?? '',
+    smtpPort: Number(process.env.SMTP_PORT ?? 587),
+    smtpSecure: toBool(process.env.SMTP_SECURE),
+    smtpUser: process.env.SMTP_USER ?? '',
+    smtpPassword: process.env.SMTP_PASSWORD ?? '',
+    tlsRejectUnauthorized: toBool(process.env.SMTP_TLS_REJECT_UNAUTHORIZED ?? 'true'),
+    from: process.env.EMAIL_FROM ?? '',
+    otpSubject: process.env.EMAIL_OTP_SUBJECT ?? 'Sanaad verification code',
+    messageTemplate:
+      process.env.EMAIL_MESSAGE_TEMPLATE ?? 'Your Sanaad verification code is {otp}',
+    timeoutMs: Number(process.env.SMTP_TIMEOUT_MS ?? 25000),
   },
   auth: {
     jwtSecret: process.env.JWT_SECRET ?? 'dev-only-secret-change-me',

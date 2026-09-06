@@ -58,6 +58,7 @@ export class MssqlUserRepository implements LdapUserPort {
     'staffno',
     'employeeid',
   ];
+  private static readonly EMAIL_COLUMNS = ['emailid', 'emailaddress', 'email', 'mailid', 'mail'];
 
   constructor(
     private readonly db: MotcSmsDbService,
@@ -95,12 +96,13 @@ export class MssqlUserRepository implements LdapUserPort {
 
     return {
       username: query.username,
+      phoneNumber: row ? pick(row, MssqlUserRepository.PHONE_COLUMNS) : undefined,
+      email: row ? pick(row, MssqlUserRepository.EMAIL_COLUMNS) : undefined,
       employeeNumber: pick(row, MssqlUserRepository.EMPNO_COLUMNS),
       employeeName: pick(row, MssqlUserRepository.NAME_COLUMNS) ?? query.username,
       department: pick(row, ['department_desc', 'department']),
       jobName: pick(row, ['job_name', 'jobname']),
       email: pick(row, ['email_address', 'email']),
-      phoneNumber: pick(row, MssqlUserRepository.PHONE_COLUMNS),
       isEmployee: true,
       isNewUser: true,
       roles: [Role.EMPLOYEE],

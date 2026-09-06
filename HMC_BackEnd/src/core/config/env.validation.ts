@@ -74,6 +74,7 @@ export const envValidationSchema = Joi.object({
   MOTC_SMS_MASK_MESSAGE_LOG: Joi.string().default('1'),
   MOTC_SMS_BUSINESS_PARAM1: Joi.string().allow('').default(''),
   MOTC_SMS_BUSINESS_PARAM2: Joi.string().allow('').default(''),
+  MOTC_SMS_EMAIL_PROCESSED_STATE: Joi.string().default('1'),
 
   // SMS gateway (OTP delivery)
   SMS_API_BASE_URL: Joi.string().uri().allow('').default(''),
@@ -81,6 +82,18 @@ export const envValidationSchema = Joi.object({
   SMS_SENDER_ID: Joi.string().allow('').default(''),
   SMS_API_TIMEOUT_MS: Joi.number().min(1).default(25000),
   SMS_MESSAGE_TEMPLATE: Joi.string().default('Your Sanaad verification code is {otp}'),
+
+  // SMTP email (OTP fallback for users with no mobile + diagnostics test email)
+  SMTP_HOST: Joi.string().allow('').default(''),
+  SMTP_PORT: Joi.number().default(587),
+  SMTP_SECURE: Joi.boolean().default(false),
+  SMTP_USER: Joi.string().allow('').default(''),
+  SMTP_PASSWORD: Joi.string().allow('').default(''),
+  SMTP_TLS_REJECT_UNAUTHORIZED: Joi.boolean().default(true),
+  SMTP_TIMEOUT_MS: Joi.number().min(1).default(25000),
+  EMAIL_FROM: Joi.string().allow('').default(''),
+  EMAIL_OTP_SUBJECT: Joi.string().default('Sanaad verification code'),
+  EMAIL_MESSAGE_TEMPLATE: Joi.string().default('Your Sanaad verification code is {otp}'),
 
   // Auth
   JWT_SECRET: Joi.string().min(8).default('dev-only-secret-change-me'),

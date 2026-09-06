@@ -4,6 +4,7 @@ import { MssqlService } from '@core/database/mssql.service';
 import { OtpConfig } from '@core/config/configuration';
 import { MssqlOtpRepository } from './mssql-otp.repository';
 import { OtpDeliveryPort } from '../../domain/ports/otp-delivery.port';
+import { OtpEmailDeliveryPort } from '../../domain/ports/otp-email-delivery.port';
 
 const OTP_CFG: OtpConfig = {
   length: 6,
@@ -21,11 +22,14 @@ function makeRepo(cfg: Partial<OtpConfig> = {}) {
   const delivery: jest.Mocked<OtpDeliveryPort> = {
     sendOtpSms: jest.fn().mockResolvedValue(undefined),
   };
+  const emailDelivery: jest.Mocked<OtpEmailDeliveryPort> = {
+    sendOtpEmail: jest.fn().mockResolvedValue(undefined),
+  };
   const config = {
     getOrThrow: jest.fn().mockReturnValue({ ...OTP_CFG, ...cfg }),
   } as unknown as ConfigService;
-  const repo = new MssqlOtpRepository(db, delivery, config);
-  return { repo, db, delivery };
+  const repo = new MssqlOtpRepository(db, delivery, emailDelivery, config);
+  return { repo, db, delivery, emailDelivery };
 }
 
 const SEND = {
@@ -138,7 +142,7 @@ describe('MssqlOtpRepository', () => {
       expect(delivery.sendOtpSms).not.toHaveBeenCalled();
     });
 
-    it('rejects when the user has neither phone nor email', async () => {
+    it('rejects when the user has neither a phone number nor an email', async () => {
       const { repo, db } = makeRepo();
       db.query.mockResolvedValue([]);
 
@@ -146,6 +150,34 @@ describe('MssqlOtpRepository', () => {
         repo.send({ ...SEND, phoneNumber: undefined, email: undefined }),
       ).rejects.toBeInstanceOf(HttpException);
       expect(db.execute).not.toHaveBeenCalled();
+    });
+
+    it('prefers SMS when the user has both a phone number and an email', async () => {
+      const { repo, db, delivery, emailDelivery } = makeRepo();
+      db.query.mockResolvedValue([]);
+      db.execute.mockResolvedValue({ rowsAffected: 1, rows: [{ SeqNo: 42 }] });
+
+      await repo.send({ ...SEND, email: 'hmc1@hamad.qa' });
+
+      expect(delivery.sendOtpSms).toHaveBeenCalled();
+      expect(emailDelivery.sendOtpEmail).not.toHaveBeenCalled();
+    });
+
+    it('falls back to email delivery when the user has no phone number', async () => {
+      const { repo, db, delivery, emailDelivery } = makeRepo();
+      db.query.mockResolvedValue([]);
+      db.execute.mockResolvedValue({ rowsAffected: 1, rows: [{ SeqNo: 42 }] });
+
+      const result = await repo.send({
+        ...SEND,
+        phoneNumber: undefined,
+        email: 'hmc1@hamad.qa',
+      });
+
+      expect(result.requestId).toBe('42');
+      const otp = (db.execute.mock.calls[0][1] as { otp: string }).otp;
+      expect(emailDelivery.sendOtpEmail).toHaveBeenCalledWith('hmc1@hamad.qa', otp, 'ONBOARDING');
+      expect(delivery.sendOtpSms).not.toHaveBeenCalled();
     });
   });
 

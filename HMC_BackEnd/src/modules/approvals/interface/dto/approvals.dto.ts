@@ -1,8 +1,13 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsIn, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { Transform } from 'class-transformer';
 import { LangQueryDto } from '@shared/dto/lang-query.dto';
 import { ProfileQueryDto } from '@shared/dto/common-query.dto';
-import { ApprovalDecision, ReassignType } from '../../domain/approvals.repository';
+import {
+  ApprovalDecision,
+  PendingRequestCountRow,
+  ReassignType,
+} from '../../domain/approvals.repository';
 
 /** Query for detail routes carrying only `lang` (id is a path param). */
 export class ApprovalDetailQueryDto extends LangQueryDto {}
@@ -33,6 +38,44 @@ export class OwnScopeQueryDto extends LangQueryDto {
   @IsOptional()
   @IsString()
   username?: string;
+}
+
+export class PendingCountQueryDto extends LangQueryDto {
+  @ApiPropertyOptional({
+    example: 'AIBRAHIM39',
+    description:
+      'Username filter for non-production testing. Production always uses the authenticated username.',
+  })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value))
+  @IsString()
+  @IsNotEmpty()
+  username?: string;
+
+  @ApiProperty({
+    example: 'XXHMC_SND_PNDNG_UPD_PERSON_V',
+    description: 'Exact PENDING_REQ value to match.',
+  })
+  @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value))
+  @IsString()
+  @IsNotEmpty()
+  pendreq!: string;
+}
+
+export class PendingCountItemDto implements PendingRequestCountRow {
+  @ApiProperty({ example: 7 })
+  COUNT_DATA!: number;
+
+  @ApiProperty({ example: 'AIBRAHIM39' })
+  REQUESTOR_USER_NAME!: string;
+
+  @ApiProperty({ example: 'XXHMC_SND_PNDNG_UPD_PERSON_V' })
+  PENDING_REQ!: string;
+}
+
+export class PendingCountResponseDto {
+  @ApiProperty({ type: [PendingCountItemDto] })
+  items!: PendingCountItemDto[];
 }
 
 /**

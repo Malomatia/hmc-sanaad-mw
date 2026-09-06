@@ -519,3 +519,64 @@ responses as examples.
   error); `SCHOOL_FEE_PR` raises ORA-01403 at line 197 / ORA-00027 at line 114
   for fully valid payloads; `UPDATE_DEPENDENT_PR` intermittently hits
   ORA-00027 at package line 3506 once an attachment is supplied.
+
+## OTP email language
+
+OTP email bodies follow the request's `lang` header (`en`/`ar`, default English)
+through `/auth/initiate`, `/auth/send-otp`, and `/auth/mpin/forgot`, with the
+existing `?lang=` query taking precedence. The gateway must forward `lang` in
+its request-header allowlist; deploying only the backend leaves header-based
+mobile requests in English. Both OTP stores pass the language to
+`EmailOtpDeliveryAdapter`. `EMAIL_MESSAGE_TEMPLATE` overrides the English body,
+`EMAIL_MESSAGE_TEMPLATE_AR` overrides Arabic, and `{otp}` is replaced with the
+generated code. An existing environment override still wins over code defaults.
+The email subject, SMS templates, and diagnostics test-email body are unchanged.
+
+## SQL Server API audit logs
+
+`MssqlAuditSink` reuses the existing `USERS_DB_*` pool (SND_DEV on development)
+and retains the structured console audit. Each L1 API record inserts into
+`HMC_Sanad_FunctionAccessLogs_tbl`; `auth_login` also inserts exactly one row
+into `HMC_Sanad_UserLogs_tbl`. Lifecycle events remain console-only, avoiding
+duplicate login rows. `FunctionID` is the Swagger `operationId` (fallback:
+controller + handler name), `ActionTaken` is HTTP method + route template
+without query values, and both result columns use `success` / `error`, including
+business failures returned with HTTP 200. Inserts are parameterized, best-effort,
+and not awaited by the HTTP request; asynchronous sink failures are caught.
+
+Login JWTs now retain `deviceImei`, `appName`, `appVersion`, and `platform`, also
+preserved by refresh and the development auth guard. Audits prefer authenticated
+identity/session claims to request body fields. Missing context (including old
+tokens and anonymous requests) is bound as SQL NULL, not invented. The database
+account needs INSERT access and the existing column types/nullability must allow
+these values. These tables never receive request/response bodies or credentials.
+Requests rejected by gateway/backend guards before the audit interceptor runs
+are outside this logging path.
+
+Swagger exports `DECORATORS` from `@nestjs/swagger`; importing it from
+`@nestjs/swagger/dist/constants` typechecks but fails at runtime because that
+subpath is not exported.
+
+## School-fees academic-year LOV
+
+`/school-fees/lov/academic-year` (op 50) preserves `code`, `meaning`, and
+`used_value`, and adds `ACCAD_YEAR`, `ACD_START_DT`, and `ACD_END_DT`. These JSON
+spellings are intentional: the view exposes `ACAD_YEAR` and `ACD_STARD_DT`;
+the mapper also accepts the corrected aliases. Dates use `DD-MON-YYYY`, with
+NULL dates preserved as JSON null. The specialized mapping is restricted to
+`ACAD_YR_STRT_END_LOV`, including generic lookup access to that same object;
+other LOV responses are unchanged.
+
+## Pending request counts
+
+`GET /approvals/pending-count?pendreq=XXHMC_SND_PNDNG_UPD_PERSON_V&username=...`
+reads `XXHMC_SND_PEND_COUNT`, selecting `COUNT_DATA`, `REQUESTOR_USER_NAME`, and
+`PENDING_REQ` into `result.items`. Both filters are exact, bound values joined
+with AND; `pendreq` is never interpreted as an object to query. There is no
+count cache or synthesized zero: no matching rows returns an empty array.
+`pendreq` is required, `username` is optional and defaults to the authenticated
+login. As with the other approvals reads, a supplied username is honored only
+outside production; production always binds the caller's login, not their
+employee number. The route is open to authenticated employees with `@Roles()`
+overriding the controller's approver role. Swagger/audit operation ID:
+`approvals_pendingCount`.

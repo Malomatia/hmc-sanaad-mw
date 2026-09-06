@@ -5,7 +5,7 @@ import { OracleService } from '@core/database/oracle.service';
 import { OracleSchemaService } from '@core/database/oracle-schema.service';
 import { Lang } from '@shared/domain/lang';
 import { LovItem } from '@shared/domain/lov-item';
-import { isKnownOracleObject } from '@shared/constants/oracle-objects';
+import { isKnownOracleObject, ORACLE_OBJECTS } from '@shared/constants/oracle-objects';
 import {
   EMP_KEY_COLUMN,
   PERSON_ID_COLUMN,
@@ -161,7 +161,9 @@ export class LovOracleRepository implements LovRepository {
         }
         throw err;
       });
-    return LovMapper.toItems(rows, lang);
+    return object === ORACLE_OBJECTS.ACAD_YR_STRT_END_LOV
+      ? rows.map((row) => LovMapper.toAcademicYearItem(row))
+      : LovMapper.toItems(rows, lang);
   }
 
   /**

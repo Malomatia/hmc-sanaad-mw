@@ -1,6 +1,6 @@
 import { Lang } from '@shared/domain/lang';
 import { LovItem } from '@shared/domain/lov-item';
-import { col, str, strAr } from '@shared/utils/mapper.util';
+import { col, dateStr, str, strAr } from '@shared/utils/mapper.util';
 
 /**
  * Maps a generic Oracle LOV/view row to a LovItem. The `XXHMC_SND_*` LOVs expose
@@ -129,6 +129,19 @@ export class LovMapper {
 
   static toItems(rows: Record<string, any>[], lang: Lang): LovItem[] {
     return rows.map((r) => this.toItem(r, lang));
+  }
+
+  static toAcademicYearItem(row: Record<string, unknown>): LovItem {
+    const year = str(row, 'accad_year') ?? str(row, 'acad_year') ?? null;
+    return {
+      code: year ?? '',
+      meaning: year ?? '',
+      used_value: year ?? '',
+      ACCAD_YEAR: year,
+      ACD_START_DT:
+        (dateStr(row, 'acd_start_dt') ?? dateStr(row, 'acd_stard_dt'))?.toUpperCase() ?? null,
+      ACD_END_DT: dateStr(row, 'acd_end_dt')?.toUpperCase() ?? null,
+    };
   }
 
   /**

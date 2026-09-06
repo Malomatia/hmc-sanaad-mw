@@ -66,6 +66,59 @@ describe('ProxyService', () => {
     expect(res.send).toHaveBeenCalledWith(backendBody);
   });
 
+  it.each(['en', 'ar'])('forwards lang=%s while preserving the header allowlist', async (lang) => {
+    const request = jest
+      .fn()
+      .mockReturnValue(of({ status: 200, data: Buffer.alloc(0), headers: {} }));
+    const service = new ProxyService({ request } as unknown as HttpService, config);
+    const allowedHeaders = {
+      authorization: 'Bearer abc',
+      'content-type': 'application/json',
+      accept: 'application/json',
+      'accept-language': lang === 'en' ? 'ar' : 'en',
+      lang,
+      'x-integrity-token': 'integrity-token',
+      'x-integrity-request-hash': 'request-hash',
+      'x-integrity-challenge': 'challenge',
+      'x-ios-assertion': 'assertion',
+      'x-ios-key-id': 'key-id',
+    };
+
+    await service.forward(
+      makeReq({
+        headers: {
+          ...allowedHeaders,
+          cookie: 'session=private',
+          'x-user-role': 'admin',
+          'x-forwarded-for': '203.0.113.1',
+          'x-correlation-id': 'untrusted-cid',
+        },
+      }),
+      makeRes(),
+    );
+
+    expect(request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        headers: { ...allowedHeaders, 'x-correlation-id': 'cid-123' },
+      }),
+    );
+  });
+
+  it('does not infer a lang header from accept-language or the query string', async () => {
+    const request = jest
+      .fn()
+      .mockReturnValue(of({ status: 200, data: Buffer.alloc(0), headers: {} }));
+    const service = new ProxyService({ request } as unknown as HttpService, config);
+
+    await service.forward(makeReq({ headers: { 'accept-language': 'ar' } }), makeRes());
+
+    expect(request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        headers: { 'accept-language': 'ar', 'x-correlation-id': 'cid-123' },
+      }),
+    );
+  });
+
   it('rewrites the gateway API prefix to the backend API prefix', async () => {
     const request = jest
       .fn()

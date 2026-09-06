@@ -16,6 +16,8 @@ import {
   ApprovalDetailQueryDto,
   ApproveRejectRequestDto,
   OwnScopeQueryDto,
+  PendingCountQueryDto,
+  PendingCountResponseDto,
   ReassignApprovalRequestDto,
   RequestInfoRequestDto,
   WorklistSummaryQueryDto,
@@ -88,6 +90,20 @@ export class ApprovalsController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.approvals.myRequests(user, lang, q.enum ?? q.username);
+  }
+
+  @Roles()
+  @Get('pending-count')
+  @ApiOperation({
+    summary: 'Pending request counts filtered by requestor and request type',
+    operationId: 'approvals_pendingCount',
+  })
+  @ApiOkResponse({ type: PendingCountResponseDto })
+  async pendingCount(
+    @Query() q: PendingCountQueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<PendingCountResponseDto> {
+    return { items: await this.approvals.pendingCounts(user, q.pendreq, q.username) };
   }
 
   @Get('worklist')

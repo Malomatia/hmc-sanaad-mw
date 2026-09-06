@@ -47,6 +47,32 @@ describe('Gateway (e2e) — backend reachable', () => {
     expect(forwarded?.body).toEqual({ username: 'AIBRAHIM39', mpin: '1234' });
   });
 
+  describe.each(['initiate', 'send-otp', 'mpin/forgot'])('POST /auth/%s', (route) => {
+    it.each(['en', 'ar'])('forwards lang=%s without a bearer token', async (lang) => {
+      const body = { username: 'test-user', deviceid: 'test-device' };
+      const acceptLanguage = lang === 'en' ? 'ar' : 'en';
+      const requestCount = backend.requests.length;
+      const res = await request(app.getHttpServer())
+        .post(`/api/v1/auth/${route}`)
+        .set('lang', lang)
+        .set('Accept-Language', acceptLanguage)
+        .set('Cookie', 'session=private')
+        .send(body)
+        .expect(404);
+
+      expect(res.body).toEqual({ status: 'error', message: 'not found' });
+      expect(backend.requests).toHaveLength(requestCount + 1);
+      const forwarded = backend.requests[requestCount];
+      expect(forwarded.method).toBe('POST');
+      expect(forwarded.url).toBe(`/api/v1/auth/${route}`);
+      expect(forwarded.body).toEqual(body);
+      expect(forwarded.headers.lang).toBe(lang);
+      expect(forwarded.headers['accept-language']).toBe(acceptLanguage);
+      expect(forwarded.headers.cookie).toBeUndefined();
+      expect(forwarded.headers.authorization).toBeUndefined();
+    });
+  });
+
   it('rejects an unauthenticated request to a proxied (wildcard) route with 401', async () => {
     await request(app.getHttpServer()).get('/api/v1/employee/profile').expect(401);
   });

@@ -24,6 +24,7 @@ import {
   AttachmentContent,
   DecisionCommand,
   MyRequests,
+  PendingRequestCountRow,
   ReassignCommand,
   RequestAttachment,
   RequestDetailSource,
@@ -79,6 +80,15 @@ export class ApprovalsOracleRepository extends BaseOracleRepository implements A
 
   constructor(ora: OracleService, schema: OracleSchemaService) {
     super(ora, schema);
+  }
+
+  getPendingCounts(username: string, pendreq: string): Promise<PendingRequestCountRow[]> {
+    return this.query<PendingRequestCountRow>(
+      `SELECT COUNT_DATA, REQUESTOR_USER_NAME, PENDING_REQ
+         FROM ${ORACLE_OBJECTS.PEND_COUNT}
+        WHERE REQUESTOR_USER_NAME = :username AND PENDING_REQ = :pendreq`,
+      { username, pendreq },
+    );
   }
 
   /**

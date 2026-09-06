@@ -13,6 +13,7 @@ import {
   ApprovalsSummary,
   AttachmentContent,
   MyRequests,
+  PendingRequestCountRow,
   ReassignType,
   RequestAttachment,
   WORKLIST_REPOSITORY,
@@ -72,6 +73,15 @@ export class ApprovalsService {
    */
   summary(user: AuthenticatedUser, lang: Lang = 'en', actAs?: string): Promise<ApprovalsSummary> {
     return this.repo.getSummary(this.keysOf(user, actAs), lang);
+  }
+
+  pendingCounts(
+    user: AuthenticatedUser,
+    pendreq: string,
+    username?: string,
+  ): Promise<PendingRequestCountRow[]> {
+    const requestor = this.actAsAllowed && username ? username : user.username;
+    return this.repo.getPendingCounts(requestor, pendreq);
   }
 
   /**

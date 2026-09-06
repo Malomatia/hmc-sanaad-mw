@@ -21,6 +21,7 @@ const FORWARD_REQUEST_HEADERS = [
   'content-type',
   'accept',
   'accept-language',
+  'lang',
   'x-integrity-token',
   'x-integrity-request-hash',
   'x-integrity-challenge',

@@ -1,4 +1,11 @@
-import { Controller, Get, INestApplication, Logger, ValidationPipe } from '@nestjs/common';
+import {
+  BadRequestException,
+  Controller,
+  Get,
+  INestApplication,
+  Logger,
+  ValidationPipe,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { ApiOperation } from '@nestjs/swagger';
 import { Test } from '@nestjs/testing';
@@ -194,6 +201,93 @@ describe('API database auditing', () => {
       expect.any(String),
       expect.objectContaining({ actionResult: 'error' }),
     );
+  });
+
+  it.each(['HMC_Sanad_FunctionAccessLogs_tbl', 'HMC_Sanad_UserLogs_tbl'])(
+    'continues login when saving to %s fails',
+    async (table) => {
+      execute.mockImplementation((sql: string) =>
+        sql.includes(table)
+          ? Promise.reject(new Error('audit insert denied'))
+          : Promise.resolve({ rowsAffected: 1, rows: [] }),
+      );
+
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/login')
+        .send(loginBody)
+        .expect(200)
+        .expect({ status: 'success', employeeusername: 'resolved-user' });
+      await new Promise<void>((resolve) => setImmediate(resolve));
+
+      expect(execute).toHaveBeenCalledTimes(2);
+      expect(Logger.prototype.error).toHaveBeenCalledWith('Audit sink failed: audit insert denied');
+    },
+  );
+
+  it('continues a non-login API when its audit insert fails', async () => {
+    execute.mockRejectedValue(new Error('audit table missing'));
+
+    await request(app.getHttpServer())
+      .get('/api/v1/items/123')
+      .expect(200)
+      .expect({
+        result: { name: 'Example' },
+        opstatus: 0,
+        status: 'success',
+        httpStatusCode: 200,
+      });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(Logger.prototype.error).toHaveBeenCalledWith('Audit sink failed: audit table missing');
+  });
+
+  it('preserves a business rejection even when audit saving also fails', async () => {
+    const response = { status: 'error', message: 'Invalid credentials.' };
+    login.mockResolvedValue(response);
+    execute.mockRejectedValue(new Error('audit unavailable'));
+
+    await request(app.getHttpServer())
+      .post('/api/v1/auth/login')
+      .send(loginBody)
+      .expect(200)
+      .expect(response);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    expect(Logger.prototype.error).toHaveBeenCalledWith('Audit sink failed: audit unavailable');
+  });
+
+  it('does not replace the original HTTP error with an audit-save error', async () => {
+    login.mockRejectedValue(new BadRequestException('Business request rejected'));
+    execute.mockRejectedValue(new Error('audit unavailable'));
+
+    await request(app.getHttpServer())
+      .post('/api/v1/auth/login')
+      .send(loginBody)
+      .expect(400)
+      .expect({ statusCode: 400, message: 'Business request rejected', error: 'Bad Request' });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    expect(Logger.prototype.error).toHaveBeenCalledWith('Audit sink failed: audit unavailable');
+  });
+
+  it('responds before audit saving finishes and catches a delayed save failure', async () => {
+    let rejectWrite!: (reason: Error) => void;
+    execute.mockReturnValue(
+      new Promise((_resolve, reject) => {
+        rejectWrite = reject;
+      }),
+    );
+
+    try {
+      await request(app.getHttpServer()).get('/api/v1/items/123').timeout(2000).expect(200);
+      expect(execute).toHaveBeenCalledTimes(1);
+    } finally {
+      rejectWrite(new Error('audit timeout'));
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    }
+
+    expect(Logger.prototype.error).toHaveBeenCalledWith('Audit sink failed: audit timeout');
   });
 
   it('does not fail a successful API call when the database log insert fails', async () => {

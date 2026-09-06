@@ -35,6 +35,57 @@ describe('LovOracleRepository', () => {
     );
   });
 
+  it.each(['en', 'ar'] as const)(
+    'preserves academic-year dates and existing LOV fields for lang=%s, including cached reads',
+    async (lang) => {
+      const { repository, query } = make();
+      query.mockResolvedValue([
+        { ACAD_YEAR: '2025-2026', ACD_STARD_DT: '01-SEP-2025', ACD_END_DT: '30-JUN-2026' },
+        { ACAD_YEAR: '2026-2027', ACD_STARD_DT: '01-SEP-2026', ACD_END_DT: '30-JUN-2027' },
+      ]);
+
+      const items = await repository.readLov('XXHMC_SND_ACAD_YR_STRT_END_LOV', lang);
+
+      expect(items).toEqual([
+        {
+          code: '2025-2026',
+          meaning: '2025-2026',
+          used_value: '2025-2026',
+          ACCAD_YEAR: '2025-2026',
+          ACD_START_DT: '01-SEP-2025',
+          ACD_END_DT: '30-JUN-2026',
+        },
+        {
+          code: '2026-2027',
+          meaning: '2026-2027',
+          used_value: '2026-2027',
+          ACCAD_YEAR: '2026-2027',
+          ACD_START_DT: '01-SEP-2026',
+          ACD_END_DT: '30-JUN-2027',
+        },
+      ]);
+      expect(query).toHaveBeenCalledWith('SELECT * FROM XXHMC_SND_ACAD_YR_STRT_END_LOV', {});
+      await expect(repository.readLov('XXHMC_SND_ACAD_YR_STRT_END_LOV', lang)).resolves.toEqual(
+        items,
+      );
+      expect(query).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('does not add academic-year fields to a different LOV', async () => {
+    const { repository, query } = make();
+    query.mockResolvedValue([
+      { NAME: 'Doha School', ACAD_YEAR: '2025-2026', ACD_STARD_DT: '01-SEP-2025' },
+    ]);
+
+    const [item] = await repository.readLov(object, 'en');
+
+    expect(item.code).toBe('Doha School');
+    expect(item).not.toHaveProperty('ACCAD_YEAR');
+    expect(item).not.toHaveProperty('ACD_START_DT');
+    expect(item).not.toHaveProperty('ACD_END_DT');
+  });
+
   it('coalesces and caches identical LOV requests', async () => {
     const { repository, query } = make();
     await Promise.all([

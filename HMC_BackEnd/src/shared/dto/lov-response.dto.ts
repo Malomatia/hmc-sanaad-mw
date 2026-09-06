@@ -41,6 +41,30 @@ export class LovItemDto implements LovItem {
       'so send this as `p_letter_language`. Not localized; it is a value to send back, not to display.',
   })
   description?: string;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: '2025-2026',
+    description: 'Academic year, returned by the school-fees academic-year LOV.',
+  })
+  ACCAD_YEAR?: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: '01-SEP-2025',
+    description: 'Academic-year start date (DD-MON-YYYY).',
+  })
+  ACD_START_DT?: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: '30-JUN-2026',
+    description: 'Academic-year end date (DD-MON-YYYY).',
+  })
+  ACD_END_DT?: string | null;
 }
 
 export class LovResponseDto {

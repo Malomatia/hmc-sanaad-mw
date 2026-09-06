@@ -69,6 +69,68 @@ describe('LovMapper', () => {
     });
   });
 
+  describe('school-fees academic-year rows', () => {
+    it('maps the Oracle column spellings without depending on column order', () => {
+      expect(
+        LovMapper.toAcademicYearItem({
+          ACD_STARD_DT: '01-SEP-2025',
+          ACD_END_DT: '30-JUN-2026',
+          ACAD_YEAR: '2025-2026',
+          INTERNAL_COLUMN: 'not exposed',
+        }),
+      ).toEqual({
+        code: '2025-2026',
+        meaning: '2025-2026',
+        used_value: '2025-2026',
+        ACCAD_YEAR: '2025-2026',
+        ACD_START_DT: '01-SEP-2025',
+        ACD_END_DT: '30-JUN-2026',
+      });
+    });
+
+    it('formats Oracle DATE values and resolves column names case-insensitively', () => {
+      expect(
+        LovMapper.toAcademicYearItem({
+          acad_year: '2026-2027',
+          acd_stard_dt: new Date(2026, 8, 1),
+          Acd_End_Dt: new Date(2027, 5, 30),
+        }),
+      ).toMatchObject({
+        ACCAD_YEAR: '2026-2027',
+        ACD_START_DT: '01-SEP-2026',
+        ACD_END_DT: '30-JUN-2027',
+      });
+    });
+
+    it('also accepts the corrected year/start column spellings', () => {
+      expect(
+        LovMapper.toAcademicYearItem({
+          ACCAD_YEAR: '2025-2026',
+          ACD_START_DT: '01-SEP-2025',
+          ACD_END_DT: '30-JUN-2026',
+        }),
+      ).toMatchObject({
+        ACCAD_YEAR: '2025-2026',
+        ACD_START_DT: '01-SEP-2025',
+        ACD_END_DT: '30-JUN-2026',
+      });
+    });
+
+    it('keeps null dates present without inventing dates from the year label', () => {
+      expect(
+        LovMapper.toAcademicYearItem({
+          ACAD_YEAR: '2025-2026',
+          ACD_STARD_DT: null,
+          ACD_END_DT: null,
+        }),
+      ).toMatchObject({
+        ACCAD_YEAR: '2025-2026',
+        ACD_START_DT: null,
+        ACD_END_DT: null,
+      });
+    });
+  });
+
   it('always carries the English label in used_value', () => {
     expect(map({ CODE: 'QA', VALUE: 'Qatar', VALUEAR: '%D9%82%D8%B7%D8%B1' })).toMatchObject({
       meaning: 'Qatar',

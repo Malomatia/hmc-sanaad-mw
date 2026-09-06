@@ -13,6 +13,12 @@ export interface MyRequests {
   pendingQid: ApprovalRow[];
 }
 
+export interface PendingRequestCountRow {
+  COUNT_DATA: number;
+  REQUESTOR_USER_NAME: string;
+  PENDING_REQ: string;
+}
+
 export type ApprovalDecision = 'APPROVE' | 'REJECT';
 
 /** How a worklist task is handed over (documented `p_type` of REASSIGN_PR). */
@@ -105,6 +111,7 @@ export interface ApprovalsRepository {
   decide(cmd: DecisionCommand): Promise<SubmitResult>;
   requestInfo(cmd: RequestInfoCommand): Promise<SubmitResult>;
   getMyRequests(keys: readonly string[], lang: Lang): Promise<MyRequests>;
+  getPendingCounts(username: string, pendreq: string): Promise<PendingRequestCountRow[]>;
   /**
    * Ownership checks for the routes that resolve a request by ID ALONE.
    * op 21 and the attachment download carry no caller in their queries and the

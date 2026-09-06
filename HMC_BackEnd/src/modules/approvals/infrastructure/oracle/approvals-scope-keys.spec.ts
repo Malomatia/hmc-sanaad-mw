@@ -81,3 +81,53 @@ describe('approvals key scoping', () => {
     expect(lookups).toHaveLength(1);
   });
 });
+
+describe('pending request count filters', () => {
+  const pendreq = 'XXHMC_SND_PNDNG_UPD_PERSON_V';
+  const row = { COUNT_DATA: 7, REQUESTOR_USER_NAME: 'AIBRAHIM39', PENDING_REQ: pendreq };
+
+  function make() {
+    const query = jest.fn().mockResolvedValue([row]);
+    const ora = { query } as unknown as OracleService;
+    const schema = {} as OracleSchemaService;
+    return { repo: new ApprovalsOracleRepository(ora, schema), query };
+  }
+
+  it('reads COUNT_DATA and the filter columns using both exact predicates', async () => {
+    const { repo, query } = make();
+
+    await expect(repo.getPendingCounts('AIBRAHIM39', pendreq)).resolves.toEqual([row]);
+
+    expect(ORACLE_OBJECTS.PEND_COUNT).toBe('XXHMC_SND_PEND_COUNT');
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(query).toHaveBeenCalledWith(
+      expect.stringMatching(
+        /SELECT COUNT_DATA, REQUESTOR_USER_NAME, PENDING_REQ\s+FROM XXHMC_SND_PEND_COUNT\s+WHERE REQUESTOR_USER_NAME = :username AND PENDING_REQ = :pendreq/,
+      ),
+      { username: 'AIBRAHIM39', pendreq },
+    );
+  });
+
+  it('treats pendreq as a bound value, never a SQL object or fragment', async () => {
+    const { repo, query } = make();
+    const username = "user' OR '1'='1";
+    const value = "XXHMC_SND_PNDNG_UPD_PERSON_V' OR '1'='1";
+
+    await repo.getPendingCounts(username, value);
+
+    const [sql, binds] = query.mock.calls[0];
+    expect(sql).not.toContain(username);
+    expect(sql).not.toContain(value);
+    expect(sql).toContain('FROM XXHMC_SND_PEND_COUNT');
+    expect(binds).toEqual({ username, pendreq: value });
+  });
+
+  it('reads fresh counts on each call and preserves empty results', async () => {
+    const { repo, query } = make();
+    query.mockResolvedValueOnce([row]).mockResolvedValueOnce([]);
+
+    await expect(repo.getPendingCounts('AIBRAHIM39', pendreq)).resolves.toEqual([row]);
+    await expect(repo.getPendingCounts('AIBRAHIM39', pendreq)).resolves.toEqual([]);
+    expect(query).toHaveBeenCalledTimes(2);
+  });
+});

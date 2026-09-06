@@ -46,4 +46,7 @@ export interface LovItem {
    * value clients send back, not text to display.
    */
   description?: string;
+  ACCAD_YEAR?: string | null;
+  ACD_START_DT?: string | null;
+  ACD_END_DT?: string | null;
 }

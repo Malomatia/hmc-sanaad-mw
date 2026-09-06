@@ -86,6 +86,24 @@ describe('MpinService.forgotInitiate (API-6)', () => {
     expect(result).toMatchObject({ status: 'initiated successfully', requestid: '42' });
   });
 
+  it.each(['en', 'ar', undefined] as const)(
+    'passes lang=%s to OTP delivery for the email fallback',
+    async (lang) => {
+      const { service, otp, ldap } = makeService();
+      ldap.validate.mockResolvedValue({
+        ...IDENTITY,
+        phoneNumber: undefined,
+        email: 'hmc1@hamad.qa',
+      });
+
+      await service.forgotInitiate(DTO, lang);
+
+      expect(otp.send).toHaveBeenCalledWith(
+        expect.objectContaining({ email: 'hmc1@hamad.qa', lang: lang ?? 'en' }),
+      );
+    },
+  );
+
   it('keeps the dev bypass: no DB/directory/OTP calls when AUTH_DISABLED=true', async () => {
     const { service, otp, devices, ldap } = makeService({ authDisabled: true });
 

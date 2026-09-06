@@ -1,3 +1,4 @@
+import { Lang } from '@shared/domain/lang';
 import { OtpPurpose } from './otp.port';
 
 /**
@@ -7,7 +8,7 @@ import { OtpPurpose } from './otp.port';
  * log it, nor an unmasked email address.
  */
 export interface OtpEmailDeliveryPort {
-  sendOtpEmail(email: string, otp: string, purpose: OtpPurpose): Promise<void>;
+  sendOtpEmail(email: string, otp: string, purpose: OtpPurpose, lang?: Lang): Promise<void>;
 }
 
 export const OTP_EMAIL_DELIVERY_PORT = Symbol('OTP_EMAIL_DELIVERY_PORT');

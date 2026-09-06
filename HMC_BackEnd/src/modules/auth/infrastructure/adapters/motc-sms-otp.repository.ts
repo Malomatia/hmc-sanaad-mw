@@ -4,6 +4,7 @@ import { timingSafeEqual } from 'node:crypto';
 import { MotcSmsDbService } from '@core/database/motc-sms-db.service';
 import { MssqlQueryError } from '@core/database/mssql.error';
 import { MotcSmsConfig, OtpConfig, SmsConfig } from '@core/config/configuration';
+import { DEFAULT_LANG } from '@shared/domain/lang';
 import {
   OtpPort,
   SendOtpCommand,
@@ -107,7 +108,7 @@ export class MotcSmsOtpRepository implements OtpPort {
     if (!cmd.phoneNumber && cmd.email) {
       // No mobile: the row is stored for VALIDATION only (emailProcessedState
       // keeps the SMS gateway from pushing it) — delivery happens over SMTP.
-      await this.emailDelivery.sendOtpEmail(cmd.email, otp, cmd.purpose);
+      await this.emailDelivery.sendOtpEmail(cmd.email, otp, cmd.purpose, cmd.lang ?? DEFAULT_LANG);
       this.logger.log(
         `OTP push row stored (${cmd.purpose}) as MessageID=${messageId} — delivered by email.`,
       );

@@ -55,6 +55,18 @@ function makeService(overrides?: { identity?: Partial<typeof IDENTITY> }) {
   };
 }
 
+describe.each(['validateUser', 'sendOtp'] as const)('OnboardingService.%s language', (method) => {
+  it.each(['en', 'ar', undefined] as const)('passes lang=%s to OTP delivery', async (lang) => {
+    const { service, otp } = makeService({ identity: { phoneNumber: undefined } });
+
+    await service[method]({ ...DTO, email: IDENTITY.email }, lang);
+
+    expect(otp.send).toHaveBeenCalledWith(
+      expect.objectContaining({ email: IDENTITY.email, lang: lang ?? 'en' }),
+    );
+  });
+});
+
 describe('OnboardingService.validateUser (reworked initiate, 2026-09-03)', () => {
   it('rejects a username absent from the employee view without touching the device table', async () => {
     const { service, otp, devices } = makeService({
@@ -156,11 +168,12 @@ describe('OnboardingService.validateUser (reworked initiate, 2026-09-03)', () =>
   });
 
   it('localizes the messages when lang=ar (header/query)', async () => {
-    const { service, devices } = makeService();
+    const { service, devices, otp } = makeService();
     devices.find.mockResolvedValue(undefined);
 
     const sent = await service.validateUser(DTO, 'ar');
     expect(sent.message).toBe('تم إرسال رمز التحقق بنجاح');
+    expect(otp.send).toHaveBeenCalledWith(expect.objectContaining({ lang: 'ar' }));
 
     const { service: rejecting } = makeService({ identity: { isEmployee: false, roles: [] } });
     const rejected = await rejecting.validateUser(DTO, 'ar');

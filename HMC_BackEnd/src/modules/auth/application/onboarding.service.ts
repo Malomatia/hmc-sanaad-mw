@@ -146,6 +146,7 @@ export class OnboardingService {
           email: identity.email,
           imei: dto.imeinumber,
           purpose: 'ONBOARDING',
+          lang,
           appName: dto.appname,
           appVersion: dto.version,
           appDatetime: dto.sysdate,
@@ -193,7 +194,10 @@ export class OnboardingService {
    * SMS goes out via the MOTC push table. The returned requestid pairs with
    * /auth/otp/validate.
    */
-  async sendOtp(dto: SendOtpRequestDto): Promise<SendOtpResponseDto> {
+  async sendOtp(
+    dto: SendOtpRequestDto,
+    lang: Lang = DEFAULT_LANG,
+  ): Promise<SendOtpResponseDto> {
     const ctx = {
       username: dto.username,
       deviceImei: dto.imeinumber,
@@ -210,6 +214,7 @@ export class OnboardingService {
             email: dto.email,
             imei: dto.imeinumber,
             purpose: 'ONBOARDING',
+            lang,
             appName: dto.appname,
             appVersion: dto.version,
             appDatetime: dto.sysdate,

@@ -163,22 +163,31 @@ describe('MssqlOtpRepository', () => {
       expect(emailDelivery.sendOtpEmail).not.toHaveBeenCalled();
     });
 
-    it('falls back to email delivery when the user has no phone number', async () => {
-      const { repo, db, delivery, emailDelivery } = makeRepo();
-      db.query.mockResolvedValue([]);
-      db.execute.mockResolvedValue({ rowsAffected: 1, rows: [{ SeqNo: 42 }] });
+    it.each(['en', 'ar', undefined] as const)(
+      'falls back to email delivery with lang=%s when the user has no phone number',
+      async (lang) => {
+        const { repo, db, delivery, emailDelivery } = makeRepo();
+        db.query.mockResolvedValue([]);
+        db.execute.mockResolvedValue({ rowsAffected: 1, rows: [{ SeqNo: 42 }] });
 
-      const result = await repo.send({
-        ...SEND,
-        phoneNumber: undefined,
-        email: 'hmc1@hamad.qa',
-      });
+        const result = await repo.send({
+          ...SEND,
+          phoneNumber: undefined,
+          email: 'hmc1@hamad.qa',
+          lang,
+        });
 
-      expect(result.requestId).toBe('42');
-      const otp = (db.execute.mock.calls[0][1] as { otp: string }).otp;
-      expect(emailDelivery.sendOtpEmail).toHaveBeenCalledWith('hmc1@hamad.qa', otp, 'ONBOARDING');
-      expect(delivery.sendOtpSms).not.toHaveBeenCalled();
-    });
+        expect(result.requestId).toBe('42');
+        const otp = (db.execute.mock.calls[0][1] as { otp: string }).otp;
+        expect(emailDelivery.sendOtpEmail).toHaveBeenCalledWith(
+          'hmc1@hamad.qa',
+          otp,
+          'ONBOARDING',
+          lang ?? 'en',
+        );
+        expect(delivery.sendOtpSms).not.toHaveBeenCalled();
+      },
+    );
   });
 
   describe('verify', () => {

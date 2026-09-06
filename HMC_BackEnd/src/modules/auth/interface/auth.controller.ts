@@ -73,8 +73,11 @@ export class AuthController {
     operationId: 'auth_sendOtp',
   })
   @ApiOkResponse({ type: SendOtpResponseDto })
-  sendOtp(@Body() dto: SendOtpRequestDto): Promise<SendOtpResponseDto> {
-    return this.onboarding.sendOtp(dto);
+  sendOtp(
+    @Body() dto: SendOtpRequestDto,
+    @Lang() lang: LangCode,
+  ): Promise<SendOtpResponseDto> {
+    return this.onboarding.sendOtp(dto, lang);
   }
 
   @Public()
@@ -113,8 +116,11 @@ export class AuthController {
   @Post('mpin/forgot')
   @ApiOperation({ summary: 'API-6 — Initiate Forgot MPIN (send OTP)', operationId: 'auth_forgotMpin' })
   @ApiOkResponse({ type: ForgotMpinInitResponseDto })
-  forgotMpin(@Body() dto: ForgotMpinInitRequestDto): Promise<ForgotMpinInitResponseDto> {
-    return this.mpin.forgotInitiate(dto);
+  forgotMpin(
+    @Body() dto: ForgotMpinInitRequestDto,
+    @Lang() lang: LangCode,
+  ): Promise<ForgotMpinInitResponseDto> {
+    return this.mpin.forgotInitiate(dto, lang);
   }
 
   @Public()

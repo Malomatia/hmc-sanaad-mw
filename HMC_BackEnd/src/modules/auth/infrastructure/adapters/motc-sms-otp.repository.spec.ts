@@ -145,25 +145,34 @@ describe('MotcSmsOtpRepository', () => {
       expect(emailDelivery.sendOtpEmail).not.toHaveBeenCalled();
     });
 
-    it('falls back to email: stores a non-pushable row and delivers over SMTP', async () => {
-      const { repo, db, emailDelivery } = makeRepo();
-      primeSend(db, 42);
+    it.each(['en', 'ar', undefined] as const)(
+      'falls back to email with lang=%s: stores a non-pushable row and delivers over SMTP',
+      async (lang) => {
+        const { repo, db, emailDelivery } = makeRepo();
+        primeSend(db, 42);
 
-      const result = await repo.send({
-        ...SEND,
-        phoneNumber: undefined,
-        email: 'hmc1@hamad.qa',
-      });
+        const result = await repo.send({
+          ...SEND,
+          phoneNumber: undefined,
+          email: 'hmc1@hamad.qa',
+          lang,
+        });
 
-      expect(result.requestId).toBe('42');
-      const [, params] = db.execute.mock.calls[0] as [string, Record<string, unknown>];
-      expect(params).toMatchObject({
-        toAddress: 'hmc1@hamad.qa',
-        processedState: '1', // emailProcessedState — the SMS gateway must not push it
-      });
-      const otp = /(\d{6})$/.exec(String(params.messageBody))?.[1];
-      expect(emailDelivery.sendOtpEmail).toHaveBeenCalledWith('hmc1@hamad.qa', otp, 'ONBOARDING');
-    });
+        expect(result.requestId).toBe('42');
+        const [, params] = db.execute.mock.calls[0] as [string, Record<string, unknown>];
+        expect(params).toMatchObject({
+          toAddress: 'hmc1@hamad.qa',
+          processedState: '1', // emailProcessedState — the SMS gateway must not push it
+        });
+        const otp = /(\d{6})$/.exec(String(params.messageBody))?.[1];
+        expect(emailDelivery.sendOtpEmail).toHaveBeenCalledWith(
+          'hmc1@hamad.qa',
+          otp,
+          'ONBOARDING',
+          lang ?? 'en',
+        );
+      },
+    );
 
     it('retries with a fresh MessageID when the MAX+1 insert races a duplicate', async () => {
       const { repo, db } = makeRepo();

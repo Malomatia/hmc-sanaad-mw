@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { MssqlService } from '@core/database/mssql.service';
 import { OtpConfig } from '@core/config/configuration';
+import { DEFAULT_LANG } from '@shared/domain/lang';
 import {
   OtpMode,
   OtpPort,
@@ -146,7 +147,7 @@ export class MssqlOtpRepository implements OtpPort {
     if (mode === 'SMS') {
       await this.delivery.sendOtpSms(cmd.phoneNumber!, otp, cmd.purpose);
     } else {
-      await this.emailDelivery.sendOtpEmail(cmd.email!, otp, cmd.purpose);
+      await this.emailDelivery.sendOtpEmail(cmd.email!, otp, cmd.purpose, cmd.lang ?? DEFAULT_LANG);
     }
     return { requestId, status: 'NEW', mode, validForSeconds: this.cfg.ttlSeconds };
   }

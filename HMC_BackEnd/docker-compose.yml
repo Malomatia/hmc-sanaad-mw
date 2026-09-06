@@ -141,6 +141,17 @@ services:
       SMS_SENDER_ID: "${SMS_SENDER_ID:-}"
       SMS_API_TIMEOUT_MS: "${SMS_API_TIMEOUT_MS:-25000}"
       SMS_MESSAGE_TEMPLATE: "${SMS_MESSAGE_TEMPLATE:-Your Sanaad verification code is {otp}}"
+      SMTP_HOST: "${SMTP_HOST:-}"
+      SMTP_PORT: "${SMTP_PORT:-587}"
+      SMTP_SECURE: "${SMTP_SECURE:-false}"
+      SMTP_USER: "${SMTP_USER:-}"
+      SMTP_PASSWORD: "${SMTP_PASSWORD:-}"
+      SMTP_TLS_REJECT_UNAUTHORIZED: "${SMTP_TLS_REJECT_UNAUTHORIZED:-true}"
+      SMTP_TIMEOUT_MS: "${SMTP_TIMEOUT_MS:-25000}"
+      EMAIL_FROM: "${EMAIL_FROM:-}"
+      EMAIL_OTP_SUBJECT: "${EMAIL_OTP_SUBJECT:-Sanaad verification code}"
+      EMAIL_MESSAGE_TEMPLATE: "${EMAIL_MESSAGE_TEMPLATE:-OTP to register in Sanaad App is {otp}}"
+      EMAIL_MESSAGE_TEMPLATE_AR: "${EMAIL_MESSAGE_TEMPLATE_AR:-رمز التحقق لتسجيل الدخول في تطبيق سند هو {otp}}"
       # ── App-launch health check (API-1) — AppName matched in the Users DB ──
       APP_NAME: "${APP_NAME:-SanaadHealth}"
       # ── Auth (JWT) — JWT_SECRET must come from the host env in production

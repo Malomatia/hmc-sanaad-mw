@@ -93,7 +93,8 @@ export const envValidationSchema = Joi.object({
   SMTP_TIMEOUT_MS: Joi.number().min(1).default(25000),
   EMAIL_FROM: Joi.string().allow('').default(''),
   EMAIL_OTP_SUBJECT: Joi.string().default('Sanaad verification code'),
-  EMAIL_MESSAGE_TEMPLATE: Joi.string().default('Your Sanaad verification code is {otp}'),
+  EMAIL_MESSAGE_TEMPLATE: Joi.string().default('OTP to register in Sanaad App is {otp}'),
+  EMAIL_MESSAGE_TEMPLATE_AR: Joi.string().default('رمز التحقق لتسجيل الدخول في تطبيق سند هو {otp}'),
 
   // Auth
   JWT_SECRET: Joi.string().min(8).default('dev-only-secret-change-me'),

@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { AuditService } from '@core/audit/audit.service';
 import { AuthLifecycleEvent } from '@core/audit/audit-event';
 import { MpinConfig } from '@core/config/configuration';
+import { DEFAULT_LANG, Lang } from '@shared/domain/lang';
 import { MPIN_STORE_PORT, MpinStorePort } from '../domain/ports/mpin-store.port';
 import { OTP_PORT, OtpPort } from '../domain/ports/otp.port';
 import { DEVICE_REGISTRY_PORT, DeviceRegistryPort } from '../domain/ports/device-registry.port';
@@ -60,7 +61,10 @@ export class MpinService {
     return { status: 'success', message: 'MPIN updated successfully' };
   }
 
-  async forgotInitiate(dto: ForgotMpinInitRequestDto): Promise<ForgotMpinInitResponseDto> {
+  async forgotInitiate(
+    dto: ForgotMpinInitRequestDto,
+    lang: Lang = DEFAULT_LANG,
+  ): Promise<ForgotMpinInitResponseDto> {
     const ctx = this.ctx(dto);
     let requestid: string;
     if (this.devBypass) {
@@ -87,6 +91,7 @@ export class MpinService {
           email: identity.email,
           imei: dto.imeinumber,
           purpose: 'FORGOT_MPIN',
+          lang,
           appName: dto.appname,
           appVersion: dto.version,
           appDatetime: dto.sysdate,

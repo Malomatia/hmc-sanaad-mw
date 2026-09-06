@@ -15,7 +15,8 @@ const CONFIG: EmailConfig = {
   tlsRejectUnauthorized: true,
   from: 'Sanaad <no-reply@hamad.qa>',
   otpSubject: 'Sanaad verification code',
-  messageTemplate: 'Your Sanaad verification code is {otp}',
+  messageTemplate: 'OTP to register in Sanaad App is {otp}',
+  messageTemplateAr: 'رمز التحقق لتسجيل الدخول في تطبيق سند هو {otp}',
   timeoutMs: 25000,
 };
 

@@ -271,6 +271,7 @@ export interface EmailConfig {
   otpSubject: string;
   /** OTP email body; `{otp}` is substituted with the raw OTP at send time. */
   messageTemplate: string;
+  messageTemplateAr: string;
   /** SMTP connection/greeting/socket timeout (ms). */
   timeoutMs: number;
 }
@@ -667,7 +668,9 @@ export default (): RootConfig => ({
     from: process.env.EMAIL_FROM ?? '',
     otpSubject: process.env.EMAIL_OTP_SUBJECT ?? 'Sanaad verification code',
     messageTemplate:
-      process.env.EMAIL_MESSAGE_TEMPLATE ?? 'Your Sanaad verification code is {otp}',
+      process.env.EMAIL_MESSAGE_TEMPLATE ?? 'OTP to register in Sanaad App is {otp}',
+    messageTemplateAr:
+      process.env.EMAIL_MESSAGE_TEMPLATE_AR ?? 'رمز التحقق لتسجيل الدخول في تطبيق سند هو {otp}',
     timeoutMs: Number(process.env.SMTP_TIMEOUT_MS ?? 25000),
   },
   auth: {

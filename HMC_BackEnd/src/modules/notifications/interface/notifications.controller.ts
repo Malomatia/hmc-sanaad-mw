@@ -45,8 +45,17 @@ export class NotificationsController {
   /**
    * Call this on logout. A token left registered keeps delivering the previous
    * user's notifications to a handset they no longer hold.
+   *
+   * A POST, because the WAF in front of the API blocks the DELETE method
+   * outright — measured against staging: with a body, with none, with the IMEI
+   * in the path and in the query string, every shape came back as the WAF's
+   * rejection page. It answers **HTTP 200** while doing so, so the DELETE
+   * below looked like it was working from the client's side while the request
+   * never reached the API at all and the row survived.
+   *
+   * This is the route the app must call.
    */
-  @Delete('device-token')
+  @Post('device-token/unregister')
   @HttpCode(200)
   @ApiOperation({
     summary: 'Stop sending push notifications to this device',
@@ -56,6 +65,25 @@ export class NotificationsController {
     schema: { example: { status: 'success', message: 'Device unregistered.' } },
   })
   async unregister(
+    @Body() dto: UnregisterDeviceTokenDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    await this.service.unregister(user.username, dto.imei);
+    return { message: 'Device unregistered.' };
+  }
+
+  /**
+   * The original spelling, kept for anything already calling it from inside
+   * the network, where there is no WAF in the way. Unreachable for the mobile
+   * app — see the POST above.
+   */
+  @Delete('device-token')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Unregister a device (DELETE — blocked by the WAF, use the POST)',
+    operationId: 'notifications_unregisterDeviceLegacy',
+  })
+  async unregisterViaDelete(
     @Body() dto: UnregisterDeviceTokenDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {

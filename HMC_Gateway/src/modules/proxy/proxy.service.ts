@@ -27,8 +27,16 @@ const FORWARD_REQUEST_HEADERS = [
   'x-ios-assertion',
   'x-ios-key-id',
 ];
-/** Response headers relayed from HMC_BackEnd back to the mobile client. */
-const FORWARD_RESPONSE_HEADERS = ['content-type'];
+/**
+ * Response headers relayed from HMC_BackEnd back to the mobile client.
+ *
+ * The attachment download is served as a real file, and these three are how a
+ * client knows what it received: the type, the length, and the filename. Only
+ * `content-type` used to be relayed, so `Content-Disposition` was stripped
+ * here and the filename never reached the app — the same class of fault as
+ * the request headers above.
+ */
+const FORWARD_RESPONSE_HEADERS = ['content-type', 'content-disposition', 'content-length'];
 
 /**
  * Forwards an inbound request to HMC_BackEnd unchanged and relays the

@@ -7,7 +7,7 @@ import {
   CATEGORY_MESSAGE,
   CATEGORY_STATUS,
   ErrorCategory,
-  extractBusinessRaiseText,
+  extractOracleErrorText,
 } from './error-category';
 
 /** Result of classifying any thrown value into a safe, client-facing shape. */
@@ -89,6 +89,7 @@ export function classifyException(exception: unknown): ClassifiedError {
 /** Oracle/PL-SQL errors: map a few well-known codes, everything else is a generic DB error. */
 function classifyOracle(ex: OracleQueryError): ClassifiedError {
   const code = ex.oraCode;
+  const message = extractOracleErrorText(ex.message);
   // ORA-01403 only escapes from a SELECT INTO inside a procedure, i.e. one of
   // the values we submitted did not resolve — the endpoint and the record are
   // both fine. Answering 404 "The requested resource was not found" therefore
@@ -96,20 +97,18 @@ function classifyOracle(ex: OracleQueryError): ClassifiedError {
   // unknown delivery location and a mobile that is not the employee's ALL as
   // 404, with nothing to say which field was at fault. It is a rejected input,
   // so report it as one.
-  if (code === ORA_NO_DATA_FOUND) return of(ErrorCategory.UNRESOLVED_VALUE);
+  if (code === ORA_NO_DATA_FOUND) return of(ErrorCategory.UNRESOLVED_VALUE, { message });
   // A custom ORA-20xxx business raise carries user-facing validation text
   // authored in the procedure (RAISE_APPLICATION_ERROR) — surface it when it is
   // clean, mirroring toSubmitResult's handling of the same range in OUT params.
   if (code! >= 20000 && code! <= 20999) {
-    return of(ErrorCategory.BUSINESS_RULE_ERROR, {
-      message: extractBusinessRaiseText(ex.message),
-    });
+    return of(ErrorCategory.BUSINESS_RULE_ERROR, { message });
   }
   // unique/integrity constraint violations → business rule conflict
   if (code === 1 || code === 2290 || code === 2291 || code === 2292) {
-    return of(ErrorCategory.BUSINESS_RULE_ERROR);
+    return of(ErrorCategory.BUSINESS_RULE_ERROR, { message });
   }
-  return of(ErrorCategory.DATABASE_ERROR);
+  return of(ErrorCategory.DATABASE_ERROR, { message });
 }
 
 /** Nest HttpExceptions: category is driven by the status code. */

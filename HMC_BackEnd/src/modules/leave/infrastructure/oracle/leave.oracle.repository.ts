@@ -3,6 +3,7 @@ import * as oracledb from 'oracledb';
 import { OracleService } from '@core/database/oracle.service';
 import { OracleSchemaService } from '@core/database/oracle-schema.service';
 import { BaseOracleRepository } from '@core/database/base.repository';
+import { sanitizeOracleMessage } from '@core/http/error-category';
 import { SubmitResult } from '@shared/domain/submit-result';
 import { toOracleLanguage } from '@shared/domain/lang';
 import { parseOracleDate } from '@shared/utils/date.util';
@@ -198,7 +199,7 @@ export class LeaveOracleRepository extends BaseOracleRepository implements Leave
     return {
       days: Number.isFinite(days) ? days : undefined,
       successFlag: out.p_success_flag,
-      errorMessage: out.p_error_msg,
+      errorMessage: sanitizeOracleMessage(out.p_error_msg) as string,
     };
   }
 

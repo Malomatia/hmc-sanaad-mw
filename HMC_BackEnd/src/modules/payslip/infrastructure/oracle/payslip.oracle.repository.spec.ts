@@ -59,3 +59,32 @@ describe('PayslipOracleRepository — used_value for the period', () => {
     expect(row).not.toHaveProperty('used_value');
   });
 });
+
+describe('PayslipOracleRepository.generate error messages', () => {
+  it.each([
+    ['ORA-01403: no data found\nORA-06512: at line 4', 'no data found'],
+    ['ORA-00942: SELECT secret FROM accounts', 'The database request failed.'],
+    ['  Payslip unavailable  ', 'Payslip unavailable'],
+    [null, null],
+    [undefined, undefined],
+  ])('cleans Oracle errors without changing empty messages: %s', async (raw, expected) => {
+    const ora = {
+      callMultiCursor: jest.fn().mockResolvedValue({
+        cursors: {},
+        scalars: { p_success_flag: 'N', p_error_msg: raw },
+      }),
+    } as unknown as OracleService;
+    const schema = { resolveParams: jest.fn().mockResolvedValue([]) } as unknown as OracleSchemaService;
+    const repository = new PayslipOracleRepository(ora, schema);
+
+    const result = await repository.generate({
+      personId: '123',
+      lang: 'en',
+      payPeriod: 'September 2026',
+      assignmentId: '456',
+    });
+
+    expect(result.errorMessage).toBe(expected);
+    expect(result.successFlag).toBe('N');
+  });
+});

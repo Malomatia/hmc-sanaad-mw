@@ -21,11 +21,10 @@ describe('a submitted value that Oracle could not resolve', () => {
     expect(classified.category).toBe(ErrorCategory.UNRESOLVED_VALUE);
   });
 
-  it('says which kind of value to re-check, without leaking Oracle detail', () => {
+  it('returns the Oracle description without its code', () => {
     const { message } = classifyException(noDataFound());
 
-    expect(message).toMatch(/not recognised/i);
-    expect(message).toMatch(/lookup|LOV/i);
+    expect(message).toBe('no data found');
     expect(message).not.toMatch(/ORA-|SELECT|01403/);
   });
 

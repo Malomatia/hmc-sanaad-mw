@@ -48,8 +48,7 @@ export const CATEGORY_MESSAGE: Readonly<Record<ErrorCategory, string>> = Object.
     'lookup (LOV) endpoint — the letter name and language must be a valid pair, and ' +
     'the phone number and delivery location must be ones already on record.',
   [ErrorCategory.BUSINESS_RULE_ERROR]: 'The requested operation cannot be completed.',
-  [ErrorCategory.DATABASE_ERROR]:
-    'A database operation could not be completed. Please contact support if the problem persists.',
+  [ErrorCategory.DATABASE_ERROR]: 'The database request failed.',
   [ErrorCategory.EXTERNAL_SERVICE_ERROR]: 'An external service is currently unavailable.',
   [ErrorCategory.TIMEOUT]: 'The request took too long to process. Please try again.',
   [ErrorCategory.PAYLOAD_TOO_LARGE]:
@@ -140,4 +139,28 @@ export function extractBusinessRaiseText(message?: string | null): string | unde
   const match = /ORA-20\d{3}:\s*([\s\S]*?)(?=\s*(?:ORA|PLS)-\d{3,5}|$)/.exec(message);
   const text = match?.[1]?.trim();
   return text && !looksSensitive(text) ? text : undefined;
+}
+
+export function extractOracleErrorText(message?: string | null): string | undefined {
+  if (!message) return undefined;
+  const diagnostics = /\b(ORA|PLS)-(\d{3,5}):\s*([\s\S]*?)(?=\b(?:ORA|PLS)-\d{3,5}:|$)/gi;
+  for (const match of message.matchAll(diagnostics)) {
+    if (match[1].toUpperCase() === 'ORA' && [6512, 6550].includes(Number(match[2]))) continue;
+    const text = match[3].split(/\r?\n\s*(?:at\s|Help:\s*https?:\/\/)/i)[0].trim();
+    const internalName = /\b[A-Z][A-Z0-9_$#]*\.[A-Z][A-Z0-9_$#]*\b|"[^"]+"\s*\.\s*"[^"]+"/;
+    const internalDetail =
+      /(?:^|[\r\n:])\s*select\b[\s\S]*?\bfrom\b|\b(?:password|pwd|secret|token|api[_-]?key)\s*[:=]/i;
+    return text && !looksSensitive(text) && !internalName.test(text) && !internalDetail.test(text)
+      ? text
+      : undefined;
+  }
+  return undefined;
+}
+
+export function sanitizeOracleMessage(message: string | null | undefined): string | null | undefined {
+  if (!message || !looksSensitive(message)) return message;
+  const category = /\bORA-20\d{3}:/i.test(message)
+    ? ErrorCategory.BUSINESS_RULE_ERROR
+    : ErrorCategory.DATABASE_ERROR;
+  return extractOracleErrorText(message) ?? CATEGORY_MESSAGE[category];
 }

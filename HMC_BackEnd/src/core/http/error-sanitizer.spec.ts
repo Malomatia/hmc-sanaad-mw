@@ -1,4 +1,4 @@
-import { OracleQueryError } from '../database/oracle.error';
+import { OracleQueryError, OracleUnavailableException } from '../database/oracle.error';
 import { classifyException } from './exception-classifier';
 import { ErrorCategory, extractBusinessRaiseText, looksSensitive } from './error-category';
 
@@ -51,6 +51,58 @@ describe('extractBusinessRaiseText', () => {
 
   it('returns undefined for non-20xxx messages', () => {
     expect(extractBusinessRaiseText('ORA-00942: table or view does not exist')).toBeUndefined();
+  });
+});
+
+describe('classifyException — readable Oracle errors', () => {
+  it.each<[string, string, number]>([
+    ['ORA-01403: no data found', 'no data found', 422],
+    ['ORA-00942: table or view does not exist', 'table or view does not exist', 500],
+    ['ora-01403: no data found\r\nORA-06512: at "APPS.PKG", line 4', 'no data found', 422],
+    ['ORA-00001: unique constraint violated', 'unique constraint violated', 409],
+    [
+      'ORA-06550: line 1, column 7:\nPLS-00306: wrong number or types of arguments',
+      'wrong number or types of arguments',
+      500,
+    ],
+    [
+      'ORA-20001: Please select a date from the calendar and update your request',
+      'Please select a date from the calendar and update your request',
+      409,
+    ],
+    [
+      'ORA-06502: numeric or value error: character string buffer too small\nORA-06512: at line 4',
+      'numeric or value error: character string buffer too small',
+      500,
+    ],
+    [
+      'ORA-01403: no data found\nHelp: https://docs.oracle.com/error-help/db/ora-01403/',
+      'no data found',
+      422,
+    ],
+    ['ORA-06512: at "APPS.PKG", line 4\nORA-01403: no data found', 'no data found', 500],
+    ['ORA-01403: no data found\n    at execute (/app/dist/main.js:1:1)', 'no data found', 422],
+  ])('extracts a description from %s', (raw, message, status) => {
+    const classified = classifyException(new OracleQueryError(raw));
+    expect(classified.message).toBe(message);
+    expect(classified.httpStatus).toBe(status);
+  });
+
+  it.each([
+    'ORA-00942: SELECT password FROM users',
+    'ORA-00942: select password from users',
+    'ORA-00942: failed: select password from users',
+    'ORA-00942: password=private-value',
+    'ORA-00942: error in XXHMC_SND_TEST',
+    'ORA-01400: cannot insert NULL into ("APPS"."EMP"."NAME")',
+    'ORA-06512: at "APPS.PKG", line 4',
+    'ORA-00942:',
+  ])('keeps internal details out of the API: %s', (raw) => {
+    expect(classifyException(new OracleQueryError(raw)).message).toBe('The database request failed.');
+  });
+
+  it('uses the new fallback when no Oracle description exists', () => {
+    expect(classifyException(new OracleUnavailableException()).message).toBe('The database request failed.');
   });
 });
 

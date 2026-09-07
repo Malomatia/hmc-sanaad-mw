@@ -4,7 +4,7 @@ import { SanaadErrorEnvelope } from '@shared/interfaces/sanaad-response.interfac
 import { toLang } from '@shared/domain/lang';
 import { OracleQueryError } from '../database/oracle.error';
 import { classifyException } from './exception-classifier';
-import { CATEGORY_MESSAGE_AR, ErrorCategory } from './error-category';
+import { CATEGORY_MESSAGE, CATEGORY_MESSAGE_AR, ErrorCategory } from './error-category';
 
 interface RequestLike {
   url?: string;
@@ -47,7 +47,10 @@ export class AllExceptionsFilter implements ExceptionFilter {
     // success/status/httpStatusCode; everything else (category, correlation
     // id, timestamp, path) stays server-side only, in logInternal above.
     const lang = toLang(req?.query?.lang);
-    const message = lang === 'ar' ? CATEGORY_MESSAGE_AR[classified.category] : classified.message;
+    const message =
+      lang === 'ar' && classified.message === CATEGORY_MESSAGE[classified.category]
+        ? CATEGORY_MESSAGE_AR[classified.category]
+        : classified.message;
 
     const body: SanaadErrorEnvelope = {
       success: false,

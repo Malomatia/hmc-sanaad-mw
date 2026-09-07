@@ -88,16 +88,56 @@ describe('BaseOracleRepository.toSubmitResult', () => {
     expect(result.errormessage).toBe(prose);
   });
 
+  it.each(['p_message', 'p_error_msg', 'msg', 'errormessage'])(
+    'returns the Oracle description from %s without the code or stack',
+    (field) => {
+      const result = repo.expose({
+        p_success_flag: 'N',
+        [field]: 'ORA-01403: no data found\nORA-06512: at "APPS.XXHMC_SND_TEST", line 12',
+      });
+      expect(result).toMatchObject({
+        status: 'error',
+        successflag: 'N',
+        errormessage: 'no data found',
+      });
+    },
+  );
+
+  it('does not let a blank message hide the real Oracle error', () => {
+    expect(repo.expose({
+      p_success_flag: 'N',
+      p_message: '  ',
+      p_error_msg: 'ORA-01403: no data found',
+    }).errormessage).toBe('no data found');
+  });
+
+  it('strips Oracle prefixes independently in the Arabic message', () => {
+    const result = repo.expose({
+      p_success_flag: 'N',
+      p_error_msg: 'ORA-01403: no data found',
+      p_error_msg_ar: encodeURIComponent('ORA-01403: المعال غير موجود.'),
+    });
+    expect(result.errormessage).toBe('no data found');
+    expect(result.errormessageAr).toBe('المعال غير موجود.');
+  });
+
+  it('drops unsafe Arabic detail even when the English error is plain text', () => {
+    const result = repo.expose({
+      p_success_flag: 'N',
+      p_error_msg: 'Dependent does not exist',
+      p_error_msg_ar: 'ORA-20001: failure in XXHMC_SND_LEAV_PKG',
+    });
+    expect(result.errormessage).toBe('Dependent does not exist');
+    expect(result.errormessageAr).toBeUndefined();
+  });
+
   it('still suppresses genuinely technical proc messages', () => {
     for (const leak of [
-      'ORA-00942: table or view does not exist',
       'error in XXHMC_SND_LEAV_OF_ABSEN_NEW_PR',
       'failed: SELECT NVL(days, 0) FROM absence_table WHERE id = :1',
     ]) {
       const result = repo.expose({ p_success_flag: 'N', p_error_msg: leak });
-      expect(result.errormessage).toBe(
-        'A database operation could not be completed. Please contact support if the problem persists.',
-      );
+      expect(result.errormessage).toBe('The database request failed.');
     }
   });
 

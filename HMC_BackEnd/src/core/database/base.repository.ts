@@ -11,7 +11,7 @@ import { EMP_KEY_COLUMN, USERNAME_COLUMN } from '@shared/constants/oracle-column
 import {
   CATEGORY_MESSAGE,
   ErrorCategory,
-  extractBusinessRaiseText,
+  extractOracleErrorText,
   looksSensitive,
 } from '../http/error-category';
 import { SchemaColumnNotFoundException } from './schema-column-not-found.error';
@@ -660,7 +660,9 @@ export abstract class BaseOracleRepository {
       out.status,
       out.successflag,
     );
-    const message = (out.p_message ?? out.p_error_msg ?? out.msg ?? out.errormessage ?? '').toString();
+    const message =
+      [out.p_message, out.p_error_msg, out.msg, out.errormessage]
+        .find((value) => value != null && String(value).trim() !== '')?.toString() ?? '';
     const messageAr = out.p_message_ar ?? out.p_error_msg_ar ?? out.errormessage_ar;
     // Different procedures use different success conventions: 'S' (status),
     // 'Y' (p_success_flag, e.g. REASSIGN_PR-style: p_success_flag/p_error_msg/
@@ -700,12 +702,14 @@ export abstract class BaseOracleRepository {
       const category = isBusinessRaise
         ? ErrorCategory.BUSINESS_RULE_ERROR
         : ErrorCategory.DATABASE_ERROR;
-      const raiseText = isBusinessRaise ? extractBusinessRaiseText(errormessage) : undefined;
+      const description = extractOracleErrorText(errormessage);
       this.logger.warn(
         `Suppressed technical proc message (${category}${oraCode ? ` ORA-${oraCode}` : ''}): ${errormessage}`,
       );
-      errormessage = raiseText ?? CATEGORY_MESSAGE[category];
-      safeMessageAr = undefined;
+      errormessage = description ?? CATEGORY_MESSAGE[category];
+    }
+    if (!isSuccess && looksSensitive(safeMessageAr)) {
+      safeMessageAr = extractOracleErrorText(safeMessageAr);
     }
 
     return {

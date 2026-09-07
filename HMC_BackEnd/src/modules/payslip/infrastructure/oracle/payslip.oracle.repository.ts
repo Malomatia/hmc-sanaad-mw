@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { OracleService } from '@core/database/oracle.service';
 import { OracleSchemaService } from '@core/database/oracle-schema.service';
 import { BaseOracleRepository } from '@core/database/base.repository';
+import { sanitizeOracleMessage } from '@core/http/error-category';
 import { Lang, toOracleLanguage } from '@shared/domain/lang';
 import { ORACLE_OBJECTS } from '@shared/constants/oracle-objects';
 import {
@@ -162,7 +163,7 @@ export class PayslipOracleRepository extends BaseOracleRepository implements Pay
       totalEarnings: trimValue(scalars.p_total_earnings) as string,
       totalDeductions: trimValue(scalars.p_total_deductions) as string,
       successFlag: scalars.p_success_flag,
-      errorMessage: trimValue(scalars.p_error_msg) as string,
+      errorMessage: trimValue(sanitizeOracleMessage(scalars.p_error_msg)) as string,
     };
   }
 }

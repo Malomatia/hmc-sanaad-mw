@@ -170,3 +170,30 @@ describe('LeaveOracleRepository — getBalance binds the request value as-is', (
     ).rejects.toMatchObject({ status: 400 });
   });
 });
+
+describe('LeaveOracleRepository.calculate error messages', () => {
+  it.each([
+    ['ORA-01403: no data found\nORA-06512: at line 4', 'no data found'],
+    ['ORA-20001: Leave overlaps an existing request', 'Leave overlaps an existing request'],
+    ['ORA-00942: SELECT secret FROM accounts', 'The database request failed.'],
+    ['Invalid leave dates', 'Invalid leave dates'],
+    [null, null],
+    [undefined, undefined],
+  ])('cleans Oracle errors without changing empty messages: %s', async (raw, expected) => {
+    const ora = {
+      call: jest.fn().mockResolvedValue({ p_success_flag: 'N', p_error_msg: raw }),
+    } as unknown as OracleService;
+    const repository = new LeaveOracleRepository(ora, {} as OracleSchemaService);
+
+    const result = await repository.calculate({
+      username: 'TESTUSER',
+      lang: 'en',
+      absenceType: 'Annual',
+      startDate: '20260901',
+      endDate: '20260902',
+    });
+
+    expect(result.errorMessage).toBe(expected);
+    expect(result.successFlag).toBe('N');
+  });
+});

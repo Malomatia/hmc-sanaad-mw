@@ -1,8 +1,12 @@
-import { Controller, Get, UseGuards } from '@nestjs/common';
+import { Controller, Get, Inject, Optional, UseGuards } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import type { App } from 'firebase-admin/app';
 import { OracleService } from '../database/oracle.service';
 import { MssqlService } from '../database/mssql.service';
 import { MotcSmsDbService } from '../database/motc-sms-db.service';
+import { FIREBASE_APP } from '../firebase/firebase-app';
+import { AppIntegrityConfig } from '../config/configuration';
 import { Public } from '../auth/decorators/public.decorator';
 import { SkipEnvelope } from '../http/response.interceptor';
 import { DiagnosticsEnabledGuard } from '../http/diagnostics-enabled.guard';
@@ -17,6 +21,8 @@ export class HealthController {
     private readonly oracle: OracleService,
     private readonly usersDb: MssqlService,
     private readonly motcSmsDb: MotcSmsDbService,
+    private readonly config: ConfigService,
+    @Optional() @Inject(FIREBASE_APP) private readonly firebase?: App,
   ) {}
 
   @Public()
@@ -35,12 +41,28 @@ export class HealthController {
     const motcSmsDbReachable = this.motcSmsDb.isEnabled()
       ? await this.motcSmsDb.ping()
       : false;
+    const integrity = this.config.get<AppIntegrityConfig>('appIntegrity');
     return {
       status: 'ok',
       uptime: Math.round(process.uptime()),
       oracle: this.describe(this.oracle.isConfigured(), oracleReachable),
       usersDb: this.describe(this.usersDb.isConfigured(), usersDbReachable),
       motcSmsDb: this.describe(this.motcSmsDb.isConfigured(), motcSmsDbReachable),
+      // Whether the server can actually SEND a push, and whether attestation
+      // can actually verify anything. Both degrade silently by design - an
+      // unconfigured credential binds a no-op rather than refusing to boot -
+      // so from outside a working deployment and a dormant one answered
+      // identically, and the only way to tell them apart was the boot log.
+      push: {
+        enabled: Boolean(this.firebase),
+        projectId: this.firebase?.options?.projectId ?? null,
+        status: this.firebase ? 'ok' : 'disabled',
+      },
+      appIntegrity: {
+        mode: integrity?.mode ?? 'off',
+        ios: integrity?.ios.enabled ? 'ok' : 'disabled',
+        android: integrity?.android.enabled ? 'ok' : 'disabled',
+      },
       timestamp: new Date().toISOString(),
     };
   }

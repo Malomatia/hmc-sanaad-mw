@@ -35,6 +35,11 @@ export function resolveFirebaseApp(config: FirebaseConfig): App | undefined {
           clientEmail: config.serviceAccount.client_email,
           privateKey: config.serviceAccount.private_key,
         }),
+        // Also at the top level, not only inside the credential: `cert()`
+        // does not surface it on `app.options`, and /health reports which
+        // project a deployment will send from. Sending live notifications
+        // from a test project - or the reverse - is worth being able to see.
+        projectId: config.serviceAccount.project_id,
       },
       APP_NAME,
     );

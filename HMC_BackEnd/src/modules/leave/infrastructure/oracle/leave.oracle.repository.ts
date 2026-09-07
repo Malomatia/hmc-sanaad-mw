@@ -130,7 +130,7 @@ export class LeaveOracleRepository extends BaseOracleRepository implements Leave
    * ABSENCE_DAYS NUMBER(9,4), NOTIFIED_DATE.
    */
   async list(query: LeaveListQuery): Promise<LeaveRecord[]> {
-    const binds: { u: string; t?: string } = { u: query.username };
+    const binds: { u: string; t?: string } = { u: query.username.toUpperCase() };
     let sql =
       `SELECT ABSENCE_TYPE, ABSENCE_TYPE_AR, REASON, ABSENCE_REASON_AR,
               ACTUAL_START_DATE, ACTUAL_END_DATE, ABSENCE_DAYS

@@ -5,12 +5,12 @@
  * stay internal (OTP delivery, directory lookups).
  */
 
-/** `55372169` → `5537XXXX` (first 4 visible; shorter values fully masked). */
+/** `31141206` → `XXXXX206` (last 3 digits visible; short values fully masked). */
 export function maskPhone(phone?: string): string | undefined {
   if (!phone) return undefined;
   const p = phone.trim();
-  if (p.length <= 4) return 'X'.repeat(p.length);
-  return p.slice(0, 4) + 'X'.repeat(p.length - 4);
+  if ((p.match(/\d/g)?.length ?? 0) <= 3) return p.replace(/\d/g, 'X');
+  return p.replace(/\d(?=(?:\D*\d){3})/g, 'X');
 }
 
 /** `MKHOJA@hamad.qa` → `MK****@hamad.qa` (first 2 of the name, domain kept). */

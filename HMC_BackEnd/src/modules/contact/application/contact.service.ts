@@ -46,8 +46,9 @@ export class AddressService {
     private readonly lookups: LookupsService,
   ) {}
 
-  countryLov(lang: Lang): Promise<LovItem[]> {
-    return this.lookups.getByObject(ORACLE_OBJECTS.COUNTRY_LOV, lang);
+  async countryLov(lang: Lang): Promise<LovItem[]> {
+    const countries = await this.lookups.getByObject(ORACLE_OBJECTS.COUNTRY_LOV, lang);
+    return countries.map((country) => ({ ...country, used_value: country.code }));
   }
 
   create(fields: Record<string, unknown>, user: AuthenticatedUser, lang: Lang): Promise<SubmitResult> {

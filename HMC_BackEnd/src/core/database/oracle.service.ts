@@ -6,6 +6,7 @@ import { ERROR_MESSAGES, extractOraCode } from '@shared/constants/error-codes';
 import { OracleQueryError, OracleUnavailableException } from './oracle.error';
 import { RequestContext } from '../http/request-context';
 import { OracleLogStore } from './oracle-log.store';
+import { normalizeOracleUsernameBinds } from './oracle-username.util';
 
 /** Rich result of a connectivity probe used by the DB health-test endpoint. */
 export interface OracleDiagnostics {
@@ -187,11 +188,12 @@ export class OracleService implements OnModuleInit, OnModuleDestroy {
     sql: string,
     binds: oracledb.BindParameters = {},
   ): Promise<T[]> {
-    const call = this.logCallStart('query', sql, binds);
+    const normalizedBinds = normalizeOracleUsernameBinds(binds);
+    const call = this.logCallStart('query', sql, normalizedBinds);
     const conn = await this.getPool().getConnection();
     this.configureConnection(conn);
     try {
-      const result = await conn.execute<T>(sql, binds, {
+      const result = await conn.execute<T>(sql, normalizedBinds, {
         outFormat: oracledb.OUT_FORMAT_OBJECT,
       });
       const rows = (result.rows as T[]) ?? [];
@@ -258,12 +260,13 @@ export class OracleService implements OnModuleInit, OnModuleDestroy {
     binds: oracledb.BindParameters,
     options: oracledb.ExecuteOptions = {},
   ): Promise<T> {
-    const call = this.logCallStart('call', plsql, binds);
+    const normalizedBinds = normalizeOracleUsernameBinds(binds);
+    const call = this.logCallStart('call', plsql, normalizedBinds);
     const conn = await this.getPool().getConnection();
     this.configureConnection(conn);
     await this.clearEbsSessionLabels(conn);
     try {
-      const result = await conn.execute(plsql, binds, {
+      const result = await conn.execute(plsql, normalizedBinds, {
         outFormat: oracledb.OUT_FORMAT_OBJECT,
         autoCommit: true,
         ...options,
@@ -292,12 +295,13 @@ export class OracleService implements OnModuleInit, OnModuleDestroy {
     binds: oracledb.BindParameters,
     cursorBindName = 'cursor',
   ): Promise<T[]> {
-    const call = this.logCallStart('callCursor', plsql, binds);
+    const normalizedBinds = normalizeOracleUsernameBinds(binds);
+    const call = this.logCallStart('callCursor', plsql, normalizedBinds);
     const conn = await this.getPool().getConnection();
     this.configureConnection(conn);
     await this.clearEbsSessionLabels(conn);
     try {
-      const result = await conn.execute(plsql, binds, {
+      const result = await conn.execute(plsql, normalizedBinds, {
         outFormat: oracledb.OUT_FORMAT_OBJECT,
         autoCommit: true,
       });
@@ -339,12 +343,13 @@ export class OracleService implements OnModuleInit, OnModuleDestroy {
     binds: oracledb.BindParameters,
     cursorBindNames: readonly string[],
   ): Promise<{ cursors: Record<string, Record<string, any>[]>; scalars: Record<string, any> }> {
-    const call = this.logCallStart('call', plsql, binds);
+    const normalizedBinds = normalizeOracleUsernameBinds(binds);
+    const call = this.logCallStart('call', plsql, normalizedBinds);
     const conn = await this.getPool().getConnection();
     this.configureConnection(conn);
     await this.clearEbsSessionLabels(conn);
     try {
-      const result = await conn.execute(plsql, binds, {
+      const result = await conn.execute(plsql, normalizedBinds, {
         outFormat: oracledb.OUT_FORMAT_OBJECT,
         autoCommit: true,
       });

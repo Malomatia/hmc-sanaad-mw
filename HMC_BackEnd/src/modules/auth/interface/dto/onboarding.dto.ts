@@ -42,7 +42,10 @@ export class UserValidateResponseDto {
   @ApiPropertyOptional({ example: 'Yes', description: 'Valid-employee flag.' })
   employeeflag?: string;
 
-  @ApiPropertyOptional({ example: '7786XXXX', description: 'Masked — first 4 digits visible.' })
+  @ApiPropertyOptional({
+    example: 'XXXXX206',
+    description: 'Masked — only the last 3 digits visible.',
+  })
   employeephonenumber?: string;
 
   @ApiPropertyOptional({ example: 'Active', description: 'Device registration status.' })

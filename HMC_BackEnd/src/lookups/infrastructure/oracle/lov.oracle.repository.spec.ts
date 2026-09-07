@@ -86,6 +86,18 @@ describe('LovOracleRepository', () => {
     expect(item).not.toHaveProperty('ACD_END_DT');
   });
 
+  it('uppercases username scopes, preserving employee numbers and input options', async () => {
+    const { repository, query } = make();
+    const options = { scopeAlternatives: ['other.User', '0037400'] };
+    await repository.readLov(object, 'en', 'mixed.User', options);
+    expect(query).toHaveBeenCalledWith(expect.any(String), {
+      u0: 'MIXED.USER',
+      u1: 'OTHER.USER',
+      u2: '0037400',
+    });
+    expect(options.scopeAlternatives).toEqual(['other.User', '0037400']);
+  });
+
   it('coalesces and caches identical LOV requests', async () => {
     const { repository, query } = make();
     await Promise.all([

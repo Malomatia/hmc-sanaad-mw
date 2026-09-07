@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import * as oracledb from 'oracledb';
 import { OracleService } from '@core/database/oracle.service';
 import { OracleSchemaService } from '@core/database/oracle-schema.service';
+import { normalizeOracleUsername } from '@core/database/oracle-username.util';
 import { Lang } from '@shared/domain/lang';
 import { LovItem } from '@shared/domain/lov-item';
 import { isKnownOracleObject, ORACLE_OBJECTS } from '@shared/constants/oracle-objects';
@@ -107,7 +108,9 @@ export class LovOracleRepository implements LovRepository {
     const binds: oracledb.BindParameters = {};
     if (keyColumn && scopeValues.length) {
       conditions.push(`${keyColumn} IN (${scopeValues.map((_, i) => `:u${i}`).join(', ')})`);
-      scopeValues.forEach((v, i) => ((binds as Record<string, unknown>)[`u${i}`] = v));
+      scopeValues.forEach((v, i) => {
+        (binds as Record<string, unknown>)[`u${i}`] = normalizeOracleUsername(keyColumn, v);
+      });
     }
     if (personIdColumn && options.personId) {
       conditions.push(`${personIdColumn} = :personId`);

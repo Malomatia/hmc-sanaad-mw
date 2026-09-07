@@ -104,7 +104,7 @@ export class SupervisorOracleRepository
     // search sees the whole employee list rather than the first 2000 rows.
     return this.queryTableFunction<SupervisorView>(
       ORACLE_OBJECTS.SUPERVISOR_VIEW,
-      [username, null],
+      [username.toUpperCase(), null],
       undefined,
       searchKeyWord ? { column: 'FULL_NAME', value: searchKeyWord } : undefined,
     );

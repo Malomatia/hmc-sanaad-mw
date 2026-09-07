@@ -16,6 +16,7 @@ import {
 } from '../http/error-category';
 import { SchemaColumnNotFoundException } from './schema-column-not-found.error';
 import { RequestContext } from '../http/request-context';
+import { normalizeOracleUsername } from './oracle-username.util';
 
 /**
  * Base class for Oracle adapters. Centralizes the OUT-bind conventions
@@ -136,7 +137,7 @@ export abstract class BaseOracleRepository {
     keyColumn: string = EMP_KEY_COLUMN,
   ): Promise<T[]> {
     return this.query<T>(`SELECT * FROM ${object} WHERE ${keyColumn} = :enum`, {
-      enum: employeeNumber,
+      enum: normalizeOracleUsername(keyColumn, employeeNumber) as string,
     });
   }
 
@@ -146,7 +147,9 @@ export abstract class BaseOracleRepository {
     username: string,
     keyColumn: string = USERNAME_COLUMN,
   ): Promise<T[]> {
-    return this.query<T>(`SELECT * FROM ${object} WHERE ${keyColumn} = :u`, { u: username });
+    return this.query<T>(`SELECT * FROM ${object} WHERE ${keyColumn} = :u`, {
+      u: username.toUpperCase(),
+    });
   }
 
   /**
@@ -195,7 +198,9 @@ export abstract class BaseOracleRepository {
     if (!distinct.length) return [];
     try {
       const keyColumn = await this.schema.resolveKeyColumn(object, candidates);
-      const binds = Object.fromEntries(distinct.map((v, i) => [`k${i}`, v]));
+      const binds = Object.fromEntries(
+        distinct.map((v, i) => [`k${i}`, normalizeOracleUsername(keyColumn, v) as string]),
+      );
       const placeholders = distinct.map((_, i) => `:k${i}`).join(', ');
       return await this.query<T>(
         `SELECT * FROM ${object} WHERE ${keyColumn} IN (${placeholders})`,
@@ -238,7 +243,7 @@ export abstract class BaseOracleRepository {
         chunks.map((chunk) => {
           const binds: oracledb.BindParameters = {};
           const placeholders = chunk.map((value, i) => {
-            (binds as Record<string, unknown>)[`k${i}`] = value;
+            (binds as Record<string, unknown>)[`k${i}`] = normalizeOracleUsername(keyColumn, value);
             return `:k${i}`;
           });
           return this.query<T>(
@@ -548,7 +553,7 @@ export abstract class BaseOracleRepository {
    */
   private static pick(values: Record<string, unknown>, param: string): unknown {
     const bare = param.replace(/^p_/, '');
-    return values[param] ?? values[bare] ?? values[`p_${bare}`] ?? null;
+    return normalizeOracleUsername(param, values[param] ?? values[bare] ?? values[`p_${bare}`] ?? null);
   }
 
   /** First value that is non-null/undefined AND non-blank once trimmed to a string. */

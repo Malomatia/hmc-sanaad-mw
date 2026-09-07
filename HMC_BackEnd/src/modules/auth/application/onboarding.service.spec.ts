@@ -95,7 +95,7 @@ describe('OnboardingService.validateUser (reworked initiate, 2026-09-03)', () =>
       jobname: IDENTITY.jobName,
       email: 'MK****@hamad.qa',
       department: IDENTITY.department,
-      employeephonenumber: '5537XXXX',
+      employeephonenumber: 'XXXXX169',
       devicestatus: 'Active',
       newuser: 'No',
       vflag: 'Exist',
@@ -139,9 +139,29 @@ describe('OnboardingService.validateUser (reworked initiate, 2026-09-03)', () =>
       otpmode: 'SMS',
       elapsedtimeinmins: 5,
       requestid: '12345',
-      employeephonenumber: '5537XXXX',
+      employeephonenumber: 'XXXXX169',
       email: 'MK****@hamad.qa',
     });
+  });
+
+  it.each([
+    ['31141206', 'XXXXX206'],
+    ['0097567534123', 'XXXXXXXXXX123'],
+    ['55372169', 'XXXXX169'],
+    ['+974 55 12 34', '+XXX XX X2 34'],
+    [' 0097567534123 ', 'XXXXXXXXXX123'],
+    ['123', 'XXX'],
+    ['12', 'XX'],
+    ['+12', '+XX'],
+    ['', undefined],
+    [undefined, undefined],
+  ])('shows only the last three phone digits in the response: %s', async (phoneNumber, expected) => {
+    const { service, otp } = makeService({ identity: { phoneNumber } });
+
+    const res = await service.validateUser(DTO);
+
+    expect(res.employeephonenumber).toBe(expected);
+    expect(otp.send).toHaveBeenCalledWith(expect.objectContaining({ phoneNumber }));
   });
 
   it('valid unused OTP already exists: keeps it and answers vflag=Pending with remaining minutes', async () => {
@@ -164,6 +184,7 @@ describe('OnboardingService.validateUser (reworked initiate, 2026-09-03)', () =>
       otpmode: 'SMS',
       elapsedtimeinmins: 4,
       requestid: '311',
+      employeephonenumber: 'XXXXX169',
     });
   });
 

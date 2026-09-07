@@ -375,7 +375,7 @@ export class WorklistOracleRepository extends BaseOracleRepository implements Wo
       `SELECT * FROM ${ORACLE_OBJECTS.WORKLISTS_V}
         WHERE (${RECIPIENT_ROLE_COLUMN} = :u AND ${MORE_INFO_ROLE_COLUMN} IS NULL)
            OR ${MORE_INFO_ROLE_COLUMN} = :u`,
-      { u: username },
+      { u: username.toUpperCase() },
     );
   }
 
@@ -390,7 +390,7 @@ export class WorklistOracleRepository extends BaseOracleRepository implements Wo
         WHERE ${NOTIFICATION_ID_COLUMN} = :id
           AND ((${RECIPIENT_ROLE_COLUMN} = :u AND ${MORE_INFO_ROLE_COLUMN} IS NULL)
                 OR ${MORE_INFO_ROLE_COLUMN} = :u)`,
-      { id: notificationId, u: username },
+      { id: notificationId, u: username.toUpperCase() },
     );
   }
 

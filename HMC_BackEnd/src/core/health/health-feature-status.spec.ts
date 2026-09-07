@@ -24,14 +24,19 @@ describe('/health reporting the feature credentials', () => {
       ping: async () => ok,
     }) as unknown as OracleService & MssqlService & MotcSmsDbService;
 
-  function make(firebase: App | undefined, integrity: Partial<AppIntegrityConfig> = {}) {
+  function make(
+    firebase: App | undefined,
+    integrity: Partial<AppIntegrityConfig> = {},
+    supplied: { credentialProvided: boolean; credentialLength: number } = {
+      credentialProvided: false,
+      credentialLength: 0,
+    },
+  ) {
     const config = {
-      get: () => ({
-        mode: 'off',
-        ios: { enabled: false },
-        android: { enabled: false },
-        ...integrity,
-      }),
+      get: (key: string) =>
+        key === 'firebase'
+          ? supplied
+          : { mode: 'off', ios: { enabled: false }, android: { enabled: false }, ...integrity },
     } as unknown as ConfigService;
     return new HealthController(db(true), db(true), db(true), config, firebase);
   }
@@ -39,15 +44,36 @@ describe('/health reporting the feature credentials', () => {
   const APP = { options: { projectId: 'sanaadprd' } } as App;
 
   it('reports push as enabled, with the project it will send from', async () => {
-    const body = await make(APP).check();
+    const body = await make(APP, {}, { credentialProvided: true, credentialLength: 3156 }).check();
 
-    expect(body.push).toEqual({ enabled: true, projectId: 'sanaadprd', status: 'ok' });
+    expect(body.push).toMatchObject({ enabled: true, projectId: 'sanaadprd', status: 'ok' });
   });
 
-  it('reports push as disabled when no credential was resolved', async () => {
+  it('reports disabled when nothing was supplied at all', async () => {
     const body = await make(undefined).check();
 
-    expect(body.push).toEqual({ enabled: false, projectId: null, status: 'disabled' });
+    expect(body.push).toMatchObject({
+      enabled: false,
+      credentialProvided: false,
+      status: 'disabled',
+    });
+  });
+
+  it('reports REJECTED when a credential was supplied and could not be used', async () => {
+    // The state that wastes a day: DevOps did set it, and it arrived
+    // truncated or quoted. `disabled` would send everyone hunting the wrong
+    // problem, so the length of what actually arrived comes back too.
+    const body = await make(undefined, {}, {
+      credentialProvided: true,
+      credentialLength: 1200,
+    }).check();
+
+    expect(body.push).toMatchObject({
+      enabled: false,
+      credentialProvided: true,
+      credentialLength: 1200,
+      status: 'rejected',
+    });
   });
 
   it('reports the attestation mode and each platform separately', async () => {

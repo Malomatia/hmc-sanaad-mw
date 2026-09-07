@@ -6,7 +6,7 @@ import { OracleService } from '../database/oracle.service';
 import { MssqlService } from '../database/mssql.service';
 import { MotcSmsDbService } from '../database/motc-sms-db.service';
 import { FIREBASE_APP } from '../firebase/firebase-app';
-import { AppIntegrityConfig } from '../config/configuration';
+import { AppIntegrityConfig, FirebaseConfig } from '../config/configuration';
 import { Public } from '../auth/decorators/public.decorator';
 import { SkipEnvelope } from '../http/response.interceptor';
 import { DiagnosticsEnabledGuard } from '../http/diagnostics-enabled.guard';
@@ -53,11 +53,7 @@ export class HealthController {
       // unconfigured credential binds a no-op rather than refusing to boot -
       // so from outside a working deployment and a dormant one answered
       // identically, and the only way to tell them apart was the boot log.
-      push: {
-        enabled: Boolean(this.firebase),
-        projectId: this.firebase?.options?.projectId ?? null,
-        status: this.firebase ? 'ok' : 'disabled',
-      },
+      push: this.describePush(),
       appIntegrity: {
         mode: integrity?.mode ?? 'off',
         ios: integrity?.ios.enabled ? 'ok' : 'disabled',
@@ -69,14 +65,33 @@ export class HealthController {
 
   /**
    * `enabled` answers "are we configured to use it", NOT "did the pool come
-   * up" â€” those two were conflated, so a database that was switched off and
+   * up" Ã¢â‚¬â€ those two were conflated, so a database that was switched off and
    * one that was broken produced the identical `enabled:false,
    * reachable:false`. `status` states which of the three it is, so an outage
    * can be read straight off /health:
-   *   disabled    â€” switched off on purpose
-   *   unreachable â€” configured, but the pool never came up (check the config)
-   *   ok          â€” connected
+   *   disabled    Ã¢â‚¬â€ switched off on purpose
+   *   unreachable Ã¢â‚¬â€ configured, but the pool never came up (check the config)
+   *   ok          Ã¢â‚¬â€ connected
    */
+  /**
+   * Push has three states, not two, and the third is the one that wastes a
+   * day: a credential WAS supplied and could not be used. That reads as
+   * `rejected` here, with the length of what arrived, because a value that
+   * was truncated, quoted or line-wrapped on the way in is the usual cause
+   * and is invisible from every other angle.
+   */
+  private describePush() {
+    const firebase = this.config.get<FirebaseConfig>('firebase');
+    const enabled = Boolean(this.firebase);
+    return {
+      enabled,
+      projectId: this.firebase?.options?.projectId ?? null,
+      credentialProvided: firebase?.credentialProvided ?? false,
+      credentialLength: firebase?.credentialLength ?? 0,
+      status: enabled ? 'ok' : firebase?.credentialProvided ? 'rejected' : 'disabled',
+    };
+  }
+
   private describe(configured: boolean, reachable: boolean) {
     return {
       enabled: configured,
@@ -87,7 +102,7 @@ export class HealthController {
 
   /**
    * Dedicated Oracle connectivity test. Acquires a real connection, runs a
-   * probe query, and reports latency, server version and DB time â€” or the
+   * probe query, and reports latency, server version and DB time Ã¢â‚¬â€ or the
    * exact failure reason (message + ORA code) when the database is unreachable.
    * Always responds 200; inspect `status`/`connected` for the result.
    * 404 with DIAGNOSTICS_ENABLED=false (plain /health stays on).
@@ -104,7 +119,7 @@ export class HealthController {
   }
 
   /**
-   * Dedicated Users DB (SQL Server) connectivity test â€” the auth-cycle
+   * Dedicated Users DB (SQL Server) connectivity test Ã¢â‚¬â€ the auth-cycle
    * database (device/MPIN/OTP + API-1 tables). Same contract as /health/db:
    * always 200, inspect `status`/`connected` and `error` for the reason.
    */
@@ -120,7 +135,7 @@ export class HealthController {
   }
 
   /**
-   * Dedicated MOTC SMS gateway DB connectivity test â€” the OTP push-table
+   * Dedicated MOTC SMS gateway DB connectivity test Ã¢â‚¬â€ the OTP push-table
    * database (MOTC_SMS_PushTable). Same contract as /health/users-db.
    */
   @UseGuards(DiagnosticsEnabledGuard)

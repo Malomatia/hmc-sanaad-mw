@@ -395,6 +395,14 @@ export interface FirebaseConfig {
   projectId?: string;
   /** Whether a usable credential was resolved at boot. */
   enabled: boolean;
+  /**
+   * Whether a value was SUPPLIED at all, regardless of whether it parsed.
+   * With only `enabled`, "DevOps never set it" and "they set it but it
+   * arrived truncated" are the same answer — and the fixes are opposite.
+   */
+  credentialProvided: boolean;
+  /** Length of the inline value, so a truncated paste is visible at a glance. */
+  credentialLength: number;
 }
 
 /**
@@ -746,7 +754,21 @@ export default (): RootConfig => ({
   },
   firebase: ((): FirebaseConfig => {
     const serviceAccount = loadFirebaseServiceAccount();
-    return { serviceAccount, projectId: serviceAccount?.project_id, enabled: !!serviceAccount };
+    return {
+      serviceAccount,
+      projectId: serviceAccount?.project_id,
+      enabled: !!serviceAccount,
+      // Whether anything was SUPPLIED, separate from whether it worked. Both
+      // failures look identical from outside otherwise, and they need
+      // opposite fixes: nothing supplied is a deployment that never got the
+      // value, while supplied-but-unusable is a value that arrived truncated,
+      // quoted or line-wrapped. Chasing the wrong one costs a deploy cycle.
+      credentialProvided: Boolean(
+        process.env.FIREBASE_SERVICE_ACCOUNT?.trim() ||
+          process.env.FIREBASE_SERVICE_ACCOUNT_PATH?.trim(),
+      ),
+      credentialLength: process.env.FIREBASE_SERVICE_ACCOUNT?.trim().length ?? 0,
+    };
   })(),
   appIntegrity: ((): AppIntegrityConfig => {
     const mode = (process.env.APP_INTEGRITY_MODE ?? 'off').toLowerCase();

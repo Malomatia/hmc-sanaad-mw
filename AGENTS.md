@@ -145,7 +145,10 @@ mpin/otp params redacted from logs:
   identity returned, NO OTP), otherwise a missing row is created with MPIN
   NULL + `Status` `'Inactive'` and an OTP is sent. `MpinStorePort.set`
   (API-4 `/auth/mpin/update`) sets `DateFirstRegistered = GETDATE()`, the
-  MPIN and `Status = 'Active'`.
+  MPIN and `Status = 'Active'`. API-4 requires a non-empty string only:
+  no 4–6 digit check on the client-hashed value, which must pass through
+  unchanged. This validation change is scoped to `/auth/mpin/update`; the
+  separate reset endpoint still retains its numeric policy.
 - `HMC_RHAP_OTP_tbl` — OTP rows (`OtpPort`, `OTP_STORE=legacy`, the default
   since 2026-09-03): `TOP 1 ... ORDER BY SeqNo DESC` + `DATEDIFF` freshness;
   `SeqNo` doubles as the mobile `requestid`. Resend window/TTL/max-attempts

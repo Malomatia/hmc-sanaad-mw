@@ -4,7 +4,12 @@ import {
   DEVICE_TOKEN_STORE_PORT,
   DeviceTokenStorePort,
 } from '../domain/ports/device-token-store.port';
-import { PUSH_SENDER_PORT, PushMessage, PushSenderPort } from '../domain/ports/push-sender.port';
+import {
+  PUSH_SENDER_PORT,
+  PushMessage,
+  PushResult,
+  PushSenderPort,
+} from '../domain/ports/push-sender.port';
 
 /**
  * Push notifications: registration of a device, and delivery to a person.
@@ -33,6 +38,27 @@ export class NotificationsService {
 
   unregister(username: string, imei: string): Promise<void> {
     return this.store.remove(username, imei);
+  }
+
+  /**
+   * Send to a user's own devices and REPORT what happened, for the diagnostic
+   * route. Unlike notifyUser this returns the verdict instead of swallowing
+   * it, because the whole point is to see it.
+   *
+   * It exists because everything here degrades silently: with no credential
+   * the sender is a no-op and registrations still answer 200, so "can this
+   * deployment actually deliver a notification?" had no answer short of the
+   * boot log or waiting for a dead token to disappear from the table.
+   */
+  async sendTest(username: string, message: PushMessage): Promise<PushResult & { devices: number }> {
+    const devices = await this.store.findByUsername(username);
+    if (!devices.length) return { sent: 0, failed: 0, invalidTokens: [], devices: 0 };
+
+    const result = await this.sender.send(
+      devices.map((d) => d.token),
+      message,
+    );
+    return { ...result, devices: devices.length };
   }
 
   /**

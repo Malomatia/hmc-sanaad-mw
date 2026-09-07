@@ -131,7 +131,7 @@ export class AuthService {
       // the client can decode everything from the JWT alone.
       ...(this.staticLogin && {
         userdata: {
-          employeeusername: identity.username,
+          employeeusername: identity.username.toUpperCase(),
           employeenumber: identity.employeeNumber,
           employeename: identity.employeeName,
           employeenamear: identity.employeeNameAr,
@@ -151,7 +151,7 @@ export class AuthService {
       tokenType: 'Bearer',
       expiresIn: this.expiresIn,
       refreshtoken,
-      employeeusername: identity.username,
+      employeeusername: identity.username.toUpperCase(),
       employeenumber: identity.employeeNumber,
       employeename: identity.employeeName,
       employeenamear: identity.employeeNameAr,

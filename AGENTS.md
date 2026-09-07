@@ -197,6 +197,11 @@ is a 501 in the Entra adapter. Entra config lives in the `entra` namespace
 `User.Read.All` (Application) with admin consent. Switching back to `ldap` is an
 instant rollback (no code redeploy). No mobile/gateway/DTO/JWT changes.
 
+`/auth/login` always returns `employeeusername` in uppercase, including the
+same field in static-login JWT `userdata`. This is output formatting only:
+authentication lookup inputs and the JWT's principal `username` retain their
+existing values.
+
 ## Push notifications (FCM)
 
 `src/modules/notifications/` — ports + adapters, exported so any module can

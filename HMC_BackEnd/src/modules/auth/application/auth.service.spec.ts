@@ -22,7 +22,7 @@ const AUTH_CFG = {
   functionAccessAppId: 1,
 };
 
-function makeService(overrides: Partial<typeof AUTH_CFG> = {}) {
+function makeService(overrides: Partial<typeof AUTH_CFG> = {}, identityUsername = 'hmc1') {
   const authCfg = { ...AUTH_CFG, ...overrides };
   const jwt = new JwtService({
     secret: authCfg.jwtSecret,
@@ -31,7 +31,7 @@ function makeService(overrides: Partial<typeof AUTH_CFG> = {}) {
   const mpinStore = { verify: jest.fn().mockResolvedValue(true) } as unknown as MpinStorePort;
   const ldap = {
     validate: jest.fn().mockResolvedValue({
-      username: 'hmc1',
+      username: identityUsername,
       employeeNumber: '037400',
       employeeName: 'Test User',
       isEmployee: true,
@@ -64,7 +64,7 @@ function makeService(overrides: Partial<typeof AUTH_CFG> = {}) {
     revocation,
     config,
   );
-  return { service, jwt, revocation, devices };
+  return { service, jwt, revocation, devices, ldap, mpinStore };
 }
 
 const LOGIN = {
@@ -75,6 +75,50 @@ const LOGIN = {
   appname: 'Sanaad',
   version: '1.0.0',
 };
+
+describe('AuthService login employeeusername casing', () => {
+  it.each(['aibrahim39', 'AiBrAhIm39', 'AIBRAHIM39'])(
+    'uppercases the resolved employee username %s without changing authentication inputs',
+    async (identityUsername) => {
+      const { service, ldap, mpinStore, jwt } = makeService({}, identityUsername);
+
+      const response = await service.login(LOGIN);
+
+      expect(response.status).toBe('success');
+      expect(response.employeeusername).toBe('AIBRAHIM39');
+      expect(ldap.validate).toHaveBeenCalledWith(
+        expect.objectContaining({ username: LOGIN.username }),
+      );
+      expect(mpinStore.verify).toHaveBeenCalledWith(
+        expect.objectContaining({ username: LOGIN.username, mpin: LOGIN.mpin }),
+      );
+      expect(jwt.decode(response.token!)).toMatchObject({ username: identityUsername });
+    },
+  );
+
+  it.each(['aibrahim39', 'AiBrAhIm39'])(
+    'uppercases the dev login response for %s',
+    async (username) => {
+      const { service, ldap } = makeService({ disabled: true });
+
+      const response = await service.login({ ...LOGIN, username });
+
+      expect(response.employeeusername).toBe('AIBRAHIM39');
+      expect(ldap.validate).not.toHaveBeenCalled();
+    },
+  );
+
+  it('keeps the static response and embedded userdata employeeusername uppercase', async () => {
+    const { service, jwt } = makeService({ staticLogin: true });
+
+    const response = await service.login(LOGIN);
+
+    expect(response.employeeusername).toBe('AIBRAHIM39');
+    for (const token of [response.token!, response.refreshtoken!]) {
+      expect(jwt.decode(token)).toMatchObject({ userdata: { employeeusername: 'AIBRAHIM39' } });
+    }
+  });
+});
 
 describe('AuthService refresh + logout', () => {
   it('login issues an access + refresh pair with jti/typ claims', async () => {

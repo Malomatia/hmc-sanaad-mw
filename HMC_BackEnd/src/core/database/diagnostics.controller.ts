@@ -108,16 +108,16 @@ export class OracleViewsQueryDto {
 
 /** Body for POST /diagnostics/oracle/sql. */
 export class OracleSqlRequestDto {
-  /** A single SELECT (or WITH Ã¢â‚¬Â¦ SELECT); may use named `:binds`. */
+  /** A single SELECT (or WITH ... SELECT); may use named `:binds`. */
   @IsOptional()
   @IsString()
   sql?: string;
 
   /**
-   * Base64 of the statement Ã¢â‚¬â€ the staging WAF rejects request bodies that
+   * Base64 of the statement - the staging WAF rejects request bodies that
    * look like SQL, so the console UI/dev-console convention is supported
    * here too. Wins over `sql` when both are sent.
-   */
+ */
   @IsOptional()
   @IsString()
   sqlB64?: string;
@@ -138,7 +138,7 @@ export class OracleSqlRequestDto {
 
 /** Body for POST /diagnostics/users-db/sql. */
 export class UsersDbSqlRequestDto {
-  /** A single SELECT (or WITH Ã¢â‚¬Â¦ SELECT) statement; may use named `@params`. */
+  /** A single SELECT (or WITH ... SELECT) statement; may use named `@params`. */
   /** A single SELECT (or WITH ... SELECT) statement; may use named `@params`. */
   @IsOptional()
   @IsString()
@@ -152,7 +152,7 @@ export class UsersDbSqlRequestDto {
    * why the Users DB could not be inspected from outside at all. The Oracle
    * console already offered this escape hatch and this one did not. Wins
    * over `sql` when both are sent.
-   */
+ */
   @IsOptional()
   @IsString()
   sqlB64?: string;
@@ -173,7 +173,7 @@ export class UsersDbSqlRequestDto {
 /**
  * Diagnostics API over the in-memory Oracle call log (see OracleLogStore).
  * Lets you list/filter every Oracle call the backend made (object, binds,
- * duration, status, ORA code, correlation id) Ã¢â‚¬â€ the structured view of the
+ * duration, status, ORA code, correlation id) - the structured view of the
  * `[ora#N]` console logs. In-memory only; cleared on restart.
  *
  * The whole controller disappears (404) with DIAGNOSTICS_ENABLED=false.
@@ -201,11 +201,11 @@ export class DiagnosticsController {
 
   /**
    * Every Sanaad (`XXHMC_SND_*`) object of the requested type, straight from
-   * ALL_OBJECTS Ã¢â‚¬â€ the full catalog, NOT limited to the app's allow-list, so
+   * ALL_OBJECTS - the full catalog, NOT limited to the app's allow-list, so
    * new views appear here before the code knows them. Follow up with
-   * GET /diagnostics/oracle-object?name=Ã¢â‚¬Â¦ for the column list, and
+   * GET /diagnostics/oracle-object?name=... for the column list, and
    * POST /diagnostics/oracle/sql to query one.
-   */
+ */
   @Get('oracle-views')
   @ApiOperation({
     summary: 'List all XXHMC_SND_* objects in the Oracle DB (default: views)',
@@ -216,7 +216,7 @@ export class DiagnosticsController {
     const binds: Record<string, unknown> = { search: query.search?.trim().toUpperCase() || null };
     types.forEach((t, i) => (binds[`t${i}`] = t));
     const rows = await this.oracle.query<Record<string, any>>(
-      // Underscores are LIKE wildcards Ã¢â‚¬â€ escape them so the prefix is literal.
+      // Underscores are LIKE wildcards - escape them so the prefix is literal.
       `SELECT owner, object_name, object_type, status, last_ddl_time
          FROM all_objects
         WHERE object_name LIKE 'XXHMC\\_SND\\_%' ESCAPE '\\'
@@ -238,21 +238,21 @@ export class DiagnosticsController {
   }
 
   /**
-   * Ad-hoc read-only SQL console against Oracle Ã¢â‚¬â€ the Oracle twin of
+   * Ad-hoc read-only SQL console against Oracle - the Oracle twin of
    * /diagnostics/users-db/sql. A single SELECT/CTE (validated BEFORE the
    * driver, FOR UPDATE rejected), named `:binds` for WHERE parameters, and a
    * ROWNUM cap so a full-scan of a huge view cannot exhaust memory.
    *
-   * Ã¢Å¡Â  TEMPORARY (client request 2026-08-31): the ORACLE_SQL_ENABLED and
+   *  TEMPORARY (client request 2026-08-31): the ORACLE_SQL_ENABLED and
    * NODE_ENV=production gates are REMOVED so the console works everywhere
    * with no env dependency. Restore the two checks (see the users-db console
-   * below for the pattern) before any real production hardening Ã¢â‚¬â€ the only
+   * below for the pattern) before any real production hardening - the only
    * remaining protections are the SELECT-only validation and the row cap.
-   */
+ */
   @Post('oracle/sql')
   @HttpCode(200)
   @ApiOperation({
-    summary: 'Run a read-only SELECT against Oracle (no env gate Ã¢â‚¬â€ temporary)',
+    summary: 'Run a read-only SELECT against Oracle (no env gate - temporary)',
     operationId: 'diag_oracleSql',
   })
   async oracleSql(@Body() body: OracleSqlRequestDto) {
@@ -261,9 +261,9 @@ export class DiagnosticsController {
     const maxRows = body.maxRows ?? 200;
     const binds: Record<string, unknown> = { ...(body.binds ?? {}) };
 
-    // Cap the result INSIDE Oracle when possible (plain SELECT Ã¢â€ â€™ inline-view
+    // Cap the result INSIDE Oracle when possible (plain SELECT ->' inline-view
     // wrap + ROWNUM), so an unfiltered read of a large view cannot pull the
-    // whole table into memory. WITH Ã¢â‚¬Â¦ statements can't always be wrapped, so
+    // whole table into memory. WITH ... statements can't always be wrapped, so
     // they run as-is and are sliced after the fetch.
     const wrappable = /^select\b/i.test(statement);
     const executed = wrappable
@@ -301,7 +301,7 @@ export class DiagnosticsController {
    *
    * Restore both checks before any real production hardening: rows from
    * this database can contain MPIN hashes and OTP state.
-   */
+ */
   @Post('users-db/sql')
   @HttpCode(200)
   @ApiOperation({
@@ -314,20 +314,20 @@ export class DiagnosticsController {
 
   /**
    * Ad-hoc read-only SQL console against the MOTC SMS gateway DB (the OTP
-   * push table + HMC_SND_LIV_EMP_MASTER_VW) Ã¢â‚¬â€ the MOTC twin of
+   * push table + HMC_SND_LIV_EMP_MASTER_VW) - the MOTC twin of
    * /diagnostics/users-db/sql.
    *
-   * Ã¢Å¡  TEMPORARY (client request 2026-09-03): the MOTC_SMS_SQL_ENABLED and
+   *   TEMPORARY (client request 2026-09-03): the MOTC_SMS_SQL_ENABLED and
    * NODE_ENV=production gates are REMOVED so the console works everywhere
-   * with no env dependency Ã¢â‚¬â€ same treatment as the Oracle console above.
+   * with no env dependency - same treatment as the Oracle console above.
    * Restore the two checks (see the users-db console for the pattern) before
    * any real production hardening: result rows from MOTC_SMS_PushTable can
    * contain live OTPs (MessageBody) and phone numbers.
-   */
+ */
   @Post('motc-sms-db/sql')
   @HttpCode(200)
   @ApiOperation({
-    summary: 'Run a read-only SELECT against the MOTC SMS DB (no env gate Ã¢â‚¬â€ temporary)',
+    summary: 'Run a read-only SELECT against the MOTC SMS DB (no env gate - temporary)',
     operationId: 'diag_motcSmsDbSql',
   })
   async motcSmsDbSql(@Body() body: UsersDbSqlRequestDto) {
@@ -362,7 +362,7 @@ export class DiagnosticsController {
    * Data-dictionary description of a known Oracle object: whether it is a view,
    * procedure or package, its column list and its formal parameter list. Use it
    * to confirm key columns / bind names instead of assuming them.
-   */
+ */
   @Get('oracle-object')
   @ApiOperation({ summary: 'Describe an Oracle object (type, columns, arguments)', operationId: 'diag_oracleObject' })
   describeObject(@Query() query: OracleObjectQueryDto) {
@@ -370,10 +370,10 @@ export class DiagnosticsController {
   }
 
   /**
-   * Browser view: a filterable table (enum, correlationId, object, oraCode, Ã¢â‚¬Â¦)
+   * Browser view: a filterable table (enum, correlationId, object, oraCode, ...)
    * rendered from the JSON list endpoint. @Public so it loads in a browser;
    * gate/remove it before production if the SQL log is sensitive.
-   */
+ */
   @Public()
   @SkipEnvelope()
   @Header('Content-Type', 'text/html; charset=utf-8')

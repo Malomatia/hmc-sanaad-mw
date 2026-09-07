@@ -18,17 +18,17 @@ import { NotificationTriggerInterceptor } from './interface/notification-trigger
 
 /**
  * The state this actually ships in: server deployed, `FIREBASE_SERVICE_ACCOUNT`
- * not set yet, and `HMC_Sanad_DeviceToken_tbl` not created yet â€” while the
+ * not set yet, and `HMC_Sanad_DeviceToken_tbl` not created yet - while the
  * Users DB itself is up and answering.
  *
  * That last part is why this exists rather than relying on the unit tests: the
  * local smoke test runs with `USERS_DB_DISABLED=true`, which fails at the pool
  * and never reaches a statement. On the real server the pool connects fine and
- * SQL Server answers error 208 to every query â€” a different path, and the one
+ * SQL Server answers error 208 to every query - a different path, and the one
  * that will really happen.
  *
  * The requirement is absolute: every endpoint keeps working. Not "degrades
- * politely" â€” works.
+ * politely" - works.
  */
 describe('notifications on an incomplete deployment', () => {
   let app: INestApplication;
@@ -62,7 +62,7 @@ describe('notifications on an incomplete deployment', () => {
         { provide: MssqlService, useValue: { query, execute } },
         { provide: DEVICE_TOKEN_STORE_PORT, useExisting: MssqlDeviceTokenRepository },
         { provide: REQUEST_LOOKUP_PORT, useValue: lookup },
-        // No credential configured â†’ the module binds the no-op sender.
+        // No credential configured -> the module binds the no-op sender.
         { provide: FIREBASE_APP, useValue: undefined },
         { provide: PUSH_SENDER_PORT, useClass: NoopPushSender },
         { provide: APP_INTERCEPTOR, useClass: NotificationTriggerInterceptor },
@@ -74,7 +74,7 @@ describe('notifications on an incomplete deployment', () => {
       .compile();
 
     app = moduleRef.createNestApplication();
-    // The same pipe CoreModule installs â€” validation is part of "requests
+    // The same pipe CoreModule installs - validation is part of "requests
     // still work correctly", so it has to be exercised here too.
     app.useGlobalPipes(
       new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }),
@@ -107,7 +107,7 @@ describe('notifications on an incomplete deployment', () => {
       .expect(200);
   });
 
-  it('validation still works â€” this is not a blanket catch', async () => {
+  it('validation still works - this is not a blanket catch', async () => {
     await request(app.getHttpServer())
       .post('/notifications/device-token')
       .send({ imei: 'imei-1' })

@@ -15,14 +15,14 @@ export interface AppConfig {
    * Per-sub-read deadline (ms) for endpoints that fan out several Oracle reads
    * in parallel (e.g. leave defaults). Kept well under `requestTimeoutMs` so one
    * slow view degrades to a partial result instead of a whole-request timeout.
-   */
+ */
   aggregateReadTimeoutMs: number;
   lovCacheTtlMs: number;
   logLevel: string;
   /**
    * Identity provider for the auth journey: LDAPS, Entra ID (Graph), or the
-   * legacy Users DB itself (`usersdb` â€” HMC_Sanad_DeviceRegn_tbl, no directory).
-   */
+   * legacy Users DB itself (`usersdb` - HMC_Sanad_DeviceRegn_tbl, no directory).
+ */
   directory: 'ldap' | 'entra' | 'usersdb';
 }
 
@@ -38,8 +38,8 @@ export interface OracleConfig {
   disabled: boolean;
   /**
    * Enables POST /diagnostics/oracle/sql (ad-hoc SELECT-only console over the
-   * XXHMC_SND_* schema). Ignored in production â€” always 403 there.
-   */
+   * XXHMC_SND_* schema). Ignored in production - always 403 there.
+ */
   sqlConsoleEnabled: boolean;
   /** Use node-oracledb Thick mode (requires Oracle Client libraries at runtime). */
   thickMode: boolean;
@@ -56,12 +56,12 @@ export interface OracleConfig {
  * starts READ-ONLY (SELECT/WITH/EXPLAIN, rolled back); write/PLSQL mode is a
  * deliberate switch in the UI itself (per process, reset on restart) rather
  * than an env variable. All env vars are optional hardening:
- *   DEV_CONSOLE_ENABLED=false â†’ kill switch
- *   DEV_CONSOLE_TOKEN=<secret> â†’ require `x-console-token` / `?token=`
- *   DEV_CONSOLE_ALLOW_WRITE=true â†’ start already in write mode
+ *   DEV_CONSOLE_ENABLED=false -> kill switch
+ *   DEV_CONSOLE_TOKEN=<secret> -> require `x-console-token` / `?token=`
+ *   DEV_CONSOLE_ALLOW_WRITE=true -> start already in write mode
  */
 export interface DevConsoleConfig {
-  /** Master switch (DEV_CONSOLE_ENABLED). Defaults to ON â€” set `false` to remove the routes. */
+  /** Master switch (DEV_CONSOLE_ENABLED). Defaults to ON - set `false` to remove the routes. */
   enabled: boolean;
   /** Shared secret required in the `x-console-token` header / `?token=`. Empty = no token check. */
   token: string;
@@ -75,7 +75,7 @@ export interface DevConsoleConfig {
 
 /**
  * Master switch for the observability/test surface: the diagnostics APIs
- * (`/diagnostics/*` â€” Oracle logs, oracle-object, the users-db and motc-sms-db
+ * (`/diagnostics/*` - Oracle logs, oracle-object, the users-db and motc-sms-db
  * SQL consoles), the API request/response log (`/api-logs/*`), and the DB
  * connection-test endpoints (`/health/db`, `/health/users-db`,
  * `/health/motc-sms-db`). The plain `/health` liveness endpoint is NOT gated
@@ -85,7 +85,7 @@ export interface DevConsoleConfig {
  * apply on top when this is on.
  */
 export interface DiagnosticsConfig {
-  /** DIAGNOSTICS_ENABLED â€” defaults to true; set false to remove the routes. */
+  /** DIAGNOSTICS_ENABLED - defaults to true; set false to remove the routes. */
   enabled: boolean;
 }
 
@@ -102,7 +102,7 @@ export interface AuthConfig {
    * returns a fixed AIBRAHIM39 payload whose FULL user data (employee fields +
    * functionaccesslist) is also embedded in the signed JWT (`userdata` claim).
    * Off by default; never enable in production.
-   */
+ */
   staticLogin: boolean;
   /**
    * Users-DB view/table holding the login `functionaccesslist` (module name/
@@ -110,7 +110,7 @@ export interface AuthConfig {
    * `SELECT FunctionName, FunctionCode, Description, StatusCode FROM
    *  HMC_Sanad_AppMaster_VW WHERE AppID = 1`; columns are resolved tolerantly
    * when that projection fails.
-   */
+ */
   functionAccessView: string;
   /** AppID filter of the documented AppMaster query (Sanaad = 1). */
   functionAccessAppId: number;
@@ -133,7 +133,7 @@ export interface AppLaunchConfig {
 }
 
 /**
- * Users/Sanaad SQL Server database â€” backs the auth cycle (device registration,
+ * Users/Sanaad SQL Server database - backs the auth cycle (device registration,
  * MPIN, OTP rows) and the API-1 downtime/app-update tables. Legacy tables:
  * HMC_Sanad_DeviceRegn_tbl, HMC_RHAP_OTP_tbl, HMC_Sanad_AppDownTime_tbl, ...
  */
@@ -145,7 +145,7 @@ export interface UsersDbConfig {
   password: string;
   poolMin: number;
   poolMax: number;
-  /** Per-request timeout (ms) â€” mirrors ORACLE_CALL_TIMEOUT_MS convention. */
+  /** Per-request timeout (ms) - mirrors ORACLE_CALL_TIMEOUT_MS convention. */
   requestTimeoutMs: number;
   connectTimeoutMs: number;
   /** TLS to the SQL Server (true unless the instance has no cert). */
@@ -154,14 +154,14 @@ export interface UsersDbConfig {
   trustServerCertificate: boolean;
   /**
    * IGNORED since 2026-08-31 (client request): the Users DB pool is always
-   * created directly â€” eagerly at boot, retried lazily on first use. Kept only
+   * created directly - eagerly at boot, retried lazily on first use. Kept only
    * so existing .env/compose files with USERS_DB_DISABLED don't break parsing.
-   */
+ */
   disabled: boolean;
   /**
    * Enables POST /diagnostics/users-db/sql (ad-hoc SELECT console). Ignored in
-   * production â€” the endpoint is always 403 there regardless of this flag.
-   */
+   * production - the endpoint is always 403 there regardless of this flag.
+ */
   sqlConsoleEnabled: boolean;
 }
 
@@ -181,7 +181,7 @@ export interface SmsConfig {
 
 /**
  * MOTC SMS gateway database (client request 2026-08-25): the OTP is generated
- * by us, INSERTed into `MOTC_SMS_PushTable` (the government SMS push outbox â€”
+ * by us, INSERTed into `MOTC_SMS_PushTable` (the government SMS push outbox -
  * the insert IS the SMS delivery) and validated back against the same table.
  * A second SQL Server pool next to the Users DB (named instance, static port).
  */
@@ -203,26 +203,26 @@ export interface MotcSmsConfig {
   /**
    * POST /diagnostics/motc-sms-db/sql (ad-hoc SELECT console). TEMPORARILY
    * ignored (client request 2026-09-03): the console is ungated like the
-   * Oracle one â€” restore the flag + production checks before hardening.
-   */
+   * Oracle one - restore the flag + production checks before hardening.
+ */
   sqlConsoleEnabled: boolean;
-  /** Push/outbox table name (interpolated as an identifier â€” validated). */
+  /** Push/outbox table name (interpolated as an identifier - validated). */
   table: string;
   /**
    * Live-employee master view (HMC_SND_LIV_EMP_MASTER_VW) used by the
    * AUTH_DIRECTORY=usersdb identity adapter: /auth/initiate resolves the
    * username against it (UserName column) and a user absent from the view is
    * refused. Interpolated as an identifier (validated).
-   */
+ */
   employeeMasterView: string;
   /**
-   * <AppId> of the client's INSERT â€” written to ServiceID, ApplicationID and
+   * <AppId> of the client's INSERT - written to ServiceID, ApplicationID and
    * (unless fromAddress overrides it) FromAddress.
-   */
+ */
   appId: string;
   /** FromAddress column; empty = use appId (mirrors the client's INSERT). */
   fromAddress: string;
-  /** <Subject> â†’ SubjectID column. */
+  /** <Subject> -> SubjectID column. */
   subjectId: string;
   priority: string;
   languageId: string;
@@ -238,7 +238,7 @@ export interface MotcSmsConfig {
    * adapter uses them to correlate OTP rows to username (1) + device IMEI (2),
    * which is what makes DB-side validation per-user possible. Setting static
    * values disables that correlation (verification then keys on MessageID only).
-   */
+ */
   businessParam1: string;
   businessParam2: string;
   /**
@@ -246,7 +246,7 @@ export interface MotcSmsConfig {
    * validation exactly like an SMS OTP, but with a state the SMS gateway does
    * NOT push (we deliver by SMTP ourselves). Default '1' (= already
    * processed); confirm the gateway's skip value with the MOTC team.
-   */
+ */
   emailProcessedState: string;
 }
 
@@ -292,26 +292,26 @@ export interface OtpConfig {
    * TESTING AID (client request 2026-09-03): when non-empty, every generated
    * OTP is this fixed value (e.g. 123456) instead of a random one, so the
    * journey can be exercised without reading the SMS. Empty = random.
-   */
+ */
   staticValue: string;
   /**
    * Alphabet of a generated OTP: `numeric` (default, digits only) or
    * `alphanumeric` (uppercase letters + digits, ambiguous I/O/0/1 excluded
    * for SMS readability).
-   */
+ */
   charset: 'numeric' | 'alphanumeric';
   /**
    * How the OTP SMS is delivered when the store is `legacy`: `motc` (default)
    * INSERTs into MOTC_SMS_PushTable (the gateway fires the SMS); `http` uses
    * the generic HTTP adapter (SMS_API_* config).
-   */
+ */
   delivery: 'motc' | 'http';
   /**
    * Where OTPs are stored and validated: `legacy` (default since 2026-09-03)
    * = HMC_RHAP_OTP_tbl in the Users DB (MssqlOtpRepository), delivery via
    * OTP_DELIVERY; `motc` = the MOTC_SMS push table doubles as store AND
    * delivery (MotcSmsOtpRepository).
-   */
+ */
   store: 'motc' | 'legacy';
 }
 
@@ -321,15 +321,15 @@ export interface LdapConfig {
   host: string;
   /** Directory port (636 = LDAPS, 389 = plain LDAP). */
   port: number;
-  /** Use LDAPS (SSL) â€” true for port 636. */
+  /** Use LDAPS (SSL) - true for port 636. */
   useSsl: boolean;
   /** Connection URL; derived from host/port/useSsl when LDAP_URL is unset. */
   url: string;
   /**
    * UPN domain suffix for direct binds (`username@upnDomain`), e.g. HMC.ORG.QA.
    * Defaults to `host`. Used by `authenticate()`, which binds directly as the
-   * user â€” no service-account search needed.
-   */
+   * user - no service-account search needed.
+ */
   upnDomain: string;
   /** Search base, e.g. DC=hmc,DC=org,DC=qa. Used by `validate()` only. */
   baseDn: string;
@@ -345,18 +345,18 @@ export interface LdapConfig {
   tlsRejectUnauthorized: boolean;
   /**
    * CA certificate(s) (PEM) to trust for LDAPS, read once at boot from
-   * LDAP_CA_CERT (inline PEM) or LDAP_CA_CERT_PATH (file path) â€” inline wins
+   * LDAP_CA_CERT (inline PEM) or LDAP_CA_CERT_PATH (file path) - inline wins
    * if both are set. Required to set `tlsRejectUnauthorized: true` against an
    * internal/self-signed AD CA; leave unset only for a quick connectivity
    * test (with tlsRejectUnauthorized=false).
-   */
+ */
   caCert?: Buffer;
   /** Bind/search timeout in milliseconds. */
   timeoutMs: number;
 }
 
 /**
- * Azure Entra ID (Microsoft Graph) directory lookup â€” the cloud replacement for
+ * Azure Entra ID (Microsoft Graph) directory lookup - the cloud replacement for
  * the LDAPS `validate()` path. App-only (client-credentials) auth; used only to
  * resolve employee identity + phone (the mobile journey stays OTP + MPIN).
  */
@@ -375,23 +375,23 @@ export interface EntraConfig {
 }
 
 /**
- * Firebase Admin â€” push notifications (FCM), and later App Check verification.
+ * Firebase Admin - push notifications (FCM), and later App Check verification.
  * Both are served by the same service-account credential.
  *
  * The credential is a PRIVATE KEY and never lives in the repository. It is read
- * once at boot from FIREBASE_SERVICE_ACCOUNT (the JSON itself, raw or base64 â€”
+ * once at boot from FIREBASE_SERVICE_ACCOUNT (the JSON itself, raw or base64 -
  * convenient for containers) or FIREBASE_SERVICE_ACCOUNT_PATH (a file on the
  * host), inline winning if both are set. Same shape as LDAP_CA_CERT above, so
  * there is no second convention to learn.
  *
  * Unset means push is DISABLED, not broken: the module binds a no-op sender and
  * the API keeps working. A half-configured deployment must not take the
- * notifications endpoints â€” or anything that emits one â€” down with it.
+ * notifications endpoints - or anything that emits one - down with it.
  */
 export interface FirebaseConfig {
   /** Parsed service account, or undefined when push is not configured. */
   serviceAccount?: FirebaseServiceAccount;
-  /** `sanaadprd` â€” read from the credential; exposed for logging/diagnostics. */
+  /** `sanaadprd` - read from the credential; exposed for logging/diagnostics. */
   projectId?: string;
   /** Whether a usable credential was resolved at boot. */
   enabled: boolean;
@@ -399,7 +399,7 @@ export interface FirebaseConfig {
    * Whether a value was SUPPLIED at all, regardless of whether it parsed.
    * With only `enabled`, "DevOps never set it" and "they set it but it
    * arrived truncated" are the same answer — and the fixes are opposite.
-   */
+ */
   credentialProvided: boolean;
   /** Length of the inline value, so a truncated paste is visible at a glance. */
   credentialLength: number;
@@ -408,9 +408,9 @@ export interface FirebaseConfig {
 /**
  * How strictly device attestation is applied.
  *
- * `enforce` can lock real users out â€” Play Integrity refuses a device without
+ * `enforce` can lock real users out - Play Integrity refuses a device without
  * Play Services, a rooted phone and a sideloaded build, and App Attest refuses
- * a simulator â€” so the rollout is deliberately staged and the default is
+ * a simulator - so the rollout is deliberately staged and the default is
  * `off`. Run `observe` first and read the logs: it reports what WOULD have
  * been rejected while letting every request through.
  */
@@ -424,7 +424,7 @@ export interface FirebaseServiceAccount {
 }
 
 /**
- * Device attestation â€” Apple App Attest and Google Play Integrity, verified
+ * Device attestation - Apple App Attest and Google Play Integrity, verified
  * directly rather than through Firebase App Check.
  *
  * Same staged rollout as everything else that can refuse a request: `off` by
@@ -440,7 +440,7 @@ export interface AppIntegrityConfig {
     /**
      * Accept attestations produced by the App Attest DEVELOPMENT environment.
      * Xcode debug builds emit those, and a production server must reject them.
-     */
+ */
     allowDevelopment: boolean;
     /** Configured enough to verify anything. */
     enabled: boolean;
@@ -448,10 +448,10 @@ export interface AppIntegrityConfig {
   android: {
     packageName: string;
     /**
-     * Service account with the `playintegrity` scope. NOT the Firebase key â€”
+     * Service account with the `playintegrity` scope. NOT the Firebase key -
      * decoding an integrity token is a separate Google API with its own
      * authorization.
-     */
+ */
     serviceAccount?: FirebaseServiceAccount;
     enabled: boolean;
   };
@@ -506,7 +506,7 @@ function loadFirebaseServiceAccount(): FirebaseServiceAccount | undefined {
   );
 }
 
-/** Shared by the Firebase and Play Integrity credentials â€” same file shape. */
+/** Shared by the Firebase and Play Integrity credentials - same file shape. */
 function loadServiceAccount(
   inline: string | undefined,
   path: string | undefined,
@@ -548,7 +548,7 @@ function loadServiceAccount(
  * Resolve the LDAPS CA certificate: an inline PEM (LDAP_CA_CERT, `\n`
  * unescaped so it can be set as a single-line env var) wins over a file path
  * (LDAP_CA_CERT_PATH). Runs once at config-load time (before the Nest Logger
- * exists), so a missing/unreadable file is only ever `console.warn`'d â€”
+ * exists), so a missing/unreadable file is only ever `console.warn`'d -
  * never throws, since LDAP may be disabled or mid-provisioning.
  */
 function loadLdapCaCert(): Buffer | undefined {
@@ -731,7 +731,7 @@ export default (): RootConfig => ({
       `${toBool(process.env.LDAP_USE_SSL ?? 'true') ? 'ldaps' : 'ldap'}://${
         process.env.LDAP_HOST ?? 'HMC.ORG.QA'
       }:${Number(process.env.LDAP_PORT ?? 636)}`,
-    // Defaults to LDAP_HOST â€” override only if the UPN suffix differs from
+    // Defaults to LDAP_HOST - override only if the UPN suffix differs from
     // the directory host (uncommon).
     upnDomain: process.env.LDAP_UPN_DOMAIN || process.env.LDAP_HOST || 'HMC.ORG.QA',
     baseDn: process.env.LDAP_BASE_DN ?? 'DC=hmc,DC=org,DC=qa',
@@ -791,8 +791,8 @@ export default (): RootConfig => ({
       ios: {
         teamId,
         bundleId,
-        // App Attest needs no Apple secret â€” verification is local, against a
-        // public root CA â€” so a Team ID and bundle id are the whole setup.
+        // App Attest needs no Apple secret - verification is local, against a
+        // public root CA - so a Team ID and bundle id are the whole setup.
         allowDevelopment: toBool(process.env.APPLE_APP_ATTEST_ALLOW_DEVELOPMENT),
         enabled: !!teamId && !!bundleId,
       },

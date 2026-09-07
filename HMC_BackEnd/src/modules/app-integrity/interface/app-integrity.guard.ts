@@ -24,8 +24,8 @@ export const ANDROID_REQUEST_HASH_HEADER = 'x-integrity-request-hash';
  * Enforces device attestation on incoming requests.
  *
  * Reuses `@SkipIntegrity()` rather than adding a second decorator: both
- * mechanisms answer the same question, and the routes exempt from one â€” health
- * probes, diagnostics, the dev console â€” are exactly the routes exempt from
+ * mechanisms answer the same question, and the routes exempt from one - health
+ * probes, diagnostics, the dev console - are exactly the routes exempt from
  * the other.
  *
  * ## Why the default is `off`, and why `observe` exists
@@ -109,14 +109,14 @@ export class AppIntegrityGuard implements CanActivate {
     return { ok: false, platform: 'ios', reason: 'no attestation headers were sent' };
   }
 
-  /** Observe â†’ log what would have happened. Enforce â†’ 401. */
+  /** Observe -> log what would have happened. Enforce -> 401. */
   private reject(route: string, verdict: IntegrityVerdict): boolean {
     const detail = `${verdict.platform}: ${verdict.reason ?? 'verification failed'}`;
     if (this.cfg.mode === 'observe') {
-      AppIntegrityGuard.log.warn(`App integrity (observe) would reject ${route} â€” ${detail}`);
+      AppIntegrityGuard.log.warn(`App integrity (observe) would reject ${route} - ${detail}`);
       return true;
     }
-    AppIntegrityGuard.log.warn(`App integrity rejected ${route} â€” ${detail}`);
+    AppIntegrityGuard.log.warn(`App integrity rejected ${route} - ${detail}`);
     throw new UnauthorizedException('This request did not come from a verified app.');
   }
 }

@@ -10,18 +10,18 @@ import { DEV_CONSOLE_HTML } from './dev-console.view';
 import { SkipIntegrity } from '../integrity/skip-integrity.decorator';
 
 export class ExecuteSqlDto {
-  /** Plain statement. Prefer `sqlB64` â€” see below. */
+  /** Plain statement. Prefer `sqlB64` - see below. */
   @IsOptional()
   @IsString()
   sql?: string;
 
   /**
    * Base64 of the statement. The WAF in front of staging rejects request
-   * bodies that look like SQL (any quoted literal is enough â€” it answers with
+   * bodies that look like SQL (any quoted literal is enough - it answers with
    * an HTML "Request Rejected" page, not JSON), which made half the console
    * unusable. Sending the statement base64-encoded slips past that inspection
    * while keeping the payload fully readable server-side.
-   */
+ */
   @IsOptional()
   @IsString()
   sqlB64?: string;
@@ -86,7 +86,7 @@ export class SourceQueryDto {
 }
 
 /**
- * Internal developer console â€” a SQL worksheet plus an API tester, served by
+ * Internal developer console - a SQL worksheet plus an API tester, served by
  * the app itself.
  *
  * Deliberately NOT part of the public API surface:
@@ -136,7 +136,7 @@ export class DevConsoleController {
   /**
    * Switch write mode on/off for this process (in-memory, reset on restart).
    * Keeps the console usable end-to-end without touching the environment.
-   */
+ */
   @Post('mode')
   @HttpCode(200)
   @SkipEnvelope()
@@ -166,7 +166,7 @@ export class DevConsoleController {
     return this.service.describe(name);
   }
 
-  /** PL/SQL source with line numbers â€” pass `line` to focus a failing line. */
+  /** PL/SQL source with line numbers - pass `line` to focus a failing line. */
   @Get('source')
   @SkipEnvelope()
   source(@Query() q: SourceQueryDto) {

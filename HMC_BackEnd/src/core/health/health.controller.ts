@@ -65,21 +65,21 @@ export class HealthController {
 
   /**
    * `enabled` answers "are we configured to use it", NOT "did the pool come
-   * up" Ã¢â‚¬â€ those two were conflated, so a database that was switched off and
+   * up" - those two were conflated, so a database that was switched off and
    * one that was broken produced the identical `enabled:false,
    * reachable:false`. `status` states which of the three it is, so an outage
    * can be read straight off /health:
-   *   disabled    Ã¢â‚¬â€ switched off on purpose
-   *   unreachable Ã¢â‚¬â€ configured, but the pool never came up (check the config)
-   *   ok          Ã¢â‚¬â€ connected
-   */
+   *   disabled    - switched off on purpose
+   *   unreachable - configured, but the pool never came up (check the config)
+   *   ok          - connected
+ */
   /**
    * Push has three states, not two, and the third is the one that wastes a
    * day: a credential WAS supplied and could not be used. That reads as
    * `rejected` here, with the length of what arrived, because a value that
    * was truncated, quoted or line-wrapped on the way in is the usual cause
    * and is invisible from every other angle.
-   */
+ */
   private describePush() {
     const firebase = this.config.get<FirebaseConfig>('firebase');
     const enabled = Boolean(this.firebase);
@@ -102,11 +102,11 @@ export class HealthController {
 
   /**
    * Dedicated Oracle connectivity test. Acquires a real connection, runs a
-   * probe query, and reports latency, server version and DB time Ã¢â‚¬â€ or the
+   * probe query, and reports latency, server version and DB time - or the
    * exact failure reason (message + ORA code) when the database is unreachable.
    * Always responds 200; inspect `status`/`connected` for the result.
    * 404 with DIAGNOSTICS_ENABLED=false (plain /health stays on).
-   */
+ */
   @UseGuards(DiagnosticsEnabledGuard)
   @Public()
   @SkipEnvelope()
@@ -119,10 +119,10 @@ export class HealthController {
   }
 
   /**
-   * Dedicated Users DB (SQL Server) connectivity test Ã¢â‚¬â€ the auth-cycle
+   * Dedicated Users DB (SQL Server) connectivity test - the auth-cycle
    * database (device/MPIN/OTP + API-1 tables). Same contract as /health/db:
    * always 200, inspect `status`/`connected` and `error` for the reason.
-   */
+ */
   @UseGuards(DiagnosticsEnabledGuard)
   @Public()
   @SkipEnvelope()
@@ -135,9 +135,9 @@ export class HealthController {
   }
 
   /**
-   * Dedicated MOTC SMS gateway DB connectivity test Ã¢â‚¬â€ the OTP push-table
+   * Dedicated MOTC SMS gateway DB connectivity test - the OTP push-table
    * database (MOTC_SMS_PushTable). Same contract as /health/users-db.
-   */
+ */
   @UseGuards(DiagnosticsEnabledGuard)
   @Public()
   @SkipEnvelope()

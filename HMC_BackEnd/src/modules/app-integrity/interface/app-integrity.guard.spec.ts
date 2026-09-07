@@ -14,9 +14,9 @@ import { SKIP_INTEGRITY_KEY } from '@core/integrity/skip-integrity.decorator';
 
 /**
  * The guard sits in front of every route, so its failure mode matters more
- * than its feature. Enforcement rejects real devices â€” a phone without Play
- * Services, a rooted handset, a sideloaded build, a simulator â€” so the staging
- * (`off` â†’ `observe` â†’ `enforce`) is what keeps this from locking users out,
+ * than its feature. Enforcement rejects real devices - a phone without Play
+ * Services, a rooted handset, a sideloaded build, a simulator - so the staging
+ * (`off` -> `observe` -> `enforce`) is what keeps this from locking users out,
  * and these cases pin it.
  */
 describe('AppIntegrityGuard', () => {
@@ -68,7 +68,7 @@ describe('AppIntegrityGuard', () => {
     } as unknown as ExecutionContext;
   }
 
-  it('off â€” allows everything and verifies nothing', async () => {
+  it('off - allows everything and verifies nothing', async () => {
     const { guard, service } = make('off');
 
     await expect(guard.canActivate(context())).resolves.toBe(true);
@@ -152,7 +152,7 @@ describe('AppIntegrityGuard', () => {
       ).resolves.toBe(true);
     });
 
-    it('exempts a @SkipIntegrity route â€” probes and consoles are not the app', async () => {
+    it('exempts a @SkipIntegrity route - probes and consoles are not the app', async () => {
       const { guard } = make('enforce');
 
       await expect(guard.canActivate(context({}, {}, true))).resolves.toBe(true);

@@ -171,34 +171,48 @@ services:
       CERNER_BASE_URL: "${CERNER_BASE_URL:-}"
       CERNER_TIMEOUT_MS: "${CERNER_TIMEOUT_MS:-10000}"
       # ── Push notifications (FCM) ──
-      # The Firebase Admin service account: a PRIVATE KEY, so it must come from
-      # the host env, never a committed .env or the image. Provide ONE of the
-      # two — inline wins. Inline takes the raw JSON or its base64, since a
-      # private key spans lines and most environments only accept single-line
-      # values:  FIREBASE_SERVICE_ACCOUNT=$(base64 -w0 <key>.json)
-      # Use the *_PATH form only with the volume mount below, pointing at the
-      # path INSIDE the container.
+      # The Firebase Admin service account is a PRIVATE KEY for the production
+      # project (sanaadprd). It lives in ONE place: the `.env` file next to
+      # this compose file ON THE SERVER — the same file JWT_SECRET and
+      # USERS_DB_PASSWORD already come from. That file is git-ignored, survives
+      # every `git pull`, and is set once.
+      #
+      #   FIREBASE_SERVICE_ACCOUNT=<base64 of the key json, one line, no quotes>
+      #   (3156 characters for the current key; produce it with
+      #    `base64 -w0 <key>.json`)
+      #
+      # After editing .env, `docker restart` is NOT enough — a restarted
+      # container keeps its old environment. Recreate it:
+      #   docker compose up -d --force-recreate
+      # Verify:  docker exec hmc-sanaad-backend printenv FIREBASE_SERVICE_ACCOUNT | wc -c
+      #          -> 3157.   Then GET /api/v1/health -> push.status = "ok".
+      #
       # Unset = sending disabled; registrations are still accepted and stored,
-      # so tokens are in place when the key arrives.
+      # so tokens are in place when the key arrives. *_PATH is the alternative
+      # for a mounted file (see volumes below) — inline wins if both are set.
       FIREBASE_SERVICE_ACCOUNT: "${FIREBASE_SERVICE_ACCOUNT:-}"
       FIREBASE_SERVICE_ACCOUNT_PATH: "${FIREBASE_SERVICE_ACCOUNT_PATH:-}"
       # ── Device attestation (Apple App Attest + Google Play Integrity) ──
-      # off (default) | observe (verify + log only) | enforce (401 on failure).
+      # off | observe (verify + log only) | enforce (401 on failure).
       # ROLL OUT VIA observe: enforcing rejects real devices — no Play
       # Services, rooted, sideloaded, simulators. Independent of the gateway's
       # own GATEWAY_INTEGRITY_MODE.
       APP_INTEGRITY_MODE: "${APP_INTEGRITY_MODE:-off}"
       # iOS needs NO Apple secret — verification is local against Apple's
-      # public root CA, so these two identifiers are the whole setup.
-      APPLE_TEAM_ID: "${APPLE_TEAM_ID:-}"
+      # public root CA, so these two identifiers are the whole setup. Neither
+      # is confidential (both ship inside every app bundle), so the real values
+      # are the defaults and nothing has to be set for iOS to verify.
+      APPLE_TEAM_ID: "${APPLE_TEAM_ID:-3E67ZH3EC8}"
       APPLE_BUNDLE_ID: "${APPLE_BUNDLE_ID:-com.hmc.sanaad}"
       # Never true in production: it is what separates a real device from an
       # Xcode debug build.
       APPLE_APP_ATTEST_ALLOW_DEVELOPMENT: "${APPLE_APP_ATTEST_ALLOW_DEVELOPMENT:-false}"
-      # Android. The credential needs the `playintegrity` scope and the Cloud
-      # project linked in Google Play Console — the Firebase service account
-      # above qualifies once the Play Integrity API is enabled on that project,
-      # so this may simply reuse it.
+      # Android. Needs its OWN service-account key with the `playintegrity`
+      # scope — NOT the Firebase key; decoding an integrity token is a separate
+      # Google API with separate authorization. Also: enable "Play Integrity
+      # API" on Google Cloud project 92441560390 and link that project in
+      # Play Console. Same delivery as the Firebase key: one line in .env.
+      # (The project NUMBER itself belongs in the mobile app, not here.)
       ANDROID_PACKAGE_NAME: "${ANDROID_PACKAGE_NAME:-com.hmc.sanaad}"
       PLAY_INTEGRITY_SERVICE_ACCOUNT: "${PLAY_INTEGRITY_SERVICE_ACCOUNT:-}"
       PLAY_INTEGRITY_SERVICE_ACCOUNT_PATH: "${PLAY_INTEGRITY_SERVICE_ACCOUNT_PATH:-}"

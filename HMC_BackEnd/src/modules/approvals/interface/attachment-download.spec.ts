@@ -10,7 +10,7 @@ import { OwnScopeQueryDto } from './dto/approvals.dto';
  *  - the URL advertised by `:id/details` omitted the API prefix, so it
  *    answered 404 for anyone who used it as given;
  *  - the route returned the Sanaad JSON envelope with the bytes base64 inside,
- *    which no image view or PDF viewer can render â€” and the bytes were empty
+ *    which no image view or PDF viewer can render - and the bytes were empty
  *    anyway, because Oracle hands back a Lob stream for a BLOB and the reader
  *    tested `Buffer.isBuffer`.
  *

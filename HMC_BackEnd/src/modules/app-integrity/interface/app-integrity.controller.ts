@@ -43,7 +43,7 @@ export class VerifyAndroidTokenDto {
 /**
  * Device attestation setup.
  *
- * Both routes are exempt from the integrity guard itself â€” a device cannot
+ * Both routes are exempt from the integrity guard itself - a device cannot
  * prove itself before it has registered, and requiring a challenge in order to
  * get a challenge would never terminate.
  */
@@ -55,10 +55,10 @@ export class AppIntegrityController {
   constructor(private readonly service: AppIntegrityService) {}
 
   /**
-   * A one-time nonce. Both platforms need one â€” iOS to attest and to assert,
+   * A one-time nonce. Both platforms need one - iOS to attest and to assert,
    * Android only if you choose to bind the token to a server value rather than
    * to the request body.
-   */
+ */
   @Get('challenge')
   @ApiOperation({
     summary: 'Issue a one-time attestation challenge',
@@ -72,7 +72,7 @@ export class AppIntegrityController {
   /**
    * iOS one-time registration. Android has no equivalent: its token is
    * self-contained and nothing is stored.
-   */
+ */
   @Post('ios/register')
   @HttpCode(200)
   @ApiOperation({
@@ -106,7 +106,7 @@ export class AppIntegrityController {
    * Google's verdicts so a failure can be acted on: `UNRECOGNIZED_VERSION`
    * means a build that did not come from Play, `MEETS_BASIC_INTEGRITY` alone
    * means a rooted or emulated device.
-   */
+ */
   @Post('android/verify')
   @HttpCode(200)
   @ApiOperation({

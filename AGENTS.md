@@ -601,3 +601,32 @@ server-side for each Oracle call as `YYYYMMDD`, using the server's local calenda
 date. The field is absent from both request DTOs and Swagger examples; clients
 must omit it (the strict request whitelist rejects it). Other endpoints' date
 fields are unchanged.
+
+## Oracle username casing
+
+Oracle-bound login values are uppercase. `OracleService` normalizes named
+username IN/INOUT binds before logging and execution (`p_user_name`, `username`,
+`user_name`, `p_username`, `p_dusername`, and from/to/requestor/approver variants).
+`BaseOracleRepository` also normalizes values using the resolved username column
+or formal parameter before they become generic `kN`/`argN` binds; LOV scopes,
+worklist/leave `u` binds, and the supervisor table function cover the remaining
+anonymous bindings. Do not uppercase every string bind: IDs, comments, file
+contents, dates, and other business values must remain unchanged. This is an
+Oracle input boundary only, not a change to JWTs, directory/SQL Server auth,
+Oracle connection credentials, or response casing.
+
+## Initiate phone masking
+
+`POST /auth/initiate` shows only the last three digits of `employeephonenumber`,
+masking preceding digits with `X` (for example, `31141206` becomes `XXXXX206`)
+for existing, new, and pending-OTP users. The response helper `maskPhone` preserves
+phone formatting and fully masks numbers containing three or fewer digits.
+OTP delivery still receives the original number; SMS log masking and email
+masking are unchanged.
+
+## Contact country LOV submit value
+
+`GET /contact/lov/country` returns `used_value` equal to `code` (for example,
+`AD`), with `meaning` and its existing localization unchanged. This override
+lives in `AddressService.countryLov` and copies the shared cached LOV items;
+it does not alter generic lookup responses, other LOVs, or address submit binds.

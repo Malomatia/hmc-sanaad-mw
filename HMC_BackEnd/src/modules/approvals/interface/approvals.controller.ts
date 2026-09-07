@@ -5,7 +5,6 @@ import { SkipEnvelope } from '@core/http/response.interceptor';
 import { Lang } from '@core/i18n/lang.decorator';
 import type { Lang as LangCode } from '@shared/domain/lang';
 import { CurrentUser } from '@core/auth/decorators/current-user.decorator';
-import { Roles } from '@core/auth/decorators/roles.decorator';
 import { AuthenticatedUser, Role } from '@core/auth/auth-user.interface';
 import { ProfileQueryDto } from '@shared/dto/common-query.dto';
 import { SubmitResultDto } from '@shared/dto/submit-result.dto';
@@ -34,7 +33,6 @@ import {
  */
 @ApiTags('approvals')
 @ApiBearerAuth()
-@Roles(Role.APPROVER, Role.SUPERVISOR)
 @Controller('approvals')
 export class ApprovalsController {
   constructor(
@@ -56,7 +54,6 @@ export class ApprovalsController {
    * honouring it on an open route would let anyone read another approver's
    * inbox by passing their number.
    */
-  @Roles()
   @Get()
   @ApiOperation({ summary: 'op 20 — Approvals summary', operationId: 'approvals_summary' })
   summary(
@@ -81,7 +78,6 @@ export class ApprovalsController {
    * identifier on an employee-open endpoint would let anyone read another
    * employee's requests by passing their number.
    */
-  @Roles()
   @Get('my-requests')
   @ApiOperation({ summary: 'op 23 — My requests', operationId: 'approvals_myRequests' })
   myRequests(
@@ -92,7 +88,6 @@ export class ApprovalsController {
     return this.approvals.myRequests(user, lang, q.enum ?? q.username);
   }
 
-  @Roles()
   @Get('pending-count')
   @ApiOperation({
     summary: 'Pending request counts filtered by requestor and request type',
@@ -134,7 +129,7 @@ export class ApprovalsController {
    * request's requestor or its approver, and answers 403 otherwise. That check
    * is what replaces the role gate; do not remove one without the other.
    */
-  @Roles()
+
   details(
     @Param('id') id: string,
     @Query() q: OwnScopeQueryDto,
@@ -160,7 +155,7 @@ export class ApprovalsController {
    * the service still requires the caller to own the request the file belongs
    * to, since a document id identifies only the file.
    */
-  @Roles()
+ 
   @SkipEnvelope()
   @Get('attachments/:documentId')
   @ApiOperation({

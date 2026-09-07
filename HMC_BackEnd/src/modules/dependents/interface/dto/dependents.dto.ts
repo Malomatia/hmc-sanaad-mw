@@ -113,9 +113,6 @@ export class AddDependentRequestDto {
   @RequiredString('20150101')
   p_date_of_birth!: string;
 
-  @RequiredString('20260823')
-  p_effective_date!: string;
-
   [key: string]: unknown;
 }
 
@@ -249,7 +246,6 @@ defineOptionalStringFields(
   'p_gendar',
   'p_qid_number',
   'p_date_of_birth',
-  'p_effective_date',
   'p_address_id',
   ...ADDRESS_FIELDS,
   'p_phone_enabled',
@@ -284,7 +280,6 @@ defineOptionalStringFields(
     p_visa_validy: 'Yes',
     p_type_of_sponsership: 'Employee',
     p_name_of_sponsor: 'Amir Sami Samir Ibrahim',
-    p_effective_date: '20260824',
     p_file_name1: 'update-proof.pdf',
     p_attachment1: 'dGVzdCBhdHRhY2htZW50',
   },

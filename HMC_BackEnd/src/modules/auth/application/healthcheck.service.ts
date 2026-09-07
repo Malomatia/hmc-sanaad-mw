@@ -15,7 +15,7 @@ interface DowntimeRow {
 /** Pending app-update row (legacy healthcheck query projection). */
 interface AppUpdateRow {
   NotifyUsers?: unknown;
-  UpdateType?: string;
+  UpdateType?: string | null;
 }
 
 /**
@@ -77,7 +77,7 @@ export class HealthCheckService {
     ]);
 
     const window = downtime[0];
-    const updatetype = update[0]?.UpdateType?.trim() || 'R';
+    const updatetype = update[0]?.UpdateType?.trim() ?? '';
     return window
       ? {
           appDowntime: 'Yes',

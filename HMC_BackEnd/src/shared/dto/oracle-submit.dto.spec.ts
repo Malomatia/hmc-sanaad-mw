@@ -48,6 +48,39 @@ describe('Oracle submit DTOs', () => {
     expect(invalid.some((error) => error.property === 'wrong_name')).toBe(true);
   });
 
+  describe.each([
+    {
+      name: 'add dependent',
+      type: AddDependentRequestDto,
+      payload: {
+        p_first_name: 'Testchild',
+        p_last_name: 'Ibrahim',
+        p_relationship: 'Child',
+        p_gender: 'Male',
+        p_date_of_birth: '20150101',
+      },
+    },
+    {
+      name: 'update dependent',
+      type: UpdateDependentRequestDto,
+      payload: { p_dependent_id: '5001' },
+    },
+  ])('$name effective date', ({ type, payload }) => {
+    it('accepts the payload without a client-supplied effective date', async () => {
+      expect(await validateDto(type, payload)).toHaveLength(0);
+    });
+
+    it('rejects a client-supplied effective date as an unsupported field', async () => {
+      const errors = await validateDto(type, { ...payload, p_effective_date: '20260101' });
+      expect(errors).toEqual([
+        expect.objectContaining({
+          property: 'p_effective_date',
+          constraints: { whitelistValidation: 'property p_effective_date should not exist' },
+        }),
+      ]);
+    });
+  });
+
   it('accepts canonical and legacy dependent spelling aliases', async () => {
     const errors = await validateDto(UpdateDependentRequestDto, {
       p_dependent_id: '5001',
@@ -106,7 +139,6 @@ describe('Oracle submit DTOs', () => {
       p_relationship: 'Child',
       p_gender: 'Male',
       p_date_of_birth: '20150101',
-      p_effective_date: '20260824',
       p_phone_type: ['Qatar Mobile Number', 'Home'],
       p_phone_number: ['55512345', '44412345'],
     });
@@ -152,7 +184,6 @@ describe('Oracle submit DTOs', () => {
       p_relationship: 'Child',
       p_gender: 'Male',
       p_date_of_birth: '20150101',
-      p_effective_date: '20260824',
       p_phone_number: [{ number: '55512345' }],
     });
     expect(errors.some((error) => error.property === 'p_phone_number')).toBe(true);

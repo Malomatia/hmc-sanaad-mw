@@ -63,38 +63,80 @@ describe('HealthCheckService', () => {
       appDowntime: 'Yes',
       downtimeStart: '2026-08-20T00:00:00.000Z',
       downtimeEnd: '2026-08-20T04:00:00.000Z',
-      updatetype: 'R',
+      updatetype: '',
     });
     expect(db.query).toHaveBeenCalledWith(expect.stringContaining('HMC_Sanad_AppDownTime_tbl'), {
       appName: 'SanaadHealth',
     });
   });
 
-  it('returns the DB UpdateType when an update row matches app + version', async () => {
-    const { service, db } = makeService(true);
-    db.query.mockResolvedValueOnce([]).mockResolvedValueOnce([{ NotifyUsers: 1, UpdateType: 'M' }]);
+  it.each(['M', 'O', 'R'])(
+    'returns the database UpdateType %s for a matching active app/version row',
+    async (updateType) => {
+      const { service, db } = makeService(true);
+      db.query
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ NotifyUsers: true, UpdateType: updateType }]);
 
-    const result = await service.check({ deviceimei: 'imei-1', version: '1.0.0' });
+      const result = await service.check({
+        deviceimei: 'imei-1',
+        appname: 'Sanaad',
+        version: '1.0.1',
+      });
 
-    expect(result).toEqual({
+      expect(result).toEqual({
+        appDowntime: 'No',
+        downtimeStart: '',
+        downtimeEnd: '',
+        updatetype: updateType,
+      });
+      expect(db.query).toHaveBeenCalledWith(
+        expect.stringContaining(
+          'WHERE B.AppName = @appName AND C.Version = @version AND A.Status = 1',
+        ),
+        { appName: 'Sanaad', version: '1.0.1' },
+      );
+      expect(db.query).toHaveBeenCalledWith(
+        expect.stringContaining('ON C.APPID = A.APPID AND A.FromVersionID = C.ID'),
+        { appName: 'Sanaad', version: '1.0.1' },
+      );
+    },
+  );
+
+  it('returns an empty update type when the query has no matching rows', async () => {
+    const { service, db } = makeService(true, { minSupportedVersion: '2.0.0' });
+    db.query.mockResolvedValue([]);
+
+    await expect(
+      service.check({ deviceimei: 'imei-1', appname: 'Sanaad', version: '1.0.1' }),
+    ).resolves.toEqual({
       appDowntime: 'No',
       downtimeStart: '',
       downtimeEnd: '',
-      updatetype: 'M',
+      updatetype: '',
     });
-    expect(db.query).toHaveBeenCalledWith(expect.stringContaining('HMC_Sanad_App_Update_tbl'), {
-      appName: 'SanaadHealth',
-      version: '1.0.0',
-    });
+    expect(db.query).toHaveBeenCalledTimes(2);
   });
 
-  it('skips the update query when the client sends no version', async () => {
+  it.each([undefined, null, '', '   '])(
+    'does not invent an update type when the database value is %j',
+    async (updateType) => {
+      const { service, db } = makeService(true);
+      db.query.mockResolvedValueOnce([]).mockResolvedValueOnce([{ UpdateType: updateType }]);
+
+      const result = await service.check({ deviceimei: 'imei-1', version: '1.0.1' });
+
+      expect(result.updatetype).toBe('');
+    },
+  );
+
+  it('returns empty and skips the update query without a version', async () => {
     const { service, db } = makeService(true);
     db.query.mockResolvedValueOnce([]);
 
     const result = await service.check({ deviceimei: 'imei-1' });
 
-    expect(result.updatetype).toBe('R');
+    expect(result.updatetype).toBe('');
     expect(db.query).toHaveBeenCalledTimes(1);
   });
 

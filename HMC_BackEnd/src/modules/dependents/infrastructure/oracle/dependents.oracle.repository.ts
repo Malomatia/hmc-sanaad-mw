@@ -59,8 +59,14 @@ export class DependentOracleRepository extends BaseOracleRepository implements D
 
   /** Merge the posted p_* body with the enforced user + resolved language. */
   private values(cmd: DependentCommand): Record<string, unknown> {
+    const today = new Date();
     return {
       ...this.withAliases(cmd.fields),
+      p_effective_date: [
+        today.getFullYear(),
+        String(today.getMonth() + 1).padStart(2, '0'),
+        String(today.getDate()).padStart(2, '0'),
+      ].join(''),
       p_language: toOracleLanguage(cmd.lang),
       p_user_name: cmd.username,
     };

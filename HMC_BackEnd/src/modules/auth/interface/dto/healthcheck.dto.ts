@@ -59,8 +59,9 @@ export class HealthCheckResponseDto {
   downtimeEnd!: string;
 
   @ApiProperty({
-    example: 'R',
-    description: 'Update requirement: R = not required, O = optional, M = mandatory.',
+    example: '',
+    description:
+      'Matched database UpdateType (R/O/M); empty when no active app/version update row matches.',
   })
   updatetype!: string;
 }

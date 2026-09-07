@@ -163,7 +163,12 @@ mpin/otp params redacted from logs:
 - `HMC_Sanad_AppDownTime_tbl` / `HMC_Sanad_App_Update_tbl` — API-1
   `/healthcheck` downtime + update-type (`APP_NAME` matches
   `HMC_Sanad_AppMaster_Tbl.AppName`); falls back to the `APP_*` env config when
-  the pool is disabled or a query fails.
+  no pool is available or a query fails. A successful update lookup matches
+  `appname`, `version` via `FromVersionID`, and `A.Status = 1`, then returns
+  that row's `UpdateType`. No matching row, no supplied version, or a
+  null/blank `UpdateType` returns `updatetype: ""`, not a default `R`. A real
+  database value `R` remains `R`; database-unavailable config fallback is
+  separate and unchanged.
 
 OTP delivery is `OtpDeliveryPort` → `SmsOtpDeliveryAdapter`, a generic
 config-driven HTTP POST (`SMS_API_BASE_URL`/`SMS_API_KEY`/`SMS_SENDER_ID`/
@@ -588,3 +593,11 @@ outside production; production always binds the caller's login, not their
 employee number. The route is open to authenticated employees with `@Roles()`
 overriding the controller's approver role. Swagger/audit operation ID:
 `approvals_pendingCount`.
+
+## Dependent effective date
+
+`POST /dependents` and `POST /dependents/update` generate `p_effective_date`
+server-side for each Oracle call as `YYYYMMDD`, using the server's local calendar
+date. The field is absent from both request DTOs and Swagger examples; clients
+must omit it (the strict request whitelist rejects it). Other endpoints' date
+fields are unchanged.

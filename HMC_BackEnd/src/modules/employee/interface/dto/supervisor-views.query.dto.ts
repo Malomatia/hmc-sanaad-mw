@@ -4,14 +4,13 @@ import { LovUserQueryDto } from '@shared/dto/common-query.dto';
 
 /**
  * op 35 — GET /employee/supervisor/views?username=&lang=&searchKeyWord=
- * `searchKeyWord` filters the supervisor employee list by FULL_NAME
+ * `searchKeyWord` filters the supervisor employee list by GLOBAL_NAME
  * (case-insensitive contains, applied Oracle-side before the row cap).
  */
 export class SupervisorViewsQueryDto extends LovUserQueryDto {
   @ApiPropertyOptional({
-    example: 'Hajar',
-    description:
-      'Case-insensitive substring filter on FULL_NAME ("000001 - Dr. Hajar Ahmed Hajar").',
+    example: 'Vandana',
+    description: 'Case-insensitive substring filter on GLOBAL_NAME in the delegate employee view.',
   })
   @IsOptional()
   @IsString()

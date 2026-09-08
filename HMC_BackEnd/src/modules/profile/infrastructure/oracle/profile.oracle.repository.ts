@@ -50,7 +50,11 @@ export class ProfileOracleRepository extends BaseOracleRepository implements Pro
       await Promise.all([
         this.readByResolvedKey(ORACLE_OBJECTS.PERSONAL_DETAILS_V, username, USERNAME_KEY_CANDIDATES),
         this.readByResolvedKey(ORACLE_OBJECTS.EMP_PHONE_V, username, USERNAME_KEY_CANDIDATES),
-        this.readByResolvedKey(ORACLE_OBJECTS.EMP_OUT_ADDRESS_V, username, USERNAME_KEY_CANDIDATES),
+        this.readByResolvedKey(ORACLE_OBJECTS.EMP_OUT_ADDRESS_V, username, USERNAME_KEY_CANDIDATES, {
+          where: 'ADDRESS_TYPE IN (:addressType0, :addressType1)',
+          binds: { addressType0: 'Recruiting', addressType1: 'Primary Home Country Address' },
+          maxRows: 1,
+        }),
         this.readByResolvedKey(ORACLE_OBJECTS.EMP_IN_ADDRESS_V, username, USERNAME_KEY_CANDIDATES),
         this.readByResolvedKey(ORACLE_OBJECTS.EMP_CONTACT_V, username, USERNAME_KEY_CANDIDATES),
       ]);

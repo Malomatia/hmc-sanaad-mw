@@ -1,4 +1,4 @@
-import { BaseOracleRepository } from './base.repository';
+import { BaseOracleRepository, ResolvedKeyReadOptions } from './base.repository';
 import { OracleService } from './oracle.service';
 import { OracleSchemaService } from './oracle-schema.service';
 import { WorklistOracleRepository } from '@modules/approvals/infrastructure/oracle/approvals.oracle.repository';
@@ -15,8 +15,8 @@ class TestRepository extends BaseOracleRepository {
     return this.readByEmployee('TEST_VIEW', value, column);
   }
 
-  readKeys(values: string[], column: string) {
-    return this.readByResolvedKeyAny('TEST_VIEW', values, [column]);
+  readKeys(values: string[], column: string, options?: ResolvedKeyReadOptions) {
+    return this.readByResolvedKeyAny('TEST_VIEW', values, [column], options);
   }
 
   readIds(values: string[], column: string) {
@@ -95,14 +95,75 @@ describe('Oracle usernames behind generic bind names', () => {
     expect(query).toHaveBeenCalledWith(expect.any(String), { u: 'MIXED.USER', t: 'Annual Leave' });
   });
 
-  it('uppercases the supervisor table-function username before it becomes arg0', async () => {
+  it('keeps extra predicates grouped and protects the username scope and row-limit binds', async () => {
     const { ora, query, dictionary } = make();
-    await new SupervisorOracleRepository(ora, dictionary).getSupervisorViews('mixed.User', 'en');
-    expect(query).toHaveBeenCalledWith(expect.any(String), {
-      arg0: 'MIXED.USER',
-      arg1: null,
-      maxRows: 2000,
+    const options = Object.freeze({
+      where: 'ADDRESS_TYPE = :addressType OR ADDRESS_TYPE IS NULL',
+      binds: Object.freeze({ addressType: 'Recruiting', k0: 'OTHER_USER', maxRows: 999 }),
+      maxRows: 1,
     });
+
+    await new TestRepository(ora, dictionary).readKeys(['mixed.User'], 'USER_NAME', options);
+
+    expect(query).toHaveBeenCalledWith(
+      'SELECT * FROM TEST_VIEW WHERE USER_NAME IN (:k0) ' +
+        'AND (ADDRESS_TYPE = :addressType OR ADDRESS_TYPE IS NULL) AND ROWNUM <= :maxRows',
+      { k0: 'MIXED.USER', addressType: 'Recruiting', maxRows: 1 },
+    );
+    expect(options.binds.k0).toBe('OTHER_USER');
+    expect(options.binds.maxRows).toBe(999);
+  });
+
+  it.each([undefined, '', '   '])(
+    'excludes the request username even when supervisor search is blank: %s',
+    async (search) => {
+      const { ora, query, dictionary } = make();
+      await new SupervisorOracleRepository(ora, dictionary).getSupervisorViews(
+        'mixed.User',
+        'en',
+        search,
+      );
+      expect(query).toHaveBeenCalledWith(
+        'SELECT * FROM XXHMC_SND_DELEGATE_EMP_V ' +
+          'WHERE UPPER(USERNAME) != :username AND ROWNUM <= :maxRows',
+        { username: 'MIXED.USER', maxRows: 2000 },
+      );
+    },
+  );
+
+  it.each(['en', 'ar'] as const)(
+    'searches GLOBAL_NAME before applying the row cap for lang=%s',
+    async (lang) => {
+      const { ora, query, dictionary } = make();
+      const rows = [{ GLOBAL_NAME: 'Vandana Test' }];
+      query.mockResolvedValue(rows);
+      const result = await new SupervisorOracleRepository(ora, dictionary).getSupervisorViews(
+        'mixed.User',
+        lang,
+        '  Vandana  ',
+      );
+      expect(query).toHaveBeenCalledWith(
+        'SELECT * FROM XXHMC_SND_DELEGATE_EMP_V ' +
+          'WHERE UPPER(USERNAME) != :username AND UPPER(GLOBAL_NAME) LIKE :filterValue AND ROWNUM <= :maxRows',
+        { username: 'MIXED.USER', filterValue: '%VANDANA%', maxRows: 2000 },
+      );
+      expect(result).toBe(rows);
+    },
+  );
+
+  it('binds supervisor search text rather than interpolating it into SQL', async () => {
+    const { ora, query, dictionary } = make();
+    const result = await new SupervisorOracleRepository(ora, dictionary).getSupervisorViews(
+      'mixed.User',
+      'en',
+      "Vandana' OR 1=1 --",
+    );
+    expect(query).toHaveBeenCalledWith(
+      'SELECT * FROM XXHMC_SND_DELEGATE_EMP_V ' +
+        'WHERE UPPER(USERNAME) != :username AND UPPER(GLOBAL_NAME) LIKE :filterValue AND ROWNUM <= :maxRows',
+      { username: 'MIXED.USER', filterValue: "%VANDANA' OR 1=1 --%", maxRows: 2000 },
+    );
+    expect(result).toEqual([]);
   });
 
   it('normalizes dictionary-resolved table-function usernames but not other arguments', async () => {

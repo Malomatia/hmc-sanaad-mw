@@ -42,6 +42,12 @@ export interface SubmitProcOptions {
   wrap?: Record<string, string>;
 }
 
+export interface ResolvedKeyReadOptions {
+  where?: string;
+  binds?: Readonly<Record<string, string | number | null>>;
+  maxRows?: number;
+}
+
 export abstract class BaseOracleRepository {
   /** Named after the concrete subclass so log lines identify the adapter. */
   private readonly logger = new Logger(this.constructor.name);
@@ -169,8 +175,9 @@ export abstract class BaseOracleRepository {
     object: string,
     value: string,
     candidates: readonly string[],
+    options: ResolvedKeyReadOptions = {},
   ): Promise<T[]> {
-    return this.readByResolvedKeyAny<T>(object, [value], candidates);
+    return this.readByResolvedKeyAny<T>(object, [value], candidates, options);
   }
 
   /**
@@ -188,6 +195,7 @@ export abstract class BaseOracleRepository {
     object: string,
     values: readonly (string | undefined)[],
     candidates: readonly string[],
+    options: ResolvedKeyReadOptions = {},
   ): Promise<T[]> {
     if (!this.schema) {
       throw new Error(
@@ -198,12 +206,21 @@ export abstract class BaseOracleRepository {
     if (!distinct.length) return [];
     try {
       const keyColumn = await this.schema.resolveKeyColumn(object, candidates);
-      const binds = Object.fromEntries(
-        distinct.map((v, i) => [`k${i}`, normalizeOracleUsername(keyColumn, v) as string]),
-      );
+      const binds: Record<string, string | number | null> = {
+        ...options.binds,
+        ...Object.fromEntries(
+          distinct.map((v, i) => [`k${i}`, normalizeOracleUsername(keyColumn, v) as string]),
+        ),
+      };
       const placeholders = distinct.map((_, i) => `:k${i}`).join(', ');
+      const conditions = [`${keyColumn} IN (${placeholders})`];
+      if (options.where) conditions.push(`(${options.where})`);
+      if (options.maxRows !== undefined) {
+        conditions.push('ROWNUM <= :maxRows');
+        binds.maxRows = options.maxRows;
+      }
       return await this.query<T>(
-        `SELECT * FROM ${object} WHERE ${keyColumn} IN (${placeholders})`,
+        `SELECT * FROM ${object} WHERE ${conditions.join(' AND ')}`,
         binds,
       );
     } catch (err) {

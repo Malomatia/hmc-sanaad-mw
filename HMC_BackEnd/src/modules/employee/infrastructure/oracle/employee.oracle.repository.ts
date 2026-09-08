@@ -93,20 +93,29 @@ export class SupervisorOracleRepository
     _lang: Lang,
     searchKeyWord?: string,
   ): Promise<SupervisorView[]> {
-    // Confirmed by Oracle: XXHMC_SND_SUPERVISOR_VIEW is a FUNCTION —
+    // The original XXHMC_SND_SUPERVISOR_VIEW was a FUNCTION —
     // `FUNCTION(p_user_name IN VARCHAR2, p_limit_txt VARCHAR2) RETURN
-    // xxhmc_snd_emp_dets_nt` (a collection type) — not a table (`SELECT ...
-    // WHERE` raised ORA-04044) and not a procedure (`BEGIN ... END;` raised
-    // PLS-00221). Table functions are queried via SELECT * FROM TABLE(fn(...)),
-    // capped server-side (queryTableFunction's default maxRows) — one real
-    // call returned 31,000+ rows, far more than any client should get back.
-    // `searchKeyWord` filters FULL_NAME Oracle-side, BEFORE that cap, so a
+    // xxhmc_snd_emp_dets_nt` — queried with SELECT ... FROM TABLE(fn(...)).
+    // XXHMC_SND_DELEGATE_EMP_V is a view and must be selected directly.
+    // It lists other employees, excluding the request username via USERNAME.
+    // The view takes no function arguments. Keep the 2000-row cap:
+    // the original lookup returned 31,000+ rows in one call on staging.
+    // `searchKeyWord` filters GLOBAL_NAME Oracle-side, BEFORE that cap, so a
     // search sees the whole employee list rather than the first 2000 rows.
-    return this.queryTableFunction<SupervisorView>(
-      ORACLE_OBJECTS.SUPERVISOR_VIEW,
-      [username.toUpperCase(), null],
-      undefined,
-      searchKeyWord ? { column: 'FULL_NAME', value: searchKeyWord } : undefined,
+    const binds: Record<string, string | number> = {
+      username: username.toUpperCase(),
+      maxRows: 2000,
+    };
+    const conditions: string[] = ['UPPER(USER_NAME) != :username'];
+    const search = searchKeyWord?.trim();
+    if (search) {
+      binds.filterValue = `%${search.toUpperCase()}%`;
+      conditions.push('UPPER(GLOBAL_NAME) LIKE :filterValue');
+    }
+    conditions.push('ROWNUM <= :maxRows');
+    return this.query<SupervisorView>(
+      `SELECT * FROM ${ORACLE_OBJECTS.DELEGATE_EMP_V} WHERE ${conditions.join(' AND ')}`,
+      binds,
     );
   }
 

@@ -608,9 +608,11 @@ Oracle-bound login values are uppercase. `OracleService` normalizes named
 username IN/INOUT binds before logging and execution (`p_user_name`, `username`,
 `user_name`, `p_username`, `p_dusername`, and from/to/requestor/approver variants).
 `BaseOracleRepository` also normalizes values using the resolved username column
-or formal parameter before they become generic `kN`/`argN` binds; LOV scopes,
-worklist/leave `u` binds, and the supervisor table function cover the remaining
-anonymous bindings. Do not uppercase every string bind: IDs, comments, file
+or formal parameter before they become generic `kN`/`argN` binds; LOV scopes
+and worklist/leave `u` binds cover the remaining anonymous username bindings.
+The supervisor employee directory reads a view and binds the uppercase request
+username in its exclusion predicate.
+Do not uppercase every string bind: IDs, comments, file
 contents, dates, and other business values must remain unchanged. This is an
 Oracle input boundary only, not a change to JWTs, directory/SQL Server auth,
 Oracle connection credentials, or response casing.
@@ -630,3 +632,45 @@ masking are unchanged.
 `AD`), with `meaning` and its existing localization unchanged. This override
 lives in `AddressService.countryLov` and copies the shared cached LOV items;
 it does not alter generic lookup responses, other LOVs, or address submit binds.
+
+## Oracle API error descriptions
+
+Oracle errors now prefer the readable Oracle description, not the category's
+generic message: `ORA-01403: no data found` becomes `no data found`.
+`extractOracleErrorText` strips ORA/PLS prefixes, stack frames, and driver help
+links while still rejecting SQL, schema names, and credential assignments.
+`BaseOracleRepository.toSubmitResult` handles OUT-bind errors (including blank
+`p_message` ahead of a populated `p_error_msg`), and `classifyException` handles
+thrown Oracle errors. The exception filter keeps extracted descriptions for
+both languages instead of replacing them with category text on `lang=ar`;
+returned Arabic OUT messages are cleaned independently. Leave calculation and
+payslip generation use `sanitizeOracleMessage` for their separate `errorMessage`
+fields. HTTP statuses are unchanged: failed submit results remain 200, thrown
+ORA-01403 remains 422. The English database fallback is now `The database request
+failed.` when no usable detail is available. Full Oracle diagnostics/logs are
+unchanged and retain the original error.
+
+## Supervisor employee directory view
+
+`GET /employee/supervisor/views` now reads `XXHMC_SND_DELEGATE_EMP_V` directly,
+not the former `XXHMC_SND_SUPERVISOR_VIEW` table function. A view must not be
+called as `TABLE(view(username, NULL))`; that SQL raised ORA-00904. The request's
+`username` is excluded using `UPPER(USERNAME) != :username` (uppercase bound
+value), including when no search keyword is supplied. Other employees remain
+eligible.
+`searchKeyWord` applies a bound, case-insensitive contains match to `GLOBAL_NAME`
+before the 2,000-row cap. Omitted, empty, or whitespace-only search values omit
+the name predicate. Returned view columns remain unchanged; supervisor submit
+and the generic table-function helper are unaffected.
+
+## Profile outside address selection
+
+`GET /profile` reads at most one `EMP_OUT_ADDRESS_V` row for the requested user,
+filtered by `ADDRESS_TYPE IN ('Recruiting', 'Primary Home Country Address')`
+before `ROWNUM <= 1`. No address-type priority or latest-row ordering is implied.
+`outsideAddresses` keeps its array shape (zero or one item); all other profile
+reads are unchanged. The existing resolved username-column lookup and graceful
+schema-mismatch behavior are preserved through optional `ResolvedKeyReadOptions`
+on the shared read helper. Additional predicates are code-owned SQL with bound
+values, grouped with AND; they must not come from request-supplied SQL. Scope
+binds take precedence over additional binds.

@@ -1,3 +1,4 @@
+import { Lang } from '@shared/domain/lang';
 import { OtpPurpose } from './otp.port';
 
 /**
@@ -7,7 +8,7 @@ import { OtpPurpose } from './otp.port';
  * phone number.
  */
 export interface OtpDeliveryPort {
-  sendOtpSms(phoneNumber: string, otp: string, purpose: OtpPurpose): Promise<void>;
+  sendOtpSms(phoneNumber: string, otp: string, purpose: OtpPurpose, lang?: Lang): Promise<void>;
 }
 
 export const OTP_DELIVERY_PORT = Symbol('OTP_DELIVERY_PORT');

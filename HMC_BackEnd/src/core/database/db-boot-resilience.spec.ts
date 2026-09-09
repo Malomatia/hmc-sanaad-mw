@@ -95,7 +95,7 @@ describe('database boot resilience', () => {
 
     // the failure is visible where it belongs, not as a dead process
     await expect(service.ping()).resolves.toBe(false);
-    expect(() => service['getPool']()).toThrow(OracleUnavailableException);
+    await expect(service['getPool']()).rejects.toThrow(OracleUnavailableException);
   });
 
   it('starts without the Users DB when the pool cannot be created', async () => {
@@ -174,6 +174,383 @@ describe('database boot resilience', () => {
     // ...but only one of them was meant to be running
     expect(broken.isConfigured()).toBe(true);
     expect(off.isConfigured()).toBe(false);
+  });
+
+  describe('Oracle pool recovery', () => {
+    const createPool = oracledb.createPool as unknown as jest.Mock;
+    const CLOSED = new Error('NJS-065: connection pool was closed');
+
+    function makeOracle(overrides: Record<string, unknown> = {}) {
+      const logs = new OracleLogStore();
+      const service = new OracleService(
+        config('oracle', { ...ORACLE_CFG, callTimeout: 25000, ...overrides }),
+        logs,
+      );
+      return { service, logs };
+    }
+
+    function makePool() {
+      const conn = {
+        execute: jest.fn().mockResolvedValue({ rows: [{ OK: 1 }] }),
+        ping: jest.fn().mockResolvedValue(undefined),
+        close: jest.fn().mockResolvedValue(undefined),
+        callTimeout: 0,
+      };
+      const pool = {
+        getConnection: jest.fn().mockResolvedValue(conn),
+        close: jest.fn().mockResolvedValue(undefined),
+        connectionsOpen: 1,
+        connectionsInUse: 0,
+      };
+      return { pool, conn };
+    }
+
+    beforeEach(() => {
+      jest.useFakeTimers();
+      createPool.mockReset().mockRejectedValue(FAILURE);
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('shares two creation attempts and waits before retrying a missing pool', async () => {
+      const { service } = makeOracle();
+      const { pool, conn } = makePool();
+      createPool.mockRejectedValueOnce(FAILURE).mockResolvedValueOnce(pool);
+      const results = Promise.all(Array.from({ length: 8 }, () => service.query('SELECT 1')));
+      const checked = expect(results).resolves.toEqual(Array(8).fill([{ OK: 1 }]));
+
+      await jest.advanceTimersByTimeAsync(999);
+      expect(createPool).toHaveBeenCalledTimes(1);
+      await jest.advanceTimersByTimeAsync(1);
+      await checked;
+
+      expect(createPool).toHaveBeenCalledTimes(2);
+      expect(conn.ping).toHaveBeenCalledTimes(1);
+      expect(conn.callTimeout).toBe(25000);
+      expect(service.isEnabled()).toBe(true);
+    });
+
+    it('stops after two failures, cools down, then recovers on a later request', async () => {
+      const { service, logs } = makeOracle();
+      const results = Promise.allSettled(
+        Array.from({ length: 8 }, () => service.query('SELECT 1')),
+      );
+      await jest.advanceTimersByTimeAsync(1000);
+      for (const result of await results) {
+        expect(result.status).toBe('rejected');
+        if (result.status === 'rejected') {
+          expect(result.reason).toBeInstanceOf(OracleUnavailableException);
+          expect(result.reason.getStatus()).toBe(503);
+        }
+      }
+      expect(createPool).toHaveBeenCalledTimes(2);
+      expect(logs.list().items).toHaveLength(8);
+      expect(logs.list().items.every((entry) => entry.status === 'error')).toBe(true);
+
+      await expect(service.query('SELECT 1')).rejects.toBeInstanceOf(OracleUnavailableException);
+      await jest.advanceTimersByTimeAsync(1999);
+      await expect(service.acquire()).rejects.toBeInstanceOf(OracleUnavailableException);
+      expect(createPool).toHaveBeenCalledTimes(2);
+
+      await jest.advanceTimersByTimeAsync(1);
+      createPool.mockResolvedValue(makePool().pool);
+      await expect(service.query('SELECT 1')).resolves.toEqual([{ OK: 1 }]);
+      expect(createPool).toHaveBeenCalledTimes(3);
+    });
+
+    it('recovers after the two startup attempts fail without restarting the service', async () => {
+      const { service } = makeOracle();
+      const boot = service.onModuleInit();
+      await jest.advanceTimersByTimeAsync(1000);
+      await boot;
+      expect(service.isEnabled()).toBe(false);
+      expect(createPool).toHaveBeenCalledTimes(2);
+
+      await jest.advanceTimersByTimeAsync(2000);
+      createPool.mockResolvedValue(makePool().pool);
+      await expect(service.query('SELECT 1')).resolves.toEqual([{ OK: 1 }]);
+      expect(service.isEnabled()).toBe(true);
+    });
+
+    it('replaces a broken existing pool once for concurrent callers', async () => {
+      const { service } = makeOracle();
+      const old = makePool();
+      old.pool.getConnection.mockRejectedValue(CLOSED);
+      service['pool'] = old.pool as unknown as oracledb.Pool;
+      const replacement = makePool();
+      createPool.mockRejectedValueOnce(FAILURE).mockResolvedValueOnce(replacement.pool);
+      const checked = expect(
+        Promise.all(Array.from({ length: 8 }, () => service.query('SELECT 1'))),
+      ).resolves.toEqual(Array(8).fill([{ OK: 1 }]));
+
+      await jest.advanceTimersByTimeAsync(1000);
+      await checked;
+      expect(old.pool.close).toHaveBeenCalledTimes(1);
+      expect(createPool).toHaveBeenCalledTimes(2);
+      expect(replacement.pool.close).not.toHaveBeenCalled();
+    });
+
+    it('counts unusable replacement pools toward the two-attempt limit', async () => {
+      const { service } = makeOracle();
+      const old = makePool();
+      old.pool.getConnection.mockRejectedValue(CLOSED);
+      service['pool'] = old.pool as unknown as oracledb.Pool;
+      const first = makePool();
+      const second = makePool();
+      first.conn.ping.mockRejectedValue(
+        new Error('ORA-03113: end-of-file on communication channel'),
+      );
+      second.pool.getConnection.mockRejectedValue(FAILURE);
+      createPool.mockResolvedValueOnce(first.pool).mockResolvedValueOnce(second.pool);
+      const checked = expect(service.acquire()).rejects.toBeInstanceOf(OracleUnavailableException);
+
+      await jest.advanceTimersByTimeAsync(1000);
+      await checked;
+      expect(createPool).toHaveBeenCalledTimes(2);
+      expect(first.conn.close).toHaveBeenCalledTimes(1);
+      expect(first.pool.close).toHaveBeenCalledTimes(1);
+      expect(second.pool.close).toHaveBeenCalledTimes(1);
+      expect(service.isEnabled()).toBe(false);
+    });
+
+    it.each(['NJS-040: connection request timeout', 'NJS-076: connection request rejected'])(
+      'does not replace a busy pool for %s',
+      async (message) => {
+        const { service } = makeOracle();
+        const { pool } = makePool();
+        pool.getConnection.mockRejectedValue(new Error(message));
+        service['pool'] = pool as unknown as oracledb.Pool;
+
+        await expect(service.acquire()).rejects.toBeInstanceOf(OracleUnavailableException);
+        expect(createPool).not.toHaveBeenCalled();
+        expect(pool.close).not.toHaveBeenCalled();
+      },
+    );
+
+    it('does not replay a submit when the connection fails during execution', async () => {
+      const { service } = makeOracle();
+      const old = makePool();
+      const statement = 'BEGIN submit_request; END;';
+      old.conn.execute.mockImplementation(async (sql: string) => {
+        if (sql === statement) throw new Error('ORA-03113: end-of-file on communication channel');
+        return {};
+      });
+      service['pool'] = old.pool as unknown as oracledb.Pool;
+
+      await expect(service.call(statement, {})).rejects.toThrow();
+      expect(old.conn.execute.mock.calls.filter(([sql]) => sql === statement)).toHaveLength(1);
+      expect(createPool).not.toHaveBeenCalled();
+      expect(old.conn.close).toHaveBeenCalledTimes(1);
+
+      createPool.mockResolvedValue(makePool().pool);
+      await expect(service.query('SELECT 1')).resolves.toEqual([{ OK: 1 }]);
+      expect(createPool).toHaveBeenCalledTimes(1);
+      expect(old.pool.close).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not replace a pool after a business or SQL error', async () => {
+      const { service } = makeOracle();
+      const { pool, conn } = makePool();
+      conn.execute.mockRejectedValueOnce(new Error('ORA-00904: invalid identifier'));
+      service['pool'] = pool as unknown as oracledb.Pool;
+
+      await expect(service.query('SELECT invalid_column')).rejects.toThrow('ORA-00904');
+      await expect(service.query('SELECT 1')).resolves.toEqual([{ OK: 1 }]);
+      expect(createPool).not.toHaveBeenCalled();
+      expect(pool.close).not.toHaveBeenCalled();
+    });
+
+    it('does not let a late failure from an old pool invalidate its replacement', async () => {
+      const { service } = makeOracle();
+      const old = makePool();
+      let rejectLate!: (error: Error) => void;
+      old.pool.getConnection.mockRejectedValueOnce(CLOSED).mockImplementationOnce(
+        () =>
+          new Promise((_, reject) => {
+            rejectLate = reject;
+          }),
+      );
+      service['pool'] = old.pool as unknown as oracledb.Pool;
+      const replacement = makePool();
+      createPool.mockResolvedValue(replacement.pool);
+
+      const first = service.query('SELECT 1');
+      const late = service.query('SELECT 1');
+      await expect(first).resolves.toEqual([{ OK: 1 }]);
+      rejectLate(CLOSED);
+      await expect(late).resolves.toEqual([{ OK: 1 }]);
+      expect(createPool).toHaveBeenCalledTimes(1);
+      expect(replacement.pool.close).not.toHaveBeenCalled();
+    });
+
+    it('lets health probes recover a missing pool and applies the call timeout', async () => {
+      const { service } = makeOracle();
+      const { pool, conn } = makePool();
+      createPool.mockResolvedValue(pool);
+
+      await expect(service.ping()).resolves.toBe(true);
+      await expect(service.diagnose()).resolves.toMatchObject({
+        enabled: true,
+        connected: true,
+        pool: { connectionsOpen: 1, connectionsInUse: 0 },
+      });
+      expect(createPool).toHaveBeenCalledTimes(1);
+      expect(conn.callTimeout).toBe(25000);
+    });
+
+    it('starts the replacement while existing connections drain and waits for cleanup on shutdown', async () => {
+      const { service } = makeOracle();
+      const old = makePool();
+      old.pool.connectionsInUse = 1;
+      old.pool.getConnection.mockRejectedValue(CLOSED);
+      let finishDrain!: () => void;
+      old.pool.close.mockImplementation(
+        () =>
+          new Promise<void>((resolve) => {
+            finishDrain = resolve;
+          }),
+      );
+      service['pool'] = old.pool as unknown as oracledb.Pool;
+      const replacement = makePool();
+      createPool.mockResolvedValue(replacement.pool);
+
+      await expect(service.acquire(1234)).resolves.toBe(replacement.conn);
+      expect(replacement.conn.callTimeout).toBe(1234);
+      expect(old.pool.close).toHaveBeenCalledWith(50);
+      let stopped = false;
+      const shutdown = service.onModuleDestroy().then(() => {
+        stopped = true;
+      });
+      await jest.advanceTimersByTimeAsync(0);
+      expect(stopped).toBe(false);
+      finishDrain();
+      await shutdown;
+      expect(old.pool.close).toHaveBeenCalledTimes(1);
+      expect(replacement.pool.close).toHaveBeenCalledTimes(1);
+    });
+
+    it('retains failed pool cleanup for another attempt at shutdown', async () => {
+      const { service } = makeOracle();
+      const old = makePool();
+      old.pool.getConnection.mockRejectedValue(CLOSED);
+      old.pool.close.mockRejectedValueOnce(new Error('DPI-1010: not connected'));
+      service['pool'] = old.pool as unknown as oracledb.Pool;
+      createPool.mockResolvedValue(makePool().pool);
+
+      await expect(service.acquire()).resolves.toBeDefined();
+      expect(old.pool.close).toHaveBeenCalledTimes(1);
+      await service.onModuleDestroy();
+      expect(old.pool.close).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not start another cycle when a freshly validated pool loses connectivity', async () => {
+      const { service } = makeOracle();
+      const old = makePool();
+      old.pool.getConnection.mockRejectedValue(CLOSED);
+      service['pool'] = old.pool as unknown as oracledb.Pool;
+      const replacement = makePool();
+      replacement.pool.getConnection
+        .mockResolvedValueOnce(replacement.conn)
+        .mockRejectedValue(CLOSED);
+      createPool.mockResolvedValue(replacement.pool);
+
+      await expect(service.acquire()).rejects.toBeInstanceOf(OracleUnavailableException);
+      await expect(service.acquire()).rejects.toBeInstanceOf(OracleUnavailableException);
+      expect(createPool).toHaveBeenCalledTimes(1);
+    });
+
+    it('counts failed probe cleanup toward the creation attempt limit', async () => {
+      const { service } = makeOracle();
+      const first = makePool();
+      first.conn.close.mockRejectedValue(CLOSED);
+      const second = makePool();
+      createPool.mockResolvedValueOnce(first.pool).mockResolvedValueOnce(second.pool);
+      const checked = expect(service.acquire()).resolves.toBe(second.conn);
+
+      await jest.advanceTimersByTimeAsync(1000);
+      await checked;
+      expect(createPool).toHaveBeenCalledTimes(2);
+      expect(first.pool.close).toHaveBeenCalledTimes(1);
+    });
+
+    it.each(['query', 'call', 'callCursor', 'callMultiCursor'] as const)(
+      'preserves 503 and records the acquisition failure for %s',
+      async (method) => {
+        const { service, logs } = makeOracle({ disabled: true });
+        const operation =
+          method === 'callMultiCursor'
+            ? service.callMultiCursor('BEGIN submit_request; END;', {}, [])
+            : service[method]('SELECT 1', {});
+
+        await expect(operation).rejects.toBeInstanceOf(OracleUnavailableException);
+        expect(logs.list().items).toHaveLength(1);
+        expect(logs.list().items[0].status).toBe('error');
+        expect(createPool).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(['NJS-002', 'NJS-500', 'NJS-503', 'ORA-01034', 'ORA-12541', 'ORA-03114', 'DPI-1080'])(
+      'recovers from a connection acquisition error with code %s',
+      async (code) => {
+        const { service } = makeOracle();
+        const old = makePool();
+        old.pool.getConnection.mockRejectedValue(
+          Object.assign(new Error('connection failed'), { code }),
+        );
+        service['pool'] = old.pool as unknown as oracledb.Pool;
+        const replacement = makePool();
+        createPool.mockResolvedValue(replacement.pool);
+
+        await expect(service.acquire()).resolves.toBe(replacement.conn);
+        expect(createPool).toHaveBeenCalledTimes(1);
+      },
+    );
+
+    it.each([{ disabled: true }, { user: '' }, { dsn: '' }])(
+      'does not create a pool when Oracle is disabled or unconfigured: %j',
+      async (overrides) => {
+        const { service } = makeOracle(overrides);
+        await expect(service.acquire()).rejects.toBeInstanceOf(OracleUnavailableException);
+        await expect(service.ping()).resolves.toBe(false);
+        expect(createPool).not.toHaveBeenCalled();
+      },
+    );
+
+    it('stops retrying when shutdown begins during backoff', async () => {
+      const { service } = makeOracle();
+      const checked = expect(service.acquire()).rejects.toBeInstanceOf(OracleUnavailableException);
+      await jest.advanceTimersByTimeAsync(0);
+      const shutdown = service.onModuleDestroy();
+      await jest.advanceTimersByTimeAsync(1000);
+      await Promise.all([checked, shutdown]);
+
+      expect(createPool).toHaveBeenCalledTimes(1);
+      await expect(service.acquire()).rejects.toBeInstanceOf(OracleUnavailableException);
+      expect(createPool).toHaveBeenCalledTimes(1);
+    });
+
+    it('closes a pool created during shutdown without publishing it', async () => {
+      const { service } = makeOracle();
+      const { pool } = makePool();
+      let resolvePool!: (value: typeof pool) => void;
+      createPool.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolvePool = resolve;
+          }),
+      );
+      const checked = expect(service.acquire()).rejects.toBeInstanceOf(OracleUnavailableException);
+      await jest.advanceTimersByTimeAsync(0);
+      const shutdown = service.onModuleDestroy();
+      resolvePool(pool);
+      await Promise.all([checked, shutdown]);
+
+      expect(pool.close).toHaveBeenCalledTimes(1);
+      expect(pool.getConnection).not.toHaveBeenCalled();
+      expect(service.isEnabled()).toBe(false);
+    });
   });
 
   it('treats missing credentials as not configured', async () => {

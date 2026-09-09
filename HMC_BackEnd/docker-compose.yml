@@ -140,7 +140,7 @@ services:
       SMS_API_KEY: "${SMS_API_KEY:-}"
       SMS_SENDER_ID: "${SMS_SENDER_ID:-}"
       SMS_API_TIMEOUT_MS: "${SMS_API_TIMEOUT_MS:-25000}"
-      SMS_MESSAGE_TEMPLATE: "${SMS_MESSAGE_TEMPLATE:-Your Sanaad verification code is {otp}}"
+      SMS_MESSAGE_TEMPLATE: "${SMS_MESSAGE_TEMPLATE:-OTP to register for Sanaad App is {otp}\\n\\nرمز التحقق للتسجيل في تطبيق سند هو {otp}}"
       SMTP_HOST: "${SMTP_HOST:-}"
       SMTP_PORT: "${SMTP_PORT:-587}"
       SMTP_SECURE: "${SMTP_SECURE:-false}"

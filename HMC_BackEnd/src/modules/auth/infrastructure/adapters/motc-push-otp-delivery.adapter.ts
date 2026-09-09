@@ -30,21 +30,21 @@ const INSERT_RETRIES = 5;
 export class MotcPushOtpDeliveryAdapter implements OtpDeliveryPort {
   private readonly logger = new Logger(MotcPushOtpDeliveryAdapter.name);
   private readonly motc: MotcSmsConfig;
-  private readonly messageTemplate: string;
+  private readonly sms: SmsConfig;
 
   constructor(
     private readonly db: MotcSmsDbService,
     config: ConfigService,
   ) {
     this.motc = config.getOrThrow<MotcSmsConfig>('motcSms');
-    this.messageTemplate = config.getOrThrow<SmsConfig>('sms').messageTemplate;
+    this.sms = config.getOrThrow<SmsConfig>('sms');
     if (!/^[A-Za-z0-9_.[\]]+$/.test(this.motc.table)) {
       throw new Error(`Invalid MOTC_SMS_TABLE "${this.motc.table}" — not a SQL identifier.`);
     }
   }
 
   async sendOtpSms(phoneNumber: string, otp: string, purpose: OtpPurpose): Promise<void> {
-    const messageBody = this.messageTemplate.replace('{otp}', otp);
+    const messageBody = this.sms.messageTemplate.replace(/\\n/g, '\n').replace(/\{otp\}/g, otp);
     const appId = this.motc.appId || null;
     for (let attempt = 1; attempt <= INSERT_RETRIES; attempt++) {
       const messageId = randomUUID().replace(/-/g, '').toUpperCase();

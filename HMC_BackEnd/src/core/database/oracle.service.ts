@@ -48,6 +48,17 @@ interface OracleCallLog {
 export class OracleService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(OracleService.name);
   private pool: oracledb.Pool | undefined;
+  private brokenPool: oracledb.Pool | undefined;
+  private creating: Promise<oracledb.Pool> | undefined;
+  private retryAfter = 0;
+  private stopping = false;
+  private lastPoolError: unknown;
+  private readonly connectionPools = new WeakMap<oracledb.Connection, oracledb.Pool>();
+  private readonly retiredPools = new Set<oracledb.Pool>();
+  private readonly closingPools = new Map<oracledb.Pool, Promise<void>>();
+  private static readonly POOL_CREATE_ATTEMPTS = 2;
+  private static readonly POOL_RETRY_DELAY_MS = 1000;
+  private static readonly POOL_RETRY_COOLDOWN_MS = 2000;
   private readonly cfg: OracleConfig;
   /** Monotonic counter so each Oracle call's log lines can be correlated. */
   private callSeq = 0;
@@ -72,27 +83,7 @@ export class OracleService implements OnModuleInit, OnModuleDestroy {
       return;
     }
     try {
-      this.enableThickModeIfConfigured();
-      oracledb.outFormat = oracledb.OUT_FORMAT_OBJECT;
-      oracledb.fetchAsString = [oracledb.CLOB];
-      // BLOBs otherwise arrive as Lob STREAMS, not Buffers. The attachment
-      // reader tested `Buffer.isBuffer(...)` and silently returned an empty
-      // string for every file, so downloads had never once worked. Buffering
-      // is appropriate here: the only BLOBs read are request attachments, and
-      // uploads are already capped at the 15 MB body limit.
-      oracledb.fetchAsBuffer = [oracledb.BLOB];
-      this.pool = await oracledb.createPool({
-        user: this.cfg.user,
-        password: this.cfg.password,
-        connectString: this.cfg.dsn,
-        poolMin: this.cfg.poolMin,
-        poolMax: this.cfg.poolMax,
-        poolTimeout: this.cfg.poolTimeout,
-        queueTimeout: this.cfg.queueTimeout,
-      });
-      this.logger.log(
-        `Oracle pool created (min=${this.cfg.poolMin}, max=${this.cfg.poolMax}) → ${this.cfg.dsn}`,
-      );
+      await this.getPool();
     } catch (err) {
       // Deliberately NOT rethrown. Rethrowing here aborts the Nest bootstrap,
       // so one bad DSN or password took the entire API down — including the
@@ -105,15 +96,151 @@ export class OracleService implements OnModuleInit, OnModuleDestroy {
       // oracle.reachable = false, which also makes the cause obvious.
       this.logger.error(
         `Failed to create Oracle pool: ${(err as Error).message} — starting without it; ` +
-          'Oracle-backed endpoints will answer 503 until the configuration is fixed.',
+          'Oracle-backed endpoints will retry pool creation on demand after the cooldown.',
       );
     }
   }
 
   async onModuleDestroy(): Promise<void> {
-    if (this.pool) {
-      await this.pool.close(5);
+    this.stopping = true;
+    await this.creating?.catch(() => undefined);
+    const pool = this.pool;
+    this.pool = undefined;
+    this.brokenPool = undefined;
+    if (pool) {
+      await this.closePool(pool);
       this.logger.log('Oracle pool closed.');
+    }
+    await Promise.all([...this.retiredPools].map((retired) => this.closePool(retired)));
+  }
+
+  private async createPool(): Promise<oracledb.Pool> {
+    this.enableThickModeIfConfigured();
+    oracledb.outFormat = oracledb.OUT_FORMAT_OBJECT;
+    oracledb.fetchAsString = [oracledb.CLOB];
+    // BLOBs otherwise arrive as Lob STREAMS, not Buffers. The attachment
+    // reader tested `Buffer.isBuffer(...)` and silently returned an empty
+    // string for every file, so downloads had never once worked. Buffering
+    // is appropriate here: the only BLOBs read are request attachments, and
+    // uploads are already capped at the 15 MB body limit.
+    oracledb.fetchAsBuffer = [oracledb.BLOB];
+    return oracledb.createPool({
+      user: this.cfg.user,
+      password: this.cfg.password,
+      connectString: this.cfg.dsn,
+      poolMin: this.cfg.poolMin,
+      poolMax: this.cfg.poolMax,
+      poolTimeout: this.cfg.poolTimeout,
+      queueTimeout: this.cfg.queueTimeout,
+    });
+  }
+
+  private closePool(pool: oracledb.Pool, drainSeconds = 5): Promise<void> {
+    const active = this.closingPools.get(pool);
+    if (active) return active;
+    this.retiredPools.add(pool);
+    const closing = pool
+      .close(drainSeconds)
+      .then(
+        () => {
+          this.retiredPools.delete(pool);
+        },
+        (err: Error) => {
+          if (/\bNJS-065\b/.test(err.message)) this.retiredPools.delete(pool);
+          this.logger.error(`Error closing Oracle pool: ${err.message}`);
+        },
+      )
+      .finally(() => {
+        this.closingPools.delete(pool);
+      });
+    this.closingPools.set(pool, closing);
+    return closing;
+  }
+
+  private async recoverPool(oldPool?: oracledb.Pool): Promise<oracledb.Pool> {
+    this.pool = undefined;
+    this.brokenPool = undefined;
+    if (oldPool) this.retiredPools.add(oldPool);
+    const drainSeconds = Math.max(5, Math.ceil(((this.cfg.callTimeout ?? 25000) * 2) / 1000));
+    for (const retired of this.retiredPools) void this.closePool(retired, drainSeconds);
+    for (let attempt = 1; attempt <= OracleService.POOL_CREATE_ATTEMPTS; attempt++) {
+      if (this.stopping) break;
+      let candidate: oracledb.Pool | undefined;
+      try {
+        candidate = await this.createPool();
+        if (this.stopping) throw this.poolUnavailable();
+        const conn = await this.connect(candidate);
+        try {
+          await conn.ping();
+        } finally {
+          await conn.close();
+        }
+        if (this.stopping) throw this.poolUnavailable();
+        this.pool = candidate;
+        this.retryAfter = 0;
+        this.lastPoolError = undefined;
+        this.logger.log(
+          `Oracle pool created (min=${this.cfg.poolMin}, max=${this.cfg.poolMax}, attempt=${attempt}) → ${this.cfg.dsn}`,
+        );
+        return candidate;
+      } catch (err) {
+        this.lastPoolError = err;
+        if (candidate) await this.closePool(candidate);
+        if (this.stopping) break;
+        this.logger.error(
+          `Oracle pool creation attempt ${attempt}/${OracleService.POOL_CREATE_ATTEMPTS} failed: ${(err as Error).message}`,
+        );
+        if (attempt < OracleService.POOL_CREATE_ATTEMPTS) {
+          await new Promise((resolve) => setTimeout(resolve, OracleService.POOL_RETRY_DELAY_MS));
+        }
+      }
+    }
+    this.retryAfter = Date.now() + OracleService.POOL_RETRY_COOLDOWN_MS;
+    throw this.poolUnavailable();
+  }
+
+  private poolUnavailable(cause = this.lastPoolError): OracleUnavailableException {
+    return new OracleUnavailableException(ERROR_MESSAGES.ORACLE_UNAVAILABLE, { cause });
+  }
+
+  private isConnectionFailure(err: unknown): boolean {
+    const error = err as { code?: string; message?: string; errorNum?: number } | undefined;
+    const code = error?.code ?? error?.message?.match(/\b(?:ORA|NJS|DPI)-\d+\b/)?.[0];
+    const oraCode =
+      error?.errorNum ?? (code?.startsWith('ORA-') ? Number(code.slice(4)) : undefined);
+    return (
+      /^(?:NJS-(?:002|003|064|065|500|501|503|510|511|518|521)|DPI-(?:1010|1080)|ECONNRESET|ECONNREFUSED|EPIPE|ETIMEDOUT)$/.test(
+        code ?? '',
+      ) ||
+      [
+        28, 1012, 1033, 1034, 1089, 1090, 1092, 3113, 3114, 3135, 12170, 12514, 12537, 12541, 12543,
+        12545, 12547, 12570, 12571,
+      ].includes(oraCode ?? 0)
+    );
+  }
+
+  private markBroken(conn: oracledb.Connection | undefined, err: unknown): void {
+    if (conn) this.markPoolBroken(this.connectionPools.get(conn), err);
+  }
+
+  private markPoolBroken(pool: oracledb.Pool | undefined, err: unknown, cooldown = false): void {
+    if (!pool || pool !== this.pool || !this.isConnectionFailure(err)) return;
+    this.brokenPool = pool;
+    this.lastPoolError = err;
+    if (cooldown) this.retryAfter = Date.now() + OracleService.POOL_RETRY_COOLDOWN_MS;
+  }
+
+  private async connect(pool: oracledb.Pool, callTimeoutMs?: number): Promise<oracledb.Connection> {
+    const conn = await pool.getConnection();
+    try {
+      this.configureConnection(conn);
+      if (callTimeoutMs !== undefined) conn.callTimeout = callTimeoutMs;
+      if (this.stopping) throw this.poolUnavailable();
+      this.connectionPools.set(conn, pool);
+      return conn;
+    } catch (err) {
+      await this.safeClose(conn);
+      throw err;
     }
   }
 
@@ -163,11 +290,15 @@ export class OracleService implements OnModuleInit, OnModuleDestroy {
     return !this.cfg.disabled && Boolean(this.cfg.user) && Boolean(this.cfg.dsn);
   }
 
-  private getPool(): oracledb.Pool {
-    if (!this.pool) {
-      throw new OracleUnavailableException(ERROR_MESSAGES.ORACLE_UNAVAILABLE);
-    }
-    return this.pool;
+  private async getPool(): Promise<oracledb.Pool> {
+    if (this.stopping || this.cfg.disabled) throw this.poolUnavailable();
+    if (this.creating) return this.creating;
+    if (this.pool && this.pool !== this.brokenPool) return this.pool;
+    if (!this.isConfigured() || Date.now() < this.retryAfter) throw this.poolUnavailable();
+    this.creating = this.recoverPool(this.pool).finally(() => {
+      this.creating = undefined;
+    });
+    return this.creating;
   }
 
   /**
@@ -178,9 +309,26 @@ export class OracleService implements OnModuleInit, OnModuleDestroy {
    * application statement stays logged and shaped.
    */
   async acquire(callTimeoutMs?: number): Promise<oracledb.Connection> {
-    const conn = await this.getPool().getConnection();
-    conn.callTimeout = callTimeoutMs ?? this.cfg.callTimeout;
-    return conn;
+    const existing = this.pool !== this.brokenPool ? this.pool : undefined;
+    let pool = await this.getPool();
+    try {
+      return await this.connect(pool, callTimeoutMs);
+    } catch (err) {
+      this.logger.error(`Failed to acquire Oracle connection: ${(err as Error).message}`);
+      if (!this.isConnectionFailure(err)) throw this.poolUnavailable(err);
+      this.markPoolBroken(pool, err, pool !== existing);
+      if (pool !== existing) throw this.poolUnavailable(err);
+      pool = await this.getPool();
+      try {
+        return await this.connect(pool, callTimeoutMs);
+      } catch (retryError) {
+        this.logger.error(
+          `Failed to acquire recovered Oracle connection: ${(retryError as Error).message}`,
+        );
+        this.markPoolBroken(pool, retryError, true);
+        throw this.poolUnavailable(retryError);
+      }
+    }
   }
 
   /** Parameterized SELECT — returns mapped rows (object format). */
@@ -190,9 +338,9 @@ export class OracleService implements OnModuleInit, OnModuleDestroy {
   ): Promise<T[]> {
     const normalizedBinds = normalizeOracleUsernameBinds(binds);
     const call = this.logCallStart('query', sql, normalizedBinds);
-    const conn = await this.getPool().getConnection();
-    this.configureConnection(conn);
+    let conn: oracledb.Connection | undefined;
     try {
+      conn = await this.acquire();
       const result = await conn.execute<T>(sql, normalizedBinds, {
         outFormat: oracledb.OUT_FORMAT_OBJECT,
       });
@@ -204,9 +352,9 @@ export class OracleService implements OnModuleInit, OnModuleDestroy {
       });
       return rows;
     } catch (err) {
-      throw this.logCallError(call, err);
+      throw this.logCallError(call, err, conn);
     } finally {
-      await this.safeClose(conn);
+      if (conn) await this.safeClose(conn);
     }
   }
 
@@ -262,10 +410,10 @@ export class OracleService implements OnModuleInit, OnModuleDestroy {
   ): Promise<T> {
     const normalizedBinds = normalizeOracleUsernameBinds(binds);
     const call = this.logCallStart('call', plsql, normalizedBinds);
-    const conn = await this.getPool().getConnection();
-    this.configureConnection(conn);
-    await this.clearEbsSessionLabels(conn);
+    let conn: oracledb.Connection | undefined;
     try {
+      conn = await this.acquire();
+      await this.clearEbsSessionLabels(conn);
       const result = await conn.execute(plsql, normalizedBinds, {
         outFormat: oracledb.OUT_FORMAT_OBJECT,
         autoCommit: true,
@@ -280,9 +428,9 @@ export class OracleService implements OnModuleInit, OnModuleDestroy {
       });
       return outBinds;
     } catch (err) {
-      throw this.logCallError(call, err);
+      throw this.logCallError(call, err, conn);
     } finally {
-      await this.safeClose(conn);
+      if (conn) await this.safeClose(conn);
     }
   }
 
@@ -297,10 +445,10 @@ export class OracleService implements OnModuleInit, OnModuleDestroy {
   ): Promise<T[]> {
     const normalizedBinds = normalizeOracleUsernameBinds(binds);
     const call = this.logCallStart('callCursor', plsql, normalizedBinds);
-    const conn = await this.getPool().getConnection();
-    this.configureConnection(conn);
-    await this.clearEbsSessionLabels(conn);
+    let conn: oracledb.Connection | undefined;
     try {
+      conn = await this.acquire();
+      await this.clearEbsSessionLabels(conn);
       const result = await conn.execute(plsql, normalizedBinds, {
         outFormat: oracledb.OUT_FORMAT_OBJECT,
         autoCommit: true,
@@ -320,9 +468,9 @@ export class OracleService implements OnModuleInit, OnModuleDestroy {
       });
       return rows ?? [];
     } catch (err) {
-      throw this.logCallError(call, err);
+      throw this.logCallError(call, err, conn);
     } finally {
-      await this.safeClose(conn);
+      if (conn) await this.safeClose(conn);
     }
   }
 
@@ -345,10 +493,10 @@ export class OracleService implements OnModuleInit, OnModuleDestroy {
   ): Promise<{ cursors: Record<string, Record<string, any>[]>; scalars: Record<string, any> }> {
     const normalizedBinds = normalizeOracleUsernameBinds(binds);
     const call = this.logCallStart('call', plsql, normalizedBinds);
-    const conn = await this.getPool().getConnection();
-    this.configureConnection(conn);
-    await this.clearEbsSessionLabels(conn);
+    let conn: oracledb.Connection | undefined;
     try {
+      conn = await this.acquire();
+      await this.clearEbsSessionLabels(conn);
       const result = await conn.execute(plsql, normalizedBinds, {
         outFormat: oracledb.OUT_FORMAT_OBJECT,
         autoCommit: true,
@@ -379,9 +527,9 @@ export class OracleService implements OnModuleInit, OnModuleDestroy {
       });
       return { cursors, scalars };
     } catch (err) {
-      throw this.logCallError(call, err);
+      throw this.logCallError(call, err, conn);
     } finally {
-      await this.safeClose(conn);
+      if (conn) await this.safeClose(conn);
     }
   }
 
@@ -457,9 +605,16 @@ export class OracleService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  private logCallError(entry: OracleCallLog, err: unknown): OracleQueryError {
+  private logCallError(
+    entry: OracleCallLog,
+    err: unknown,
+    conn?: oracledb.Connection,
+  ): OracleQueryError | OracleUnavailableException {
+    this.markBroken(conn, err);
     const ms = Date.now() - entry.started;
-    const wrapped = OracleQueryError.from(err);
+    const wrapped = OracleQueryError.from(
+      err instanceof OracleUnavailableException ? (err.cause ?? err) : err,
+    );
     const code = wrapped.oraCode ? ` [ORA-${wrapped.oraCode}]` : '';
     this.logger.error(
       `[ora#${entry.id}] ${entry.op} FAILED ${entry.label} after ${ms}ms${code}: ${wrapped.message}`,
@@ -469,7 +624,8 @@ export class OracleService implements OnModuleInit, OnModuleDestroy {
       oraCode: wrapped.oraCode,
       error: wrapped.message,
     });
-    return wrapped;
+    if (err instanceof OracleUnavailableException) return err;
+    return this.isConnectionFailure(err) ? this.poolUnavailable(err) : wrapped;
   }
 
   /** Persist a structured record to the in-memory store served by the diagnostics API. */
@@ -637,13 +793,17 @@ export class OracleService implements OnModuleInit, OnModuleDestroy {
 
   /** Lightweight readiness check for the /health endpoint. */
   async ping(): Promise<boolean> {
-    if (!this.pool) return false;
-    const conn = await this.pool.getConnection();
+    if (!this.isConfigured()) return false;
+    let conn: oracledb.Connection | undefined;
     try {
+      conn = await this.acquire();
       await conn.execute('SELECT 1 FROM DUAL');
       return true;
+    } catch (err) {
+      this.markBroken(conn, err);
+      return false;
     } finally {
-      await this.safeClose(conn);
+      if (conn) await this.safeClose(conn);
     }
   }
 
@@ -673,20 +833,15 @@ export class OracleService implements OnModuleInit, OnModuleDestroy {
       diag.error = { message: 'ORACLE_DISABLED=true — connection pool not created.' };
       return diag;
     }
-    if (!this.pool) {
-      diag.error = {
-        message:
-          !this.cfg.user || !this.cfg.dsn
-            ? 'Oracle credentials/DSN missing — pool not initialized.'
-            : ERROR_MESSAGES.ORACLE_UNAVAILABLE,
-      };
+    if (!this.isConfigured()) {
+      diag.error = { message: 'Oracle credentials/DSN missing — pool not initialized.' };
       return diag;
     }
 
     const start = Date.now();
     let conn: oracledb.Connection | undefined;
     try {
-      conn = await this.pool.getConnection();
+      conn = await this.acquire();
       const result = await conn.execute<{ DB_TIME: string }>(
         "SELECT TO_CHAR(SYSTIMESTAMP, 'YYYY-MM-DD\"T\"HH24:MI:SS.FF3TZH:TZM') AS DB_TIME FROM DUAL",
         {},
@@ -699,15 +854,20 @@ export class OracleService implements OnModuleInit, OnModuleDestroy {
         dbTime: result.rows?.[0]?.DB_TIME ?? '',
       };
     } catch (err) {
+      this.markBroken(conn, err);
       diag.latencyMs = Date.now() - start;
-      const message = err instanceof Error ? err.message : String(err);
+      const cause = err instanceof OracleUnavailableException ? (err.cause ?? err) : err;
+      const message = cause instanceof Error ? cause.message : String(cause);
       diag.error = { message, oraCode: extractOraCode(message) };
     } finally {
       if (conn) await this.safeClose(conn);
-      diag.pool = {
-        connectionsOpen: this.pool.connectionsOpen,
-        connectionsInUse: this.pool.connectionsInUse,
-      };
+      diag.enabled = this.isEnabled();
+      diag.pool = this.pool
+        ? {
+            connectionsOpen: this.pool.connectionsOpen,
+            connectionsInUse: this.pool.connectionsInUse,
+          }
+        : null;
     }
     return diag;
   }

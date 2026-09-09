@@ -664,7 +664,9 @@ export default (): RootConfig => ({
     apiKey: process.env.SMS_API_KEY ?? '',
     senderId: process.env.SMS_SENDER_ID ?? '',
     timeoutMs: Number(process.env.SMS_API_TIMEOUT_MS ?? 25000),
-    messageTemplate: process.env.SMS_MESSAGE_TEMPLATE ?? 'Your Sanaad verification code is {otp}',
+    messageTemplate:
+      process.env.SMS_MESSAGE_TEMPLATE ??
+      'OTP to register for Sanaad App is {otp}\n\nرمز التحقق للتسجيل في تطبيق سند هو {otp}',
   },
   email: {
     smtpHost: process.env.SMTP_HOST ?? '',

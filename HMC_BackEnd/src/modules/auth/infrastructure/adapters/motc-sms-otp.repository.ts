@@ -72,13 +72,14 @@ export class MotcSmsOtpRepository implements OtpPort {
   ) {
     this.cfg = config.getOrThrow<OtpConfig>('otp');
     this.motc = config.getOrThrow<MotcSmsConfig>('motcSms');
-    this.messageTemplate = config.getOrThrow<SmsConfig>('sms').messageTemplate;
+    const sms = config.getOrThrow<SmsConfig>('sms');
+    this.messageTemplate = sms.messageTemplate.replace(/\\n/g, '\n');
     // The table name is config-controlled (never user input) but interpolated
     // into SQL as an identifier, so keep it to identifier characters.
     if (!/^[A-Za-z0-9_.[\]]+$/.test(this.motc.table)) {
       throw new Error(`Invalid MOTC_SMS_TABLE "${this.motc.table}" — not a SQL identifier.`);
     }
-    this.otpPattern = this.buildOtpPattern();
+    this.otpPattern = this.buildOtpPattern(this.messageTemplate);
   }
 
   /** BusinessParam1/2 free for username+IMEI correlation (the default). */
@@ -103,7 +104,7 @@ export class MotcSmsOtpRepository implements OtpPort {
 
     const otp = generateOtp(this.cfg);
     // Raw OTP goes only into MessageBody — never logged, never returned.
-    const messageBody = this.messageTemplate.replace('{otp}', otp);
+    const messageBody = this.messageTemplate.replace(/\{otp\}/g, otp);
     const messageId = await this.insertMessage(cmd, messageBody);
     if (!cmd.phoneNumber && cmd.email) {
       // No mobile: the row is stored for VALIDATION only (emailProcessedState
@@ -268,11 +269,13 @@ export class MotcSmsOtpRepository implements OtpPort {
    * configured OTP charset. A template without `{otp}` degrades to "the
    * first OTP_LENGTH-character run of that charset".
    */
-  private buildOtpPattern(): RegExp {
+  private buildOtpPattern(messageTemplate: string): RegExp {
     const cls = otpCharClass(this.cfg);
-    const escaped = this.messageTemplate.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    if (escaped.includes('\\{otp\\}')) {
-      return new RegExp(escaped.replace('\\{otp\\}', `(${cls}+)`));
+    const parts = messageTemplate
+      .split('{otp}')
+      .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    if (parts.length > 1) {
+      return new RegExp(`^${parts[0]}(?<otp>${cls}+)${parts.slice(1).join('\\k<otp>')}$`);
     }
     this.logger.warn(
       'SMS_MESSAGE_TEMPLATE has no {otp} placeholder — OTP extraction falls back to the first charset run.',
@@ -282,11 +285,9 @@ export class MotcSmsOtpRepository implements OtpPort {
 
   private extractOtp(messageBody: string): string | undefined {
     const match = this.otpPattern.exec(messageBody);
-    if (!match) {
-      this.logger.warn('Stored MessageBody did not match the OTP message template.');
-      return undefined;
-    }
-    return match[1];
+    if (match) return match[1];
+    this.logger.warn('Stored MessageBody did not match the OTP message template.');
+    return undefined;
   }
 
   private static safeEquals(a: string, b: string): boolean {

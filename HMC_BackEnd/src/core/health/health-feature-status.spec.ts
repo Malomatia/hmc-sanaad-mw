@@ -102,6 +102,22 @@ describe('/health reporting the feature credentials', () => {
     });
   });
 
+  it('probes configured Oracle even when startup did not create its pool', async () => {
+    const oracle = db(false) as OracleService;
+    oracle.isConfigured = () => true;
+    oracle.ping = jest.fn().mockResolvedValue(true);
+    const controller = new HealthController(oracle, db(false), db(false), {
+      get: () => undefined,
+    } as unknown as ConfigService);
+
+    expect((await controller.check()).oracle).toEqual({
+      enabled: true,
+      reachable: true,
+      status: 'ok',
+    });
+    expect(oracle.ping).toHaveBeenCalledTimes(1);
+  });
+
   it('still reports the databases, so nothing was traded away for this', async () => {
     const body = await make(APP).check();
 

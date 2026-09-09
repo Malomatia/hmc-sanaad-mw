@@ -545,6 +545,20 @@ mobile requests in English. Both OTP stores pass the language to
 generated code. An existing environment override still wins over code defaults.
 The email subject, SMS templates, and diagnostics test-email body are unchanged.
 
+## OTP bilingual SMS
+
+SMS delivery ignores request `lang` and uses only `SMS_MESSAGE_TEMPLATE` for
+both languages in one message. Its default is `OTP to register for Sanaad App
+is {otp}`, a blank line, then `رمز التحقق للتسجيل في تطبيق سند هو {otp}`.
+Server environment values can contain literal `\n\n` or actual line breaks;
+HTTP and MOTC delivery normalize escaped newlines and replace EVERY `{otp}`
+with the same generated string, preserving leading zeroes. The alternate
+`OTP_STORE=motc` uses the normalized template for storage and verification,
+including repeated placeholders. `SMS_MESSAGE_TEMPLATE_AR` is no longer used.
+Docker Compose forwards the single template. Email still follows request
+language and its separate English/Arabic templates. MOTC `LANGUAGE_ID` remains
+controlled by `MOTC_SMS_LANGUAGE_ID`; no language-code mapping is assumed.
+
 ## SQL Server API audit logs
 
 `MssqlAuditSink` reuses the existing `USERS_DB_*` pool (SND_DEV on development)
@@ -674,3 +688,49 @@ schema-mismatch behavior are preserved through optional `ResolvedKeyReadOptions`
 on the shared read helper. Additional predicates are code-owned SQL with bound
 values, grouped with AND; they must not come from request-supplied SQL. Scope
 binds take precedence over additional binds.
+
+## malomatia handover documents
+
+`Docs_Ai/Project Structure/PROJECT_HANDOVER_MALOMATIA.html` is a self-contained,
+printable design reissue of `PROJECT_HANDOVER.md` / `PROJECT_HANDOVER.pdf`
+(version 1.0, 2026-08-30), not a technical-status update. Its companion PDF is
+rendered with local Microsoft Edge. The original PDF remains unchanged;
+`PROJECT_HANDOVER.md` is the editable generation source. The obsolete NestJS 10
+README warning was removed after the README was corrected to NestJS v11.
+Build tooling is isolated in `Docs_Ai/Project Structure/.handover-build/`:
+run `node build.mjs`, then `node verify.mjs` there. Both accept an optional output
+basename. The corrected export uses `PROJECT_HANDOVER_MALOMATIA_UPDATED`
+(the original branded PDF was open/locked); pass that basename to both commands
+to regenerate the corrected HTML/PDF pair. The checks compare all content,
+table rows, and code lines, extract PDF text, check clipping and navigation,
+and render PDF contact sheets. No application dependencies are involved.
+The HTML embeds the supplied malomatia assets and fonts; its editable content
+is in `<template id="source">`, with automatic pagination on load. Equestrienne
+Light is used for lowercase display headings; the supplied Book face renders
+small-cap glyphs.
+
+## Oracle pool recovery
+
+`OracleService` shares one on-demand pool-recovery promise across concurrent
+requests, including startup and health probes. Each cycle makes at most TWO
+`createPool` attempts, with a 1-second delay before the second. Each candidate
+must acquire a connection and pass a ping before publication. Two failures
+produce `OracleUnavailableException` (HTTP 503), followed by a 2-second cooldown;
+a later request can start another cycle. Disabled or unconfigured Oracle is
+never retried. These timings are code constants, not new environment settings.
+
+Recognized broken-pool/connectivity errors replace the pool; queue saturation
+(`NJS-040`/`NJS-076`), business errors, and SQL mistakes do not. Acquisition can
+retry before executing SQL. An execution failure marks its own pool generation
+for replacement on a later request, but NEVER replays the failed query/procedure
+or submit: the commit outcome may be unknown. Late failures from an old pool
+cannot invalidate its replacement. Retired pools drain in parallel with recovery
+for twice the configured call timeout (minimum 5 seconds); shutdown waits for
+tracked cleanup and prevents late pool publication.
+
+All Oracle query/call helpers and `/health`/`/health/db` use this recovery path.
+Acquisition errors are now included in Oracle diagnostics logs, and health
+connections receive `callTimeout`. Recovery tests use mocked drivers and fake
+timers in `src/core/database/db-boot-resilience.spec.ts`. This change does NOT
+address the separate process-lifetime caching of failed schema metadata lookups
+in `OracleSchemaService`.

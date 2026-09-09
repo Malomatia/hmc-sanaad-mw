@@ -6,7 +6,7 @@ NestJS + TypeScript backend that re-exposes the **71 Sanaad Business-to-Employee
 
 ## Stack
 
-- **NestJS 10** (feature-first modules, Clean Architecture per module)
+- **NestJS v11** (feature-first modules, Clean Architecture per module)
 - **node-oracledb 6** (thin mode — no Oracle Instant Client required)
 - **@nestjs/config** + Joi env validation
 - **@nestjs/swagger** (OpenAPI at `/docs`)

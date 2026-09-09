@@ -71,7 +71,23 @@ describe('MssqlOtpRepository', () => {
         }),
       );
       const otp = (db.execute.mock.calls[1][1] as { otp: string }).otp;
-      expect(delivery.sendOtpSms).toHaveBeenCalledWith('77861234', otp, 'ONBOARDING');
+      expect(delivery.sendOtpSms).toHaveBeenCalledWith('77861234', otp, 'ONBOARDING', 'en');
+    });
+
+    describe.each(['ONBOARDING', 'FORGOT_MPIN'] as const)('%s SMS language', (purpose) => {
+      it.each(['en', 'ar', undefined] as const)(
+        'forwards lang=%s to SMS delivery',
+        async (lang) => {
+          const { repo, db, delivery } = makeRepo();
+          db.query.mockResolvedValue([]);
+          db.execute.mockResolvedValue({ rowsAffected: 1, rows: [{ SeqNo: 42 }] });
+
+          await repo.send({ ...SEND, purpose, lang });
+
+          const otp = (db.execute.mock.calls[0][1] as { otp: string }).otp;
+          expect(delivery.sendOtpSms).toHaveBeenCalledWith('77861234', otp, purpose, lang ?? 'en');
+        },
+      );
     });
 
     it('UPDATEs the existing newest row when the previous OTP expired', async () => {

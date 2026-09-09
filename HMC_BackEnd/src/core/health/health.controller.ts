@@ -30,7 +30,7 @@ export class HealthController {
   @Get()
   async check() {
     let oracleReachable = false;
-    if (this.oracle.isEnabled()) {
+    if (this.oracle.isConfigured()) {
       try {
         oracleReachable = await this.oracle.ping();
       } catch {

@@ -42,7 +42,7 @@ export class SmsOtpDeliveryAdapter implements OtpDeliveryPort {
       return;
     }
 
-    const message = this.cfg.messageTemplate.replace('{otp}', otp);
+    const message = this.cfg.messageTemplate.replace(/\\n/g, '\n').replace(/\{otp\}/g, otp);
     try {
       await firstValueFrom(
         this.http.post(

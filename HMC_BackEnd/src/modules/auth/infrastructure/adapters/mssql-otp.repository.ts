@@ -145,7 +145,7 @@ export class MssqlOtpRepository implements OtpPort {
     // Raw OTP goes only to the delivery ports — never logged, never returned.
     // SMS when the user has a phone; email is the no-mobile fallback channel.
     if (mode === 'SMS') {
-      await this.delivery.sendOtpSms(cmd.phoneNumber!, otp, cmd.purpose);
+      await this.delivery.sendOtpSms(cmd.phoneNumber!, otp, cmd.purpose, cmd.lang ?? DEFAULT_LANG);
     } else {
       await this.emailDelivery.sendOtpEmail(cmd.email!, otp, cmd.purpose, cmd.lang ?? DEFAULT_LANG);
     }

@@ -814,3 +814,19 @@ Failures stop before proxying and return HTTP 401 with the gateway envelope and
 `lang` header, with English as the default. Matching requests are not rewritten.
 Regression coverage lives in `src/core/auth/jwt-auth.guard.spec.ts` and
 `test/gateway.e2e-spec.ts` under `HMC_Gateway/`.
+
+## Contract-years generic lookup
+
+Only `GET /lookups/lov?lovname=CONTRACT_YEARS_V` ignores the optional query
+`person_id` and `username`, taking `CurrentUser.username` instead. The registry
+maps this public name to `XXHMC_SND_CONTRACT_YEAR_V` (singular); the separate
+`CONTRACT_YEAR_LOV` still maps to `XXHMC_SND_CONTRACT_YEARS_V` and retains the
+generic filters. Do not apply this exception by resolved object or to every LOV.
+
+`LookupsService.getLov` requires a nonblank authenticated username for this name
+and passes only `LovReadOptions.userName`. That option enforces the bound
+`WHERE USER_NAME = :username` predicate without optional schema discovery, so a
+metadata miss cannot turn it into an unfiltered read. Existing Oracle username
+uppercasing applies. The cache key includes the authenticated username via the
+options and excludes the ignored person ID. HTTP-to-SQL regression coverage is
+in `lookups/infrastructure/oracle/lov.oracle.repository.spec.ts`.

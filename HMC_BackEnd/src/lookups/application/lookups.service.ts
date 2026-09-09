@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, UnauthorizedException } from '@nestjs/common';
 import { Lang } from '@shared/domain/lang';
 import { LovItem } from '@shared/domain/lov-item';
 import { ORACLE_OBJECTS } from '@shared/constants/oracle-objects';
@@ -30,9 +30,21 @@ export class LookupsService {
   }
 
   /** Generic `/lookups/lov?lovname=` — resolves via the LOV_OBJECT registry. */
-  getLov(lovname: string, lang: Lang, username?: string, personId?: string): Promise<LovItem[]> {
+  getLov(
+    lovname: string,
+    lang: Lang,
+    username?: string,
+    personId?: string,
+    authenticatedUsername?: string,
+  ): Promise<LovItem[]> {
     const object = resolveLovObject(lovname);
     if (!object) throw new BadRequestException(`Unknown LOV name: ${lovname}`);
+    if (lovname === 'CONTRACT_YEARS_V') {
+      if (typeof authenticatedUsername !== 'string' || !authenticatedUsername.trim()) {
+        throw new UnauthorizedException('Authenticated username is required.');
+      }
+      return this.lov.readLov(object, lang, undefined, { userName: authenticatedUsername });
+    }
     return this.lov.readLov(object, lang, username, personId ? { personId } : undefined);
   }
 

@@ -9,7 +9,11 @@ export class LovLookupQueryDto extends LangQueryDto {
   @IsNotEmpty()
   lovname!: string;
 
-  @ApiPropertyOptional({ example: 'V-NFERNANDO', description: 'User-scoped LOVs only.' })
+  @ApiPropertyOptional({
+    example: 'V-NFERNANDO',
+    description:
+      'User-scoped LOVs only; CONTRACT_YEARS_V ignores this value and uses the authenticated username.',
+  })
   @IsOptional()
   @IsString()
   username?: string;
@@ -18,7 +22,7 @@ export class LovLookupQueryDto extends LangQueryDto {
     example: '852709',
     description:
       'Oracle PERSON_ID — filters person-scoped LOV views (WHERE PERSON_ID = :person_id); ' +
-      'ignored when the view has no PERSON_ID column.',
+      'ignored for CONTRACT_YEARS_V or when the view has no PERSON_ID column.',
   })
   @IsOptional()
   @IsString()

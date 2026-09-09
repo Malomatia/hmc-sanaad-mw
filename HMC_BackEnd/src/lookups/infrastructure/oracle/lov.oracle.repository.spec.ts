@@ -1,6 +1,16 @@
+import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { JwtService } from '@nestjs/jwt';
+import { Test } from '@nestjs/testing';
+import request from 'supertest';
+import { JwtAuthGuard } from '@core/auth/jwt-auth.guard';
+import { JwtStrategy } from '@core/auth/jwt.strategy';
+import { TokenRevocationService } from '@core/auth/token-revocation.service';
 import { OracleService } from '@core/database/oracle.service';
 import { OracleSchemaService } from '@core/database/oracle-schema.service';
+import { LookupsService } from '../../application/lookups.service';
+import { LOV_REPOSITORY } from '../../domain/lov.repository';
+import { LookupsController } from '../../interface/lookups.controller';
 import { LovOracleRepository } from './lov.oracle.repository';
 
 const object = 'XXHMC_SND_SCHOOL_NAME_LOV';
@@ -281,6 +291,133 @@ describe('LovOracleRepository', () => {
     expect(query).toHaveBeenCalledWith(
       expect.stringContaining('UPPER(LEAVE_TYPE) = :leaveType'),
       { leaveType: 'CASUAL LEAVE' },
+    );
+  });
+});
+
+describe('CONTRACT_YEARS_V authenticated lookup', () => {
+  const path = '/api/v1/lookups/lov';
+  const secret = 'contract-years-test-secret-not-for-production';
+  const jwt = new JwtService({ secret });
+  const tokenFor = (username: string) => jwt.sign({ username, employeeNumber: '037400' });
+  let app: INestApplication;
+  let query: jest.Mock;
+  let hasColumn: jest.Mock;
+
+  beforeEach(async () => {
+    query = jest.fn().mockResolvedValue([{ CONTRACT_YEAR: '2026' }]);
+    hasColumn = jest.fn().mockResolvedValue(true);
+    const config = {
+      get: (key: string, fallback: unknown) => (key === 'app.lovCacheTtlMs' ? 300000 : fallback),
+      getOrThrow: () => ({ jwtSecret: secret }),
+    };
+    const moduleRef = await Test.createTestingModule({
+      controllers: [LookupsController],
+      providers: [
+        LookupsService,
+        JwtAuthGuard,
+        JwtStrategy,
+        TokenRevocationService,
+        { provide: LOV_REPOSITORY, useClass: LovOracleRepository },
+        { provide: OracleService, useValue: { query } },
+        {
+          provide: OracleSchemaService,
+          useValue: { hasColumn, isNumericColumn: jest.fn().mockResolvedValue(false) },
+        },
+        { provide: ConfigService, useValue: config },
+      ],
+    }).compile();
+    app = moduleRef.createNestApplication();
+    app.setGlobalPrefix('api/v1');
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }),
+    );
+    app.useGlobalGuards(app.get(JwtAuthGuard));
+    await app.init();
+  });
+
+  afterEach(async () => {
+    await app?.close();
+  });
+
+  it.each([{ person_id: '51894' }, { person_id: '999999', username: 'OTHER_USER' }, {}])(
+    'uses only the authenticated username despite query %j',
+    async (scope) => {
+      await request(app.getHttpServer())
+        .get(path)
+        .query({ lovname: 'CONTRACT_YEARS_V', lang: 'en', ...scope })
+        .set('Authorization', `Bearer ${tokenFor('mixed.User')}`)
+        .expect(200)
+        .expect({ items: [{ code: '2026', meaning: '2026', used_value: '2026' }] });
+
+      expect(query).toHaveBeenCalledWith(
+        'SELECT * FROM XXHMC_SND_CONTRACT_YEAR_V WHERE USER_NAME = :username',
+        { username: 'MIXED.USER' },
+      );
+      expect(hasColumn).not.toHaveBeenCalled();
+    },
+  );
+
+  it('does not omit the required filter when schema metadata has no matching column', async () => {
+    hasColumn.mockResolvedValue(false);
+    query.mockResolvedValue([]);
+    await request(app.getHttpServer())
+      .get(path)
+      .query({ lovname: 'CONTRACT_YEARS_V', person_id: '51894', lang: 'ar' })
+      .set('Authorization', `Bearer ${tokenFor('mixed.User')}`)
+      .expect(200)
+      .expect({ items: [] });
+
+    expect(query).toHaveBeenCalledWith(
+      'SELECT * FROM XXHMC_SND_CONTRACT_YEAR_V WHERE USER_NAME = :username',
+      { username: 'MIXED.USER' },
+    );
+  });
+
+  it('caches per authenticated user and ignores person_id in the cache scope', async () => {
+    query.mockImplementation((_sql: string, binds: { username: string }) =>
+      Promise.resolve([{ CONTRACT_YEAR: binds.username }]),
+    );
+    for (const [username, personId] of [
+      ['FIRST_USER', '51894'],
+      ['SECOND_USER', '51894'],
+      ['FIRST_USER', '999999'],
+    ]) {
+      await request(app.getHttpServer())
+        .get(path)
+        .query({ lovname: 'CONTRACT_YEARS_V', person_id: personId, lang: 'en' })
+        .set('Authorization', `Bearer ${tokenFor(username)}`)
+        .expect(200)
+        .expect({ items: [{ code: username, meaning: username, used_value: username }] });
+    }
+    expect(query).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([undefined, '', '   '])(
+    'rejects absent or blank authenticated identity: %s',
+    async (username) => {
+      const attempt = request(app.getHttpServer())
+        .get(path)
+        .query({ lovname: 'CONTRACT_YEARS_V', person_id: '51894', username: 'OTHER_USER' });
+      if (username !== undefined) attempt.set('Authorization', `Bearer ${tokenFor(username)}`);
+      await attempt.expect(401);
+      expect(query).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    ['CONTRACT_YEAR_LOV', 'XXHMC_SND_CONTRACT_YEARS_V'],
+    ['COUNTRY_LOV', 'XXHMC_SND_COUNTRY_LOV'],
+  ])('keeps existing query username and person_id filters for %s', async (lovname, object) => {
+    await request(app.getHttpServer())
+      .get(path)
+      .query({ lovname, person_id: '51894', username: 'query.User', lang: 'en' })
+      .set('Authorization', `Bearer ${tokenFor('authenticated.User')}`)
+      .expect(200);
+
+    expect(query).toHaveBeenCalledWith(
+      `SELECT * FROM ${object} WHERE user_name IN (:u0) AND person_id = :personId`,
+      { u0: 'QUERY.USER', personId: '51894' },
     );
   });
 });

@@ -1,5 +1,7 @@
 import { Controller, Get, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { AuthenticatedUser } from '@core/auth/auth-user.interface';
+import { CurrentUser } from '@core/auth/decorators/current-user.decorator';
 import { LangQueryDto } from '@shared/dto/lang-query.dto';
 import { LovResponseDto } from '@shared/dto/lov-response.dto';
 import { LookupsService } from '../application/lookups.service';
@@ -32,8 +34,13 @@ export class LookupsController {
   @Get('lov')
   @ApiOperation({ summary: 'Generic LOV read by name', operationId: 'lookups_lov' })
   @ApiOkResponse({ type: LovResponseDto })
-  async lov(@Query() q: LovLookupQueryDto): Promise<LovResponseDto> {
-    return { items: await this.service.getLov(q.lovname, q.lang, q.username, q.person_id) };
+  async lov(
+    @Query() q: LovLookupQueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<LovResponseDto> {
+    return {
+      items: await this.service.getLov(q.lovname, q.lang, q.username, q.person_id, user?.username),
+    };
   }
 
   @Get('master')

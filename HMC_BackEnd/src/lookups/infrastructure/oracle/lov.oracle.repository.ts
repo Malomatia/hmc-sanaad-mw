@@ -106,6 +106,10 @@ export class LovOracleRepository implements LovRepository {
     const leaveTypeColumn = options.leaveType ? await this.leaveTypeColumnOf(object) : undefined;
     const conditions: string[] = [];
     const binds: oracledb.BindParameters = {};
+    if (options.userName !== undefined) {
+      conditions.push('USER_NAME = :username');
+      binds.username = normalizeOracleUsername('USER_NAME', options.userName) as string;
+    }
     if (keyColumn && scopeValues.length) {
       conditions.push(`${keyColumn} IN (${scopeValues.map((_, i) => `:u${i}`).join(', ')})`);
       scopeValues.forEach((v, i) => {

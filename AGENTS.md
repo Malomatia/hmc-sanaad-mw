@@ -754,3 +754,42 @@ connections receive `callTimeout`. Recovery tests use mocked drivers and fake
 timers in `src/core/database/db-boot-resilience.spec.ts`. This change does NOT
 address the separate process-lifetime caching of failed schema metadata lookups
 in `OracleSchemaService`.
+
+## Function-access audit classification (2026-09-09)
+
+This supersedes the `FunctionID` / `ActionTaken` formats in the SQL Server API
+audit notes above. `AuditInterceptor` maps known Swagger operation IDs to the
+exact form codes in the client's screenshots and supplied function list; the SQL
+sink binds that code and `actionTaken` (`view` or `submit`). The method + route
+remains in the structured
+console audit's `apiName`. Business failures keep their attempted action, with
+`ActionResult = error`; login logging remains unchanged.
+
+The client chose COUNTRY ONLY for both contact address submit endpoints:
+`p_country` = `Qatar`/`QA` (trimmed, case-insensitive) maps to `frmAddressinQatar`,
+any other non-empty string to `frmAddressOutsideQatar`. Missing/invalid country
+retains the operation ID; `p_address_type` does not influence this mapping.
+
+The client subsequently supplied the full 30-entry function list (28 unique
+codes: Return From Leave and Sogha each appear twice), extending the original
+screenshot-only scope. `employee_employment` maps to `MyEmpDetails`; annual-ticket
+master/apply map to `frmAnnualTicket`, while cancel-options/cancel map to
+`frmAnnualTicketCancellation`. Audit mapping does not change function availability
+statuses or permissions, including entries with status `2`.
+Unknown/shared functions retain their operation ID (or controller + handler
+fallback). `frmHousing`, `frmSogha`, and `flxbanner` have no dedicated backend
+routes. Staff-clinic appointments map to `frmStaffclinic`; the passport routes
+under `/dependents/passport` map to `frmPassport`.
+
+Read-only POST overrides cover leave calculation, app healthcheck, Android
+integrity verification and the SELECT-only diagnostics consoles. Challenge
+creation is `submit` despite using GET, because it persists a nonce. Other
+POST/PUT/PATCH/DELETE actions are `submit`; ordinary reads are `view`. Audit writes
+remain best-effort and non-blocking, without request/response bodies. Regression
+checks: `npm.cmd test -- --runInBand core/audit` from `HMC_BackEnd/`.
+
+The client additionally supplied `frmNotificationList` (Notification List /
+Notification center, status `1`). It maps `profile_notifications`,
+`profile_notificationSummary`, and `profile_notificationHistory`, all `view`.
+Push device-token registration/unregistration/test-send operations retain their
+own operation IDs and `submit` actions; approvals worklist mappings are unchanged.

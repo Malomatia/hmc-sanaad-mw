@@ -793,3 +793,24 @@ Notification center, status `1`). It maps `profile_notifications`,
 `profile_notificationSummary`, and `profile_notificationHistory`, all `view`.
 Push device-token registration/unregistration/test-send operations retain their
 own operation IDs and `submit` actions; approvals worklist mappings are unchanged.
+
+## Gateway query identity validation
+
+The gateway's global `JwtAuthGuard` checks each supplied identity query parameter
+independently: `username` against the verified JWT's `username` claim, and `enum`
+against its `employeeNumber` claim. Either parameter alone is validated; when
+both are sent, both must match. Values are compared case-insensitively; whitespace
+and employee-number leading zeroes still matter. It uses the original signed
+claims, not the strategy's `sub`/`enum` fallbacks. Missing/non-string claims, empty values,
+duplicate keys (even identical), and bracketed array/object forms are rejected.
+The raw query string is checked so Express's query parameter limit cannot hide
+an identity parameter before the untouched URL is forwarded.
+
+Requests containing these keys require a valid JWT even on `@Public()` routes
+or with `AUTH_DISABLED=true`; existing public/dev-bypass behavior is unchanged
+when the keys are absent. Body and path parameters are not part of this check.
+Failures stop before proxying and return HTTP 401 with the gateway envelope and
+`Unauthorized action` / `إجراء غير مصرح به`. `?lang=ar` takes precedence over the
+`lang` header, with English as the default. Matching requests are not rewritten.
+Regression coverage lives in `src/core/auth/jwt-auth.guard.spec.ts` and
+`test/gateway.e2e-spec.ts` under `HMC_Gateway/`.

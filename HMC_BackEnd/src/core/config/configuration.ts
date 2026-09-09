@@ -284,6 +284,7 @@ export interface MpinConfig {
 }
 
 export interface OtpConfig {
+  inResponse: boolean;
   length: number;
   ttlSeconds: number;
   maxAttempts: number;
@@ -712,6 +713,7 @@ export default (): RootConfig => ({
     lockoutMinutes: Number(process.env.MPIN_LOCKOUT_MINUTES ?? 15),
   },
   otp: {
+    inResponse: process.env.NODE_ENV !== 'production' && toBool(process.env.OTP_IN_RESPONSE),
     length: Number(process.env.OTP_LENGTH ?? 6),
     ttlSeconds: Number(process.env.OTP_TTL_SECONDS ?? 300),
     maxAttempts: Number(process.env.OTP_MAX_ATTEMPTS ?? 5),

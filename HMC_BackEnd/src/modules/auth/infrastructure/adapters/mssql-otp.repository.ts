@@ -73,6 +73,9 @@ export class MssqlOtpRepository implements OtpPort {
         status: 'PENDING',
         mode: latest.OTPSendMode === 'Email' ? 'Email' : 'SMS',
         validForSeconds: Math.max(this.cfg.ttlSeconds - latest.DiffInSeconds, 0),
+        ...(this.cfg.inResponse === true && cmd.purpose === 'ONBOARDING'
+          ? { otp: String(latest.OTPValue).trim() }
+          : {}),
       };
     }
 
@@ -149,7 +152,13 @@ export class MssqlOtpRepository implements OtpPort {
     } else {
       await this.emailDelivery.sendOtpEmail(cmd.email!, otp, cmd.purpose, cmd.lang ?? DEFAULT_LANG);
     }
-    return { requestId, status: 'NEW', mode, validForSeconds: this.cfg.ttlSeconds };
+    return {
+      requestId,
+      status: 'NEW',
+      mode,
+      validForSeconds: this.cfg.ttlSeconds,
+      ...(this.cfg.inResponse === true && cmd.purpose === 'ONBOARDING' ? { otp } : {}),
+    };
   }
 
   async verify(cmd: VerifyOtpCommand): Promise<boolean> {

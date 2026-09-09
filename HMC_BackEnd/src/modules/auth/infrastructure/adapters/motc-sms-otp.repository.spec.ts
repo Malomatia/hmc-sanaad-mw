@@ -12,6 +12,7 @@ const OTP_CFG: OtpConfig = {
   maxAttempts: 3,
   resendWindowSeconds: 60,
   staticValue: '',
+  inResponse: false,
   charset: 'numeric',
   delivery: 'motc',
   store: 'motc',
@@ -360,6 +361,86 @@ describe('MotcSmsOtpRepository', () => {
 
       await expect(repo.send(SEND)).rejects.toBeInstanceOf(MssqlQueryError);
     });
+  });
+
+  describe.each(['SMS', 'Email'] as const)('OTP response exposure via %s', (mode) => {
+    const command = {
+      ...SEND,
+      phoneNumber: mode === 'SMS' ? SEND.phoneNumber : undefined,
+      email: mode === 'Email' ? 'hmc1@hamad.qa' : undefined,
+    };
+
+    it.each([
+      { charset: 'numeric' as const, staticValue: '012345' },
+      { charset: 'alphanumeric' as const, staticValue: 'A2B3C4' },
+      { charset: 'numeric' as const, staticValue: '' },
+      { charset: 'alphanumeric' as const, staticValue: '' },
+    ])('returns the exact stored and delivered $charset OTP when enabled', async (otpCfg) => {
+      const { repo, db, emailDelivery } = makeRepo({ ...otpCfg, inResponse: true });
+      primeSend(db);
+
+      const result = await repo.send(command);
+
+      const [, params] = db.execute.mock.calls[0] as [string, Record<string, unknown>];
+      const otp = String(params.messageBody).split(' ').pop()!;
+      expect(otp).toMatch(otpCfg.charset === 'numeric' ? /^\d{6}$/ : /^[A-HJ-NP-Z2-9]{6}$/);
+      if (otpCfg.staticValue) expect(otp).toBe(otpCfg.staticValue);
+      expect(result).toEqual({
+        requestId: '42',
+        status: 'NEW',
+        mode: 'SMS',
+        validForSeconds: 300,
+        otp,
+      });
+      expect(params.messageBody).toBe(TEMPLATE.replace(/\{otp\}/g, otp));
+      if (mode === 'Email') {
+        expect(params.processedState).toBe('1');
+        expect(emailDelivery.sendOtpEmail).toHaveBeenCalledWith(
+          command.email,
+          otp,
+          'ONBOARDING',
+          'en',
+        );
+      } else {
+        expect(params.processedState).toBe('0');
+        expect(emailDelivery.sendOtpEmail).not.toHaveBeenCalled();
+      }
+    });
+
+    it.each([
+      { inResponse: false, purpose: 'ONBOARDING' as const },
+      { inResponse: undefined, purpose: 'ONBOARDING' as const },
+      { inResponse: true, purpose: 'FORGOT_MPIN' as const },
+    ])('omits OTP: $inResponse / $purpose', async ({ inResponse, purpose }) => {
+      const { repo, db } = makeRepo({ inResponse, staticValue: '012345' });
+      primeSend(db);
+
+      const result = await repo.send({ ...command, purpose });
+
+      expect(result.status).toBe('NEW');
+      expect(result).not.toHaveProperty('otp');
+    });
+
+    it('rejects rather than returning or emailing an OTP when storage fails', async () => {
+      const { repo, db, emailDelivery } = makeRepo({ inResponse: true });
+      primeSend(db);
+      const failure = new MssqlQueryError('Invalid column name', { number: 207 });
+      db.execute.mockRejectedValue(failure);
+
+      await expect(repo.send(command)).rejects.toBe(failure);
+      expect(emailDelivery.sendOtpEmail).not.toHaveBeenCalled();
+    });
+  });
+
+  it('rejects when email delivery fails with OTP exposure enabled', async () => {
+    const { repo, db, emailDelivery } = makeRepo({ inResponse: true });
+    primeSend(db);
+    const failure = new Error('Delivery failed');
+    emailDelivery.sendOtpEmail.mockRejectedValue(failure);
+
+    await expect(
+      repo.send({ ...SEND, phoneNumber: undefined, email: 'hmc1@hamad.qa' }),
+    ).rejects.toBe(failure);
   });
 
   describe('verify stored bilingual template', () => {

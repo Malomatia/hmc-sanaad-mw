@@ -45,6 +45,7 @@ export interface AuditContext {
   appName?: string;
   appVersion?: string;
   functionId?: string;
+  actionTaken?: 'view' | 'submit';
   source?: string;
   correlationId?: string;
   status?: string;

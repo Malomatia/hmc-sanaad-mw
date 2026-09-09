@@ -120,6 +120,7 @@ export class MotcSmsOtpRepository implements OtpPort {
       status: 'NEW',
       mode: 'SMS',
       validForSeconds: this.cfg.ttlSeconds,
+      ...(this.cfg.inResponse === true && cmd.purpose === 'ONBOARDING' ? { otp } : {}),
     };
   }
 

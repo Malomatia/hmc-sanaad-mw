@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { AuditService } from '@core/audit/audit.service';
 import { AuthLifecycleEvent } from '@core/audit/audit-event';
 import { LDAP_USER_PORT, LdapUserPort } from '../domain/ports/ldap-user.port';
-import { OTP_PORT, OtpPort } from '../domain/ports/otp.port';
+import { OTP_PORT, OtpPort, SendOtpResult } from '../domain/ports/otp.port';
 import {
   DEVICE_REGISTRY_PORT,
   DeviceRegistration,
@@ -54,6 +54,7 @@ const MESSAGES: Record<'invalidUsername' | 'otpSent' | 'otpPending', Record<Lang
 export class OnboardingService {
   private readonly logger = new Logger(OnboardingService.name);
   private readonly devBypass: boolean;
+  private readonly otpInResponse: boolean;
   /** OTP TTL for the dev-bypass response's elapsedtimeinmins. */
   private readonly otpTtlSeconds: number;
 
@@ -66,6 +67,9 @@ export class OnboardingService {
   ) {
     this.devBypass = config.get<boolean>('auth.disabled', false);
     this.otpTtlSeconds = config.get<number>('otp.ttlSeconds', 300);
+    this.otpInResponse =
+      config.get<boolean>('otp.inResponse', false) === true &&
+      config.get<string>('app.nodeEnv', 'development') !== 'production';
   }
 
   async validateUser(
@@ -133,7 +137,7 @@ export class OnboardingService {
     // Step 4 — the OTP upsert (HMC_RHAP_OTP_tbl) + delivery. NEW = a fresh
     // code was stored (vflag=New); PENDING = a valid unused one was kept
     // (vflag=Pending, same requestid).
-    const sent = this.devBypass
+    const sent: SendOtpResult = this.devBypass
       ? {
           requestId: randomUUID().replace(/-/g, '').toUpperCase(),
           status: 'NEW' as const,
@@ -165,6 +169,7 @@ export class OnboardingService {
       // Minutes this OTP is still usable for (rounded up to a whole minute).
       elapsedtimeinmins: Math.ceil(sent.validForSeconds / 60),
       requestid: sent.requestId,
+      ...this.otpResponse(sent.otp),
     };
   }
 
@@ -202,24 +207,26 @@ export class OnboardingService {
       appVersion: dto.version,
     };
 
-    const requestid = this.devBypass
-      ? randomUUID().replace(/-/g, '').toUpperCase()
-      : (
-          await this.otp.send({
-            username: dto.username,
-            phoneNumber: dto.phonenumber,
-            email: dto.email,
-            imei: dto.imeinumber,
-            purpose: 'ONBOARDING',
-            lang,
-            appName: dto.appname,
-            appVersion: dto.version,
-            appDatetime: dto.sysdate,
-          })
-        ).requestId;
+    const sent: Pick<SendOtpResult, 'requestId' | 'otp'> = this.devBypass
+      ? { requestId: randomUUID().replace(/-/g, '').toUpperCase() }
+      : await this.otp.send({
+          username: dto.username,
+          phoneNumber: dto.phonenumber,
+          email: dto.email,
+          imei: dto.imeinumber,
+          purpose: 'ONBOARDING',
+          lang,
+          appName: dto.appname,
+          appVersion: dto.version,
+          appDatetime: dto.sysdate,
+        });
 
     this.audit.lifecycle(AuthLifecycleEvent.OTP_SENT, ctx);
-    return { status: 'success', requestid };
+    return { status: 'success', requestid: sent.requestId, ...this.otpResponse(sent.otp) };
+  }
+
+  private otpResponse(otp: string | undefined): { otp?: string } {
+    return this.otpInResponse && otp ? { otp } : {};
   }
 
   async validateOtp(dto: ValidateOtpRequestDto): Promise<StatusMessageDto> {

@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { MssqlService } from '@core/database/mssql.service';
 import { OtpConfig } from '@core/config/configuration';
 import { MssqlOtpRepository } from './mssql-otp.repository';
+import * as otpGenerator from './otp-generator.util';
 import { OtpDeliveryPort } from '../../domain/ports/otp-delivery.port';
 import { OtpEmailDeliveryPort } from '../../domain/ports/otp-email-delivery.port';
 
@@ -12,6 +13,7 @@ const OTP_CFG: OtpConfig = {
   maxAttempts: 3,
   resendWindowSeconds: 60,
   staticValue: '',
+  inResponse: false,
   charset: 'numeric',
   delivery: 'motc',
   store: 'legacy',
@@ -204,6 +206,136 @@ describe('MssqlOtpRepository', () => {
         expect(delivery.sendOtpSms).not.toHaveBeenCalled();
       },
     );
+  });
+
+  describe.each(['SMS', 'Email'] as const)('OTP response exposure via %s', (mode) => {
+    const command = {
+      ...SEND,
+      phoneNumber: mode === 'SMS' ? SEND.phoneNumber : undefined,
+      email: mode === 'Email' ? 'hmc1@hamad.qa' : undefined,
+    };
+
+    afterEach(() => jest.restoreAllMocks());
+
+    it.each([
+      { charset: 'numeric' as const, staticValue: '012345' },
+      { charset: 'alphanumeric' as const, staticValue: 'A2B3C4' },
+      { charset: 'numeric' as const, staticValue: '' },
+      { charset: 'alphanumeric' as const, staticValue: '' },
+    ])('returns the exact stored and delivered $charset OTP when enabled', async (otpCfg) => {
+      const { repo, db, delivery, emailDelivery } = makeRepo({ ...otpCfg, inResponse: true });
+      db.query.mockResolvedValue([]);
+      db.execute
+        .mockResolvedValueOnce({ rowsAffected: 0, rows: [] })
+        .mockResolvedValueOnce({ rowsAffected: 1, rows: [{ SeqNo: 42 }] });
+
+      const result = await repo.send(command);
+
+      const otp = (db.execute.mock.calls[1][1] as { otp: string }).otp;
+      expect(otp).toMatch(otpCfg.charset === 'numeric' ? /^\d{6}$/ : /^[A-HJ-NP-Z2-9]{6}$/);
+      if (otpCfg.staticValue) expect(otp).toBe(otpCfg.staticValue);
+      expect(result).toEqual({
+        requestId: '42',
+        status: 'NEW',
+        mode,
+        validForSeconds: 300,
+        otp,
+      });
+      if (mode === 'SMS') {
+        expect(delivery.sendOtpSms).toHaveBeenCalledWith(
+          command.phoneNumber,
+          otp,
+          'ONBOARDING',
+          'en',
+        );
+        expect(emailDelivery.sendOtpEmail).not.toHaveBeenCalled();
+      } else {
+        expect(emailDelivery.sendOtpEmail).toHaveBeenCalledWith(
+          command.email,
+          otp,
+          'ONBOARDING',
+          'en',
+        );
+        expect(delivery.sendOtpSms).not.toHaveBeenCalled();
+      }
+    });
+
+    it.each(['  001234  ', '  Ab2C3D  ', 123456])(
+      'returns the trimmed existing pending OTP %p without generating, writing or resending',
+      async (storedOtp) => {
+        const generate = jest.spyOn(otpGenerator, 'generateOtp');
+        const { repo, db, delivery, emailDelivery } = makeRepo({
+          inResponse: true,
+          staticValue: '999999',
+        });
+        db.query.mockResolvedValue([
+          { SeqNo: 41, DiffInSeconds: 30, OTPValue: storedOtp, OTPStatus: '1', OTPSendMode: mode },
+        ]);
+
+        await expect(repo.send(command)).resolves.toEqual({
+          requestId: '41',
+          status: 'PENDING',
+          mode,
+          validForSeconds: 270,
+          otp: String(storedOtp).trim(),
+        });
+        expect(generate).not.toHaveBeenCalled();
+        expect(db.execute).not.toHaveBeenCalled();
+        expect(delivery.sendOtpSms).not.toHaveBeenCalled();
+        expect(emailDelivery.sendOtpEmail).not.toHaveBeenCalled();
+      },
+    );
+
+    describe.each([
+      { inResponse: false, purpose: 'ONBOARDING' as const },
+      { inResponse: undefined, purpose: 'ONBOARDING' as const },
+      { inResponse: true, purpose: 'FORGOT_MPIN' as const },
+    ])('inResponse=$inResponse, purpose=$purpose', ({ inResponse, purpose }) => {
+      it.each(['NEW', 'PENDING'] as const)('omits the otp property for %s', async (status) => {
+        const { repo, db } = makeRepo({ inResponse, staticValue: '012345' });
+        db.query.mockResolvedValue(
+          status === 'PENDING'
+            ? [
+                {
+                  SeqNo: 41,
+                  DiffInSeconds: 30,
+                  OTPValue: '001234',
+                  OTPStatus: '1',
+                  OTPSendMode: mode,
+                },
+              ]
+            : [],
+        );
+        db.execute.mockResolvedValue({ rowsAffected: 1, rows: [{ SeqNo: 42 }] });
+
+        const result = await repo.send({ ...command, purpose });
+
+        expect(result.status).toBe(status);
+        expect(result).not.toHaveProperty('otp');
+      });
+    });
+
+    it('rejects rather than returning an OTP when delivery fails', async () => {
+      const { repo, db, delivery, emailDelivery } = makeRepo({ inResponse: true });
+      db.query.mockResolvedValue([]);
+      db.execute.mockResolvedValue({ rowsAffected: 1, rows: [{ SeqNo: 42 }] });
+      const failure = new Error('Delivery failed');
+      delivery.sendOtpSms.mockRejectedValue(failure);
+      emailDelivery.sendOtpEmail.mockRejectedValue(failure);
+
+      await expect(repo.send(command)).rejects.toBe(failure);
+    });
+
+    it('rejects rather than returning or delivering an OTP when storage fails', async () => {
+      const { repo, db, delivery, emailDelivery } = makeRepo({ inResponse: true });
+      db.query.mockResolvedValue([]);
+      const failure = new Error('Storage failed');
+      db.execute.mockRejectedValue(failure);
+
+      await expect(repo.send(command)).rejects.toBe(failure);
+      expect(delivery.sendOtpSms).not.toHaveBeenCalled();
+      expect(emailDelivery.sendOtpEmail).not.toHaveBeenCalled();
+    });
   });
 
   describe('verify', () => {

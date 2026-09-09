@@ -1,5 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 import { AuditService } from '@core/audit/audit.service';
+import { safePreview } from '@core/logging/sensitive-data.util';
 import { OnboardingService } from './onboarding.service';
 import { LdapUserPort } from '../domain/ports/ldap-user.port';
 import { OtpPort } from '../domain/ports/otp.port';
@@ -28,7 +29,10 @@ const DTO = {
   osversion: '13',
 };
 
-function makeService(overrides?: { identity?: Partial<typeof IDENTITY> }) {
+function makeService(overrides?: {
+  identity?: Partial<typeof IDENTITY>;
+  config?: Record<string, unknown>;
+}) {
   const ldap = {
     validate: jest.fn().mockResolvedValue({ ...IDENTITY, ...overrides?.identity }),
     authenticate: jest.fn(),
@@ -46,7 +50,9 @@ function makeService(overrides?: { identity?: Partial<typeof IDENTITY> }) {
     touch: jest.fn().mockResolvedValue(undefined),
   } as unknown as jest.Mocked<DeviceRegistryPort>;
   const audit = { lifecycle: jest.fn() } as unknown as jest.Mocked<AuditService>;
-  const config = { get: jest.fn().mockReturnValue(false) } as unknown as ConfigService;
+  const config = {
+    get: jest.fn((key: string, fallback: unknown) => overrides?.config?.[key] ?? fallback),
+  } as unknown as ConfigService;
   return {
     service: new OnboardingService(ldap, otp, devices, audit, config),
     ldap,
@@ -67,10 +73,93 @@ describe.each(['validateUser', 'sendOtp'] as const)('OnboardingService.%s langua
   });
 });
 
+describe.each(['validateUser', 'sendOtp'] as const)('OTP response for %s', (method) => {
+  it.each(['012345', 'A2B3C4'])('returns the exact OTP when enabled: %s', async (code) => {
+    const { service, otp } = makeService({ config: { 'otp.inResponse': true } });
+    otp.send.mockResolvedValue({
+      requestId: '12345',
+      status: 'NEW',
+      mode: 'SMS',
+      validForSeconds: 300,
+      otp: code,
+    });
+
+    const result = await service[method]({ ...DTO, phonenumber: IDENTITY.phoneNumber });
+
+    expect(result).toHaveProperty('otp', code);
+    expect(result.requestid).toBe('12345');
+    expect(safePreview(result)).toHaveProperty('otp', '******');
+    expect(JSON.stringify(safePreview(result))).not.toContain(`"otp":"${code}"`);
+    expect(result).toHaveProperty('otp', code);
+  });
+
+  it.each([undefined, false, 'true'])('requires boolean true: %s', async (flag) => {
+    const { service, otp } = makeService({ config: { 'otp.inResponse': flag } });
+    otp.send.mockResolvedValue({
+      requestId: '12345',
+      status: 'NEW',
+      mode: 'SMS',
+      validForSeconds: 300,
+      otp: '012345',
+    });
+
+    expect(await service[method](DTO)).not.toHaveProperty('otp');
+  });
+
+  it('omits the OTP in production even if the store returns one', async () => {
+    const { service, otp } = makeService({
+      config: { 'otp.inResponse': true, 'app.nodeEnv': 'production' },
+    });
+    otp.send.mockResolvedValue({
+      requestId: '12345',
+      status: 'NEW',
+      mode: 'SMS',
+      validForSeconds: 300,
+      otp: '012345',
+    });
+
+    expect(await service[method](DTO)).not.toHaveProperty('otp');
+  });
+
+  it('returns a pending email OTP without changing the request id or status', async () => {
+    const { service, otp } = makeService({ config: { 'otp.inResponse': true } });
+    otp.send.mockResolvedValue({
+      requestId: '77',
+      status: 'PENDING',
+      mode: 'Email',
+      validForSeconds: 120,
+      otp: '000123',
+    });
+
+    expect(await service[method]({ ...DTO, email: IDENTITY.email })).toMatchObject({
+      status: 'success',
+      requestid: '77',
+      otp: '000123',
+    });
+  });
+
+  it('does not invent an OTP for the auth-disabled bypass', async () => {
+    const { service, otp } = makeService({
+      config: { 'otp.inResponse': true, 'auth.disabled': true },
+    });
+
+    expect(await service[method](DTO)).not.toHaveProperty('otp');
+    expect(otp.send).not.toHaveBeenCalled();
+  });
+
+  it('does not turn a delivery failure into a successful OTP response', async () => {
+    const { service, otp } = makeService({ config: { 'otp.inResponse': true } });
+    otp.send.mockRejectedValue(new Error('Delivery unavailable'));
+
+    await expect(service[method](DTO)).rejects.toThrow('Delivery unavailable');
+  });
+});
+
 describe('OnboardingService.validateUser (reworked initiate, 2026-09-03)', () => {
   it('rejects a username absent from the employee view without touching the device table', async () => {
     const { service, otp, devices } = makeService({
       identity: { isEmployee: false, roles: [] },
+      config: { 'otp.inResponse': true },
     });
 
     const res = await service.validateUser(DTO);
@@ -82,7 +171,7 @@ describe('OnboardingService.validateUser (reworked initiate, 2026-09-03)', () =>
   });
 
   it('existing user (device registered with MPIN): masked data from both tables, vflag=Exist, NO OTP', async () => {
-    const { service, otp, devices } = makeService();
+    const { service, otp, devices } = makeService({ config: { 'otp.inResponse': true } });
     devices.find.mockResolvedValue({ mpinSet: true, status: 'Active' });
 
     const res = await service.validateUser(DTO);
@@ -102,6 +191,7 @@ describe('OnboardingService.validateUser (reworked initiate, 2026-09-03)', () =>
       employeeflag: 'Yes',
     });
     expect(res.requestid).toBeUndefined();
+    expect(res).not.toHaveProperty('otp');
     expect(res.otpmode).toBeUndefined();
     expect(otp.send).not.toHaveBeenCalled();
     expect(devices.bind).not.toHaveBeenCalled();

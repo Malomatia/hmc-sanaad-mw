@@ -132,6 +132,7 @@ export const envValidationSchema = Joi.object({
   OTP_TTL_SECONDS: Joi.number().default(300),
   OTP_MAX_ATTEMPTS: Joi.number().default(5),
   OTP_RESEND_WINDOW_SECONDS: Joi.number().default(60),
+  OTP_IN_RESPONSE: Joi.boolean().default(false),
   // OTP store/validation: legacy Users-DB table (default) or the MOTC push table.
   OTP_STORE: Joi.string().valid('motc', 'legacy').default('legacy'),
   // Delivery when OTP_STORE=legacy: MOTC push table (default) or the HTTP SMS adapter.

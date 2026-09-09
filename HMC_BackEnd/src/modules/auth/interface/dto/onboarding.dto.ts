@@ -77,6 +77,12 @@ export class UserValidateResponseDto {
   @ApiPropertyOptional({ example: '12345', description: 'Present when an OTP was sent.' })
   requestid?: string;
 
+  @ApiPropertyOptional({
+    example: '012345',
+    description: 'Testing only: present with OTP_IN_RESPONSE=true outside production.',
+  })
+  otp?: string;
+
   @ApiPropertyOptional({ example: 'success', description: '`error` on failure.' })
   status?: string;
 
@@ -120,6 +126,12 @@ export class SendOtpResponseDto {
     description: 'Correlation id (push-table MessageID) — echo it on /auth/otp/validate.',
   })
   requestid?: string;
+
+  @ApiPropertyOptional({
+    example: '012345',
+    description: 'Testing only: present with OTP_IN_RESPONSE=true outside production.',
+  })
+  otp?: string;
 
   @ApiPropertyOptional({ description: 'Present on failure.' })
   message?: string;

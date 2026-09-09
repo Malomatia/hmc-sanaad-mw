@@ -559,6 +559,21 @@ Docker Compose forwards the single template. Email still follows request
 language and its separate English/Arabic templates. MOTC `LANGUAGE_ID` remains
 controlled by `MOTC_SMS_LANGUAGE_ID`; no language-code mapping is assumed.
 
+## Testing OTP in responses
+
+`OTP_IN_RESPONSE` is a boolean, default `false`, forwarded by Docker Compose.
+When `true` outside production, `/api/v1/auth/initiate` and
+`/api/v1/auth/send-otp` include an optional top-level `otp` string. Both legacy
+and MOTC stores return the exact generated/stored code after successful delivery;
+legacy PENDING replies expose the existing code without generating or sending
+another. Leading zeroes and alphanumeric codes are preserved. Production forces
+this off, and the onboarding service also guards the response boundary.
+
+Disabled/unset flags omit the property entirely. Existing-user initiate responses
+and `AUTH_DISABLED` bypass responses omit it because they do not generate an OTP.
+Forgot-MPIN responses are unchanged. OTPs remain masked in API log previews and
+are not added to audit events. Restart the backend after changing the flag.
+
 ## SQL Server API audit logs
 
 `MssqlAuditSink` reuses the existing `USERS_DB_*` pool (SND_DEV on development)

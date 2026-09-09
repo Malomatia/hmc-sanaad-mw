@@ -35,6 +35,7 @@ export interface SendOtpResult {
    * the remaining time for a PENDING one.
    */
   validForSeconds: number;
+  otp?: string;
 }
 
 export interface VerifyOtpCommand {

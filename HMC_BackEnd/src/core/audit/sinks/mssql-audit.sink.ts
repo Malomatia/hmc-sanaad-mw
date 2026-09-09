@@ -30,7 +30,7 @@ export class MssqlAuditSink implements AuditSink {
           appName: record.appName ?? null,
           appVersion: record.appVersion ?? null,
           functionId: record.functionId ?? record.apiName ?? null,
-          actionTaken: record.apiName ?? null,
+          actionTaken: record.actionTaken ?? null,
           actionResult: status,
           accessDatetime: timestamp,
         },

@@ -1,0 +1,416 @@
+/* ==========================================================================
+   malomatia design system — colors & type
+   Source of truth for all design tokens. Pull from here, do not inline.
+   ========================================================================== */
+
+/* ---- Webfont imports ----------------------------------------------------- */
+/* Official brand display — Equestrienne (supplied by malomatia) */
+@font-face {
+  font-family: 'Equestrienne';
+  src: url('fonts/Equestrienne_Light.ttf') format('truetype');
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Equestrienne';
+  src: url('fonts/Equestrienne_Book.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+/* Google Fonts substitutes — body serif, sans, Arabic (see README §fonts) */
+@import url('https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,300;8..60,400;8..60,600;8..60,700&family=Manrope:wght@300;400;500;600;700;800&family=Reem+Kufi:wght@400;500;600;700&family=Cairo:wght@300;400;600;700&display=swap');
+
+:root {
+  /* =========================================================================
+     COLOR — strict 4-colour brand palette + scaffolding neutrals
+     ========================================================================= */
+
+  /* Brand primaries (from Brand Guidelines.pdf §2.04) */
+  --red-500:        #CF0A2C;   /* Pantone 186 C — RGB 207/10/44 — primary brand red */
+  --grey-metallic:  #777575;   /* Pantone 8401 metallic */
+  --grey-cool:      #999999;   /* Pantone 877 C — 40% black */
+  --black:          #000000;
+  --white:          #FFFFFF;
+
+  /* Red scale (derived for hover/active/tint use only) */
+  --red-900:        #6B0517;
+  --red-700:        #A40821;
+  --red-500-:       var(--red-500);
+  --red-300:        #E26478;
+  --red-100:        #F8D9DF;
+  --red-50:         #FBEDF0;
+
+  /* Neutral scale (scaffolding — brand book defines only the 4 above) */
+  --grey-950:       #0A0A0A;
+  --grey-900:       #1A1A1A;
+  --grey-800:       #2D2D2D;
+  --grey-700:       #4A4A4A;
+  --grey-600:       #6B6B6B;
+  --grey-500:       var(--grey-metallic);
+  --grey-400:       var(--grey-cool);
+  --grey-300:       #BFBFBF;
+  --grey-200:       #D9D9D9;        /* "silver" — 15% black surface from brand book */
+  --grey-100:       #F2F2F2;
+  --grey-50:        #FAFAFA;
+
+  /* Semantic — foreground */
+  --fg-1:           var(--black);     /* primary body text, headings */
+  --fg-2:           var(--grey-700);  /* secondary text, captions */
+  --fg-3:           var(--grey-500);  /* tertiary, metadata */
+  --fg-disabled:    var(--grey-300);
+  --fg-on-dark:     var(--white);
+  --fg-on-red:      var(--white);
+  --fg-link:        var(--red-500);
+  --fg-link-hover:  var(--red-700);
+  --fg-accent:      var(--red-500);
+
+  /* Semantic — background */
+  --bg-page:        var(--white);
+  --bg-elevated:    var(--white);
+  --bg-tint:        var(--grey-100);
+  --bg-silver:      var(--grey-200);   /* the official "logo on silver" surface */
+  --bg-inverse:     var(--black);
+  --bg-accent:      var(--red-500);
+  --bg-accent-soft: var(--red-50);
+
+  /* Semantic — border */
+  --border-subtle:  var(--grey-200);
+  --border-default: var(--grey-300);
+  --border-strong:  var(--black);
+  --border-accent:  var(--red-500);
+
+  /* Status (deck uses these contextually — kept restrained) */
+  --status-success: #2D7A3E;
+  --status-warning: #B8860B;
+  --status-error:   var(--red-500);
+  --status-info:    var(--grey-700);
+
+  /* Sector-photography tint (the cool-blue cyber imagery wash) */
+  --tint-cyber:     #0E2A4A;     /* used as overlay base on cyber photos */
+
+  /* =========================================================================
+     TYPE — families
+     ========================================================================= */
+
+  /* Display serif — official brand font (Equestrienne, supplied) */
+  --font-display:   'Equestrienne', 'Cormorant Garamond', Georgia, 'Times New Roman', serif;
+
+  /* Body serif — substitute for Times (brand book secondary) */
+  --font-serif:     'Source Serif 4', 'Times New Roman', Times, serif;
+
+  /* UI sans — system fallback (brand book is silent on sans) */
+  --font-sans:      'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+
+  /* Mono — for code / data callouts */
+  --font-mono:      'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
+
+  /* Arabic — substitutes for GE Hili (display) and AXTManal (body) */
+  --font-arabic-display: 'Reem Kufi', 'GE Hili', 'Geeza Pro', sans-serif;
+  --font-arabic-body:    'Cairo', 'AXTManal', 'Geeza Pro', sans-serif;
+
+  /* =========================================================================
+     TYPE — scale (1.250 major-third ratio, anchored at 16px body)
+     ========================================================================= */
+  --fs-12:  0.75rem;     /* 12 — micro labels, footnotes */
+  --fs-14:  0.875rem;    /* 14 — small body, captions */
+  --fs-16:  1rem;        /* 16 — body */
+  --fs-18:  1.125rem;    /* 18 — large body, lead-ins */
+  --fs-20:  1.25rem;
+  --fs-24:  1.5rem;
+  --fs-30:  1.875rem;
+  --fs-36:  2.25rem;
+  --fs-48:  3rem;
+  --fs-60:  3.75rem;
+  --fs-72:  4.5rem;
+  --fs-96:  6rem;
+  --fs-128: 8rem;        /* big stat display */
+
+  /* Line-heights */
+  --lh-tight:   1.05;
+  --lh-snug:    1.2;
+  --lh-normal:  1.5;
+  --lh-relaxed: 1.65;
+
+  /* Letter-spacing */
+  --tracking-tight:  -0.02em;
+  --tracking-normal: 0;
+  --tracking-wide:   0.04em;
+  --tracking-wider:  0.08em;
+  --tracking-widest: 0.16em;       /* the deck-style ALL-CAPS section labels */
+
+  /* Weights */
+  --fw-light:    300;
+  --fw-regular:  400;
+  --fw-medium:   500;
+  --fw-semibold: 600;
+  --fw-bold:     700;
+  --fw-black:    800;
+
+  /* =========================================================================
+     SPACING — based on brand-book exclusion-zone logic (4px base)
+     ========================================================================= */
+  --space-0:  0;
+  --space-1:  0.25rem;   /* 4  */
+  --space-2:  0.5rem;    /* 8  */
+  --space-3:  0.75rem;   /* 12 */
+  --space-4:  1rem;      /* 16 */
+  --space-5:  1.5rem;    /* 24 */
+  --space-6:  2rem;      /* 32 */
+  --space-8:  3rem;      /* 48 */
+  --space-10: 4rem;      /* 64 */
+  --space-12: 6rem;      /* 96 — outer margin in deck layouts */
+  --space-16: 8rem;      /* 128 */
+
+  /* =========================================================================
+     RADII — print-discipline = sharp corners
+     ========================================================================= */
+  --radius-0:    0;
+  --radius-sm:   2px;
+  --radius-md:   4px;
+  --radius-lg:   8px;     /* avoid for primary surfaces */
+  --radius-pill: 999px;
+
+  /* =========================================================================
+     BORDERS
+     ========================================================================= */
+  --border-width-0:   0;
+  --border-width-1:   1px;
+  --border-width-2:   2px;
+  --border-width-4:   4px;     /* used for the accent left-rule on quotes */
+
+  /* =========================================================================
+     SHADOWS — restrained
+     ========================================================================= */
+  --shadow-none:     none;
+  --shadow-card:     0 1px 2px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.06);
+  --shadow-elevated: 0 4px 16px rgba(0,0,0,0.08), 0 12px 32px rgba(0,0,0,0.10);
+  --shadow-hero:     0 20px 60px rgba(0,0,0,0.18);
+
+  /* =========================================================================
+     MOTION
+     ========================================================================= */
+  --ease-standard:   cubic-bezier(0.4, 0.0, 0.2, 1);
+  --ease-decelerate: cubic-bezier(0.0, 0.0, 0.2, 1);
+  --ease-accelerate: cubic-bezier(0.4, 0.0, 1, 1);
+  --dur-micro:    150ms;
+  --dur-default:  250ms;
+  --dur-entrance: 400ms;
+  --dur-page:     600ms;
+
+  /* =========================================================================
+     LAYOUT
+     ========================================================================= */
+  --container-narrow: 720px;
+  --container-text:   880px;
+  --container:        1200px;
+  --container-wide:   1440px;
+  --gutter:           24px;
+  --grid-cols:        12;
+
+  /* deck stage */
+  --stage-w: 1920px;
+  --stage-h: 1080px;
+  --stage-margin: 96px;
+
+  /* z-index */
+  --z-base:    1;
+  --z-sticky:  100;
+  --z-dropdown: 1000;
+  --z-modal:   2000;
+  --z-toast:   3000;
+}
+
+/* ===========================================================================
+   SEMANTIC TYPE STYLES — apply via class (.h1, .lead) or by composing
+   =========================================================================== */
+
+html { font-family: var(--font-sans); color: var(--fg-1); background: var(--bg-page); }
+
+body {
+  font-family: var(--font-sans);
+  font-size: var(--fs-16);
+  line-height: var(--lh-normal);
+  color: var(--fg-1);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Display — Equestrienne, the official brand-book serif voice */
+.display-1, h1.display, .h-display-1 {
+  font-family: var(--font-display);
+  font-weight: var(--fw-light);
+  font-size: clamp(var(--fs-60), 7vw, var(--fs-128));
+  line-height: var(--lh-tight);
+  letter-spacing: var(--tracking-tight);
+  text-transform: lowercase;       /* per brand book */
+}
+.display-2, .h-display-2 {
+  font-family: var(--font-display);
+  font-weight: var(--fw-light);
+  font-size: clamp(var(--fs-48), 5vw, var(--fs-96));
+  line-height: var(--lh-tight);
+  letter-spacing: var(--tracking-tight);
+  text-transform: lowercase;
+}
+
+/* Headings — sans, restrained */
+.h1, h1 {
+  font-family: var(--font-sans);
+  font-weight: var(--fw-semibold);
+  font-size: var(--fs-48);
+  line-height: var(--lh-snug);
+  letter-spacing: var(--tracking-tight);
+  color: var(--fg-1);
+}
+.h2, h2 {
+  font-family: var(--font-sans);
+  font-weight: var(--fw-semibold);
+  font-size: var(--fs-36);
+  line-height: var(--lh-snug);
+  letter-spacing: var(--tracking-tight);
+}
+.h3, h3 {
+  font-family: var(--font-sans);
+  font-weight: var(--fw-semibold);
+  font-size: var(--fs-24);
+  line-height: var(--lh-snug);
+}
+.h4, h4 {
+  font-family: var(--font-sans);
+  font-weight: var(--fw-semibold);
+  font-size: var(--fs-20);
+  line-height: var(--lh-snug);
+}
+.h5, h5 {
+  font-family: var(--font-sans);
+  font-weight: var(--fw-semibold);
+  font-size: var(--fs-18);
+  line-height: var(--lh-snug);
+}
+.h6, h6 {
+  font-family: var(--font-sans);
+  font-weight: var(--fw-semibold);
+  font-size: var(--fs-16);
+  line-height: var(--lh-snug);
+}
+
+/* The deck-style section label: ALL-CAPS, letter-spaced, small */
+.eyebrow, .section-label {
+  font-family: var(--font-sans);
+  font-weight: var(--fw-semibold);
+  font-size: var(--fs-12);
+  letter-spacing: var(--tracking-widest);
+  text-transform: uppercase;
+  color: var(--fg-2);
+}
+.eyebrow--accent { color: var(--red-500); }
+
+/* Lead / intro paragraph */
+.lead {
+  font-family: var(--font-sans);
+  font-weight: var(--fw-regular);
+  font-size: var(--fs-20);
+  line-height: var(--lh-relaxed);
+  color: var(--fg-2);
+}
+
+/* Body — default p */
+p, .body {
+  font-family: var(--font-sans);
+  font-size: var(--fs-16);
+  line-height: var(--lh-relaxed);
+  color: var(--fg-1);
+  text-wrap: pretty;
+}
+
+/* Small / caption */
+.caption, small {
+  font-family: var(--font-sans);
+  font-size: var(--fs-14);
+  line-height: var(--lh-normal);
+  color: var(--fg-2);
+}
+
+/* Big-stat numerals — the 500+, 99.9%, 9M+ deck treatment */
+.stat-display {
+  font-family: var(--font-display);
+  font-weight: var(--fw-regular);
+  font-size: clamp(var(--fs-72), 8vw, var(--fs-128));
+  line-height: 1;
+  letter-spacing: var(--tracking-tight);
+  color: var(--red-500);
+}
+.stat-display--mono { color: var(--fg-1); }
+
+/* Pull-quote (the CEO quote block) */
+.quote {
+  font-family: var(--font-display);
+  font-weight: var(--fw-light);
+  font-size: var(--fs-36);
+  line-height: var(--lh-snug);
+  letter-spacing: var(--tracking-tight);
+  color: var(--fg-1);
+  text-wrap: balance;
+}
+.quote::before { content: '“'; color: var(--red-500); margin-right: 0.05em; }
+.quote::after  { content: '”'; color: var(--red-500); margin-left: 0.05em; }
+.quote-attrib {
+  font-family: var(--font-sans);
+  font-size: var(--fs-14);
+  font-weight: var(--fw-medium);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wider);
+  color: var(--fg-2);
+  margin-top: var(--space-4);
+}
+
+/* Code */
+code, .code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: var(--grey-100);
+  padding: 0.1em 0.35em;
+  border-radius: var(--radius-sm);
+}
+
+/* Links */
+a {
+  color: var(--fg-link);
+  text-decoration: none;
+  transition: color var(--dur-micro) var(--ease-standard);
+}
+a:hover {
+  color: var(--fg-link-hover);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+/* Selection */
+::selection { background: var(--red-500); color: var(--white); }
+
+/* Focus */
+:focus-visible {
+  outline: 2px solid var(--red-500);
+  outline-offset: 2px;
+}
+
+/* The brand wordmark — when set in type rather than as an image */
+.wordmark {
+  font-family: var(--font-display);
+  font-weight: var(--fw-regular);
+  text-transform: lowercase;
+  letter-spacing: -0.01em;
+  color: var(--red-500);
+}
+.wordmark-tagline {
+  font-family: var(--font-sans);
+  font-weight: var(--fw-light);
+  font-size: 0.4em;
+  text-transform: lowercase;
+  letter-spacing: var(--tracking-wide);
+  color: var(--fg-1);
+  display: block;
+  margin-top: 0.2em;
+}

@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  html, body { margin: 0; padding: 0; background: #fff; font-family: var(--font-sans); color: #000; }
+  body { padding: 18px 20px; }
+  .group { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+  .group:last-child { margin-bottom: 0; }
+  .lbl { font-size: 10px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: #777; width: 78px; flex-shrink: 0; }
+
+  /* ── Badges ─────────────────────────────────────────────── */
+  .badge { font-size: 10px; font-weight: 700; padding: 5px 10px; border-radius: 2px; letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; }
+  .b-red { background: #CF0A2C; color: #fff; }
+  .b-red-soft { background: #FBEDF0; color: #A40821; }
+  .b-grey { background: #F2F2F2; color: #000; }
+  .b-out { background: transparent; color: #000; border: 1px solid #000; padding: 4px 9px; }
+  .b-dot { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #4A4A4A; font-weight: 500; text-transform: none; letter-spacing: 0; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: #2D7A3E; display: inline-block; box-shadow: 0 0 0 3px rgba(45,122,62,.18); }
+
+  /* ── Filter pills ──────────────────────────────────────── */
+  .pill { font-size: 11px; font-weight: 500; padding: 5px 13px; border-radius: 999px; border: 1px solid #D9D9D9; color: #4A4A4A; background: #fff; white-space: nowrap; }
+  .pill.active { background: #000; color: #fff; border-color: #000; }
+
+  /* ── Stepper ───────────────────────────────────────────── */
+  .step { display: inline-flex; align-items: baseline; gap: 6px; }
+  .step .num { font-family: var(--font-display); font-size: 22px; color: #CF0A2C; font-weight: 400; line-height: 1; letter-spacing: -.01em; }
+  .step .lab { font-size: 11px; color: #1A1A1A; font-weight: 500; }
+  .sep { color: #BFBFBF; font-size: 11px; margin: 0 2px; }
+</style>
+</head>
+<body>
+
+<div class="group">
+  <div class="lbl">Badge</div>
+  <span class="badge b-red">External</span>
+  <span class="badge b-red-soft">Internal</span>
+  <span class="badge b-grey">2025</span>
+  <span class="badge b-out">ISO 27001</span>
+  <span class="b-dot"><span class="dot"></span>99.9% live</span>
+</div>
+
+<div class="group">
+  <div class="lbl">Pill</div>
+  <span class="pill active">All services</span>
+  <span class="pill">Cybersecurity</span>
+  <span class="pill">Cloud</span>
+  <span class="pill">Data &amp; AI</span>
+  <span class="pill">BPO</span>
+</div>
+
+<div class="group">
+  <div class="lbl">Stepper</div>
+  <span class="step"><span class="num">01</span><span class="lab">Discover</span></span>
+  <span class="sep">·</span>
+  <span class="step"><span class="num">02</span><span class="lab">Design</span></span>
+  <span class="sep">·</span>
+  <span class="step"><span class="num">03</span><span class="lab">Deliver</span></span>
+  <span class="sep">·</span>
+  <span class="step"><span class="num" style="color:#BFBFBF">04</span><span class="lab" style="color:#BFBFBF">Operate</span></span>
+</div>
+
+</body>
+</html>

@@ -691,15 +691,20 @@ binds take precedence over additional binds.
 
 ## malomatia handover documents
 
-`Docs_Ai/Project Structure/PROJECT_HANDOVER_MALOMATIA.html` is a self-contained,
-printable design reissue of `PROJECT_HANDOVER.md` / `PROJECT_HANDOVER.pdf`
-(version 1.0, 2026-08-30), not a technical-status update. Its companion PDF is
-rendered with local Microsoft Edge. The original PDF remains unchanged;
-`PROJECT_HANDOVER.md` is the editable generation source. The obsolete NestJS 10
-README warning was removed after the README was corrected to NestJS v11.
+`Docs_Ai/Project Structure/PROJECT_HANDOVER_MALOMATIA_REVISED.html` is a
+self-contained, printable revision of the handover (source version 1.0,
+2026-08-30), not a technical-status update. Its companion PDF is rendered with
+local Microsoft Edge; `PROJECT_HANDOVER.md` is the editable generation source.
+The obsolete NestJS 10 README warning was removed after the README was corrected
+to NestJS v11. The requested document scope excludes logging, diagnostics,
+operational tools/endpoints, and appointments/Cerner coverage. Keep these out of
+the delivered text, tables, diagrams, and contents. Document commands use `npm`
+and `npx`, without the Windows execution-policy note; terminal commands in this
+workspace still require `npm.cmd`/`npx.cmd`. These are document-only omissions,
+not instructions to remove application capabilities or technical working notes.
 Build tooling is isolated in `Docs_Ai/Project Structure/.handover-build/`:
 run `node build.mjs`, then `node verify.mjs` there. Both accept an optional output
-basename. The corrected export uses `PROJECT_HANDOVER_MALOMATIA_UPDATED`
+basename. The corrected export uses `PROJECT_HANDOVER_MALOMATIA_REVISED`
 (the original branded PDF was open/locked); pass that basename to both commands
 to regenerate the corrected HTML/PDF pair. The checks compare all content,
 table rows, and code lines, extract PDF text, check clipping and navigation,

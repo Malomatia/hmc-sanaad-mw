@@ -1,0 +1,29 @@
+{
+  "pdfPages": 40,
+  "htmlPages": 40,
+  "pageSizes": [
+    "595x842"
+  ],
+  "links": 44,
+  "fullContentPreservedInHtml": true,
+  "checkedTextUnits": 516,
+  "missingPdfTextUnits": [],
+  "pdfBoundsErrors": [],
+  "clippedHtmlElements": [],
+  "wrappedCodeLines": [
+    "├── Docs Project/            ← client-provided legacy service mapping (sanaad-api-service-mapping.html = proc-parameter truth)",
+    "│   │   ├── base.repository.ts         ← base class every Oracle adapter extends (readByResolvedKey, callSubmitProc, callRowsProc…)",
+    "│   ├── auth/                ← JwtStrategy, JwtAuthGuard, RolesGuard, FunctionAccessGuard, TokenRevocationService, decorators",
+    "    ├── auth/                ←  interface/ (controller+DTOs) · application/ (services) · domain/ (ports) · infrastructure/ (adapters)"
+  ],
+  "assetsEmbedded": true,
+  "contentsNavigationWorks": true,
+  "chapterNavigationWorks": true,
+  "tocPagesCorrect": true,
+  "subsectionNumberingCorrect": true,
+  "excludedContentInMarkdown": [],
+  "excludedContentInHtml": [],
+  "excludedContentInPdf": [],
+  "htmlBytes": 1221255,
+  "pdfBytes": 2958948
+}

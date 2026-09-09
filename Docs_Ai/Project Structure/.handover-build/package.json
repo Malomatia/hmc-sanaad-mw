@@ -1,0 +1,10 @@
+{
+  "name": "sanaad-handover-render",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "marked": "15.0.12",
+    "pdfjs-dist": "5.4.624",
+    "playwright-core": "1.58.2"
+  }
+}

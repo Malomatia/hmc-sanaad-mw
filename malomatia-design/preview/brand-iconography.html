@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="../colors_and_type.css">
+<script src="https://unpkg.com/lucide@latest"></script>
+<style>
+  body{margin:0;padding:24px;background:#fff;font-family:var(--font-sans);}
+  .grid{display:grid;grid-template-columns:repeat(8,1fr);gap:14px;}
+  .ic{display:flex;flex-direction:column;align-items:center;gap:6px;}
+  .ic svg{width:24px;height:24px;stroke:#000;stroke-width:1.5;fill:none;}
+  .ic .n{font-family:var(--font-mono);font-size:9px;color:var(--fg-3);}
+  .lbl{font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--fg-2);margin:8px 0 12px;}
+  .row{display:flex;align-items:center;gap:12px;margin-bottom:8px;}
+  .row svg{stroke:#000;stroke-width:1.5;fill:none;}
+</style></head><body>
+<div class="lbl">service icons · lucide · 1.5px stroke</div>
+<div class="grid">
+  <div class="ic"><i data-lucide="shield-check"></i><div class="n">cyber</div></div>
+  <div class="ic"><i data-lucide="cloud"></i><div class="n">cloud</div></div>
+  <div class="ic"><i data-lucide="server"></i><div class="n">infra</div></div>
+  <div class="ic"><i data-lucide="code"></i><div class="n">app dev</div></div>
+  <div class="ic"><i data-lucide="layout-grid"></i><div class="n">enterprise</div></div>
+  <div class="ic"><i data-lucide="brain-circuit"></i><div class="n">data + AI</div></div>
+  <div class="ic"><i data-lucide="headphones"></i><div class="n">contact</div></div>
+  <div class="ic"><i data-lucide="git-branch"></i><div class="n">BPO</div></div>
+</div>
+<div class="lbl">size scale</div>
+<div class="row">
+  <i data-lucide="shield-check" style="width:16px;height:16px"></i><span style="font-size:11px;color:#777">16</span>
+  <i data-lucide="shield-check" style="width:20px;height:20px"></i><span style="font-size:11px;color:#777">20</span>
+  <i data-lucide="shield-check" style="width:24px;height:24px"></i><span style="font-size:11px;color:#777">24 · default</span>
+  <i data-lucide="shield-check" style="width:32px;height:32px"></i><span style="font-size:11px;color:#777">32</span>
+  <i data-lucide="shield-check" style="width:48px;height:48px"></i><span style="font-size:11px;color:#777">48</span>
+</div>
+<script>lucide.createIcons();</script>
+</body></html>

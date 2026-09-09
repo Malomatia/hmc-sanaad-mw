@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  body{margin:0;padding:24px;background:#fff;font-family:var(--font-sans);}
+  .row{display:flex;gap:12px;align-items:center;margin-bottom:14px;flex-wrap:wrap;}
+  .lbl{font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--fg-2);width:80px;flex-shrink:0;}
+  .btn{font-family:var(--font-sans);font-size:14px;font-weight:600;padding:10px 20px;border-radius:2px;border:none;cursor:pointer;letter-spacing:.01em;transition:all .15s;}
+  .btn-primary{background:#CF0A2C;color:#fff;}
+  .btn-primary:hover{background:#A40821;}
+  .btn-secondary{background:transparent;color:#000;border:1px solid #000;}
+  .btn-secondary:hover{background:#F2F2F2;}
+  .btn-ghost{background:transparent;color:#000;}
+  .btn-ghost:hover{background:#F2F2F2;}
+  .btn-disabled{background:#CF0A2C;color:#fff;opacity:.4;cursor:not-allowed;}
+  .btn-sm{font-size:12px;padding:6px 12px;}
+  .btn-lg{font-size:16px;padding:14px 28px;}
+</style></head><body>
+<div class="row"><div class="lbl">primary</div>
+  <button class="btn btn-primary">Get in touch</button>
+  <button class="btn btn-primary btn-sm">Learn more</button>
+  <button class="btn btn-primary btn-lg">Request a briefing</button>
+  <button class="btn btn-disabled">Disabled</button>
+</div>
+<div class="row"><div class="lbl">secondary</div>
+  <button class="btn btn-secondary">Read case study</button>
+  <button class="btn btn-secondary btn-sm">Download PDF</button>
+</div>
+<div class="row"><div class="lbl">ghost</div>
+  <button class="btn btn-ghost">Cancel</button>
+  <button class="btn btn-ghost">View all services →</button>
+</div>
+</body></html>

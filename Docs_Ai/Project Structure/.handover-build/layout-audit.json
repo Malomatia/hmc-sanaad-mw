@@ -1,0 +1,98 @@
+{
+  "pages": 40,
+  "chapters": 21,
+  "sourceTables": 25,
+  "sourceCodeBlocks": 18,
+  "tableRowsPreserved": true,
+  "codeLinesPreserved": true,
+  "overflow": [],
+  "orphanHeadings": [],
+  "unresolvedLinks": [],
+  "toc": [
+    {
+      "title": "Project Overview",
+      "page": 3
+    },
+    {
+      "title": "Technology Stack",
+      "page": 5
+    },
+    {
+      "title": "Environment Setup",
+      "page": 6
+    },
+    {
+      "title": "Required Node.js + TypeScript Basics",
+      "page": 9
+    },
+    {
+      "title": "NestJS Basics for This Project",
+      "page": 11
+    },
+    {
+      "title": "Project Structure",
+      "page": 13
+    },
+    {
+      "title": "Application Startup Flow",
+      "page": 15
+    },
+    {
+      "title": "Module-by-Module Documentation",
+      "page": 16
+    },
+    {
+      "title": "Authentication & Authorization",
+      "page": 22
+    },
+    {
+      "title": "Database Architecture",
+      "page": 24
+    },
+    {
+      "title": "External Integrations",
+      "page": 26
+    },
+    {
+      "title": "Configuration & Environment Variables",
+      "page": 27
+    },
+    {
+      "title": "API Request Lifecycle",
+      "page": 30
+    },
+    {
+      "title": "Error Handling",
+      "page": 31
+    },
+    {
+      "title": "How to Develop a New Feature",
+      "page": 32
+    },
+    {
+      "title": "Testing & Debugging",
+      "page": 34
+    },
+    {
+      "title": "Important npm Commands",
+      "page": 35
+    },
+    {
+      "title": "Troubleshooting",
+      "page": 36
+    },
+    {
+      "title": "Learning Roadmap (First Week)",
+      "page": 37
+    },
+    {
+      "title": "Learning Resources",
+      "page": 38
+    },
+    {
+      "title": "Requires Knowledge Transfer",
+      "page": 39
+    }
+  ],
+  "consoleErrors": []
+}

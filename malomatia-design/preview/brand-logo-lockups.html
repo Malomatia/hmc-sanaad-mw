@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  body{margin:0;padding:24px;background:#FAFAFA;font-family:var(--font-sans);}
+  .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:18px;}
+  .tile{display:flex;align-items:center;justify-content:center;padding:28px;border:1px solid var(--grey-200);border-radius:2px;}
+  .tile img{max-width:100%;max-height:60px;}
+  .label{font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--fg-2);margin-top:10px;text-align:center;}
+  .tw{display:flex;flex-direction:column;}
+</style></head><body>
+<div class="grid">
+  <div class="tw"><div class="tile" style="background:#fff"><img src="../assets/logos/malomatia-logo.png"></div><div class="label">on white · primary</div></div>
+  <div class="tw"><div class="tile" style="background:#000;border-color:#000"><img src="../assets/logos/malomatia-logo-light-on-black.png"></div><div class="label">on black · reversed</div></div>
+  <div class="tw"><div class="tile" style="background:#CF0A2C;border-color:#CF0A2C"><img src="../assets/logos/malomatia-logo-on-red.png"></div><div class="label">on brand red</div></div>
+  <div class="tw"><div class="tile" style="background:#777575;border-color:#777575"><img src="../assets/logos/malomatia-logo-on-grey.png"></div><div class="label">on metallic grey · 15% K</div></div>
+</div>
+</body></html>

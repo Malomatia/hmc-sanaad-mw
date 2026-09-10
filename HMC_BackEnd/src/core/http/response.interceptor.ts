@@ -13,6 +13,8 @@ import { toLang } from '@shared/domain/lang';
 import { localizeArTwins } from '@shared/utils/localize.util';
 import { SanaadEnvelope } from '@shared/interfaces/sanaad-response.interface';
 
+const SUCCESS_MESSAGES = { en: 'Success', ar: 'تم الأرسال' } as const;
+
 /** Routes decorated with @SkipEnvelope() return their payload unwrapped (e.g. binary payslip). */
 export const SKIP_ENVELOPE = 'skipEnvelope';
 export const SkipEnvelope = () => SetMetadata(SKIP_ENVELOPE, true);
@@ -37,7 +39,10 @@ export class ResponseInterceptor implements NestInterceptor<unknown, SanaadEnvel
 
     const http = context.switchToHttp();
     const res = http.getResponse<{ statusCode?: number }>();
-    const req = http.getRequest<{ query?: { lang?: string } }>();
+    const req = http.getRequest<{
+      query?: { lang?: string };
+      headers?: Record<string, string | string[] | undefined>;
+    }>();
 
     return next.handle().pipe(
       map((data): SanaadEnvelope | unknown => {
@@ -50,8 +55,14 @@ export class ResponseInterceptor implements NestInterceptor<unknown, SanaadEnvel
           // sees errormessage/errormessageAr, only the one that matches its
           // request language; falls back to the English text if the Arabic
           // one isn't set.
+          const header = req?.headers?.lang;
+          const successLang = toLang(req?.query?.lang ?? (Array.isArray(header) ? header[0] : header));
           const message =
-            lang === 'ar' ? (data.errormessageAr ?? data.errormessage) : data.errormessage;
+            data.status === 'success' && data.successflag === 'S'
+              ? SUCCESS_MESSAGES[successLang]
+              : lang === 'ar'
+                ? (data.errormessageAr ?? data.errormessage)
+                : data.errormessage;
           return {
             status: data.status,
             successflag: data.successflag,

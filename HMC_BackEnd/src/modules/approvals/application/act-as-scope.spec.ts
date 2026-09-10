@@ -41,6 +41,38 @@ describe('acting as another identifier', () => {
     return { service: new ApprovalsService(repo, config), getSummary, getMyRequests, isOwnedBy };
   }
 
+  describe('summary SUBJECT formatting', () => {
+    it.each(['en', 'ar'] as const)('trims and collapses SUBJECT whitespace for lang=%s without changing scope or source rows', async (lang) => {
+      const { service, getSummary } = make('production');
+      const row = Object.freeze({
+        SUBJECT: '  Leave of Absence for 044170    - Sravan Badri  (LWP)\t Hire date : 10-FEB-2016  ',
+        APPROVER_NAME: '  Preserve this spacing  ',
+      });
+      const pending = Object.freeze({ SUBJECT: '\n  طلب   تجديد\tالبطاقة\u00a0 ' });
+      getSummary.mockResolvedValue({ approvals: Object.freeze([row]), pendingQid: Object.freeze([pending]) });
+
+      const result = await service.summary(CALLER, lang, APPROVER);
+
+      expect(result.approvals).toEqual([{
+        SUBJECT: 'Leave of Absence for 044170 - Sravan Badri (LWP) Hire date : 10-FEB-2016',
+        APPROVER_NAME: '  Preserve this spacing  ',
+      }]);
+      expect(result.pendingQid).toEqual([{ SUBJECT: 'طلب تجديد البطاقة' }]);
+      expect(result.approvals[0]).not.toBe(row);
+      expect(row.SUBJECT).toContain('044170    -');
+      expect(pending.SUBJECT).toContain('\t');
+      expect(getSummary).toHaveBeenCalledWith(['AIBRAHIM39', '037400'], lang);
+    });
+
+    it('keeps absent, null, and non-string SUBJECT values and cleans whitespace-only values', async () => {
+      const { service, getSummary } = make('development');
+      getSummary.mockResolvedValue({ approvals: [{}, { SUBJECT: null }, { SUBJECT: 42 }, { SUBJECT: ' \t\r\n ' }], pendingQid: [] });
+      await expect(service.summary(CALLER)).resolves.toEqual({
+        approvals: [{}, { SUBJECT: null }, { SUBJECT: 42 }, { SUBJECT: '' }], pendingQid: [],
+      });
+    });
+  });
+
   describe('outside production', () => {
     it('adds the supplied identifier to the query', async () => {
       const { service, getSummary } = make('development');

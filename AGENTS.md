@@ -830,3 +830,141 @@ metadata miss cannot turn it into an unfiltered read. Existing Oracle username
 uppercasing applies. The cache key includes the authenticated username via the
 options and excludes the ignored person ID. HTTP-to-SQL regression coverage is
 in `lookups/infrastructure/oracle/lov.oracle.repository.spec.ts`.
+
+## Backend JWT person identity and v2 reads (2026-09-10)
+
+Login now enriches both access and refresh JWTs with optional `person_id` (a
+validated decimal string), selecting only `PERSON_ID` from
+`XXHMC_SND_EMPLOYMENT_DETAILS_V WHERE USER_NAME = :username`. The auth-domain
+`PersonIdentityPort` uses the resolved login identity and the existing warmed
+Oracle pool. Missing/unavailable/ambiguous Oracle identity does not fail login;
+the claim is omitted, never substituted with employee number. Refresh preserves
+the claim but does not backfill old tokens; a new login resolves it again.
+
+All 133 backend API method/path pairs now have explicit `/api/v2` counterparts
+across 23 controllers. The 36 identity-scoped business GETs remain specialized;
+the other 97 v2 handlers delegate to their unchanged v1 implementations with the
+same DTOs, status codes, guards, and response metadata. V1 remains available.
+`configureApiVersioning` retains `API_PREFIX=api/v1` as the full legacy prefix and
+derives the versioned root; custom legacy prefixes without `/v1` retain their
+original neutral routes. Keep that server setting: the mobile base path can use
+`/api/v2` without changing `API_PREFIX` to `api/v2`.
+The gateway has NOT been updated, so v2 currently requires direct backend access.
+
+`@Public()` is honored in both versions, including pre-login auth, app-launch
+healthcheck, and refresh (which verifies its body token, not an expired access
+header). Authenticated routes such as me/logout remain protected. Every protected
+v2 route verifies the signed access JWT even with `AUTH_DISABLED=true` and rejects
+query `username`, `enum`, `person_id`, and `user_name` with 400, including raw-query
+duplicates/bracketed forms beyond parser limits. Public auth keeps its existing
+request-body username/device fields. Use `currentIdentity`
+/ `requireIdentity` for original signed claims: legacy `sub`/`enum` fallbacks are
+not authoritative employee numbers. Missing required employee/person claims yield
+422 with a session-claim detail asking the client to log in again. Worklist's
+legacy `enum` actually means username; school children also use username.
+
+V2 LOV reads use typed `callerScope` equality predicates, never mixed numeric
+identifier namespaces. Strict metadata failures cannot omit a personal filter;
+only successful nonempty strict discoveries are cached. Cancel/amend force
+`PERSON_ID`; the special contract-years public name still forces `USER_NAME`.
+Cache keys retain only caller identity fields, not changing JWT/session claims.
+V2 approval details/downloads retain ownership checks and return v2 attachment
+links without changing v1 results. Known `_v2` audit IDs retain function codes.
+V2 login maps to canonical `auth_login` so the SQL Server login audit is emitted
+once. Read-only POST overrides and country-based address form classification also
+apply to v2. Calling a v1 handler from its v2 wrapper is an ordinary method call,
+not a second HTTP/interceptor invocation.
+
+Swagger documents 122 operations per version (244 total); the 11 operational
+HTML/developer-console routes excluded from Swagger retain that exclusion.
+`removeDiagnosticsFromDocument` hides disabled diagnostic paths in BOTH versions,
+without hiding health/readiness. `v2-route-parity.spec.ts` checks the complete
+controller inventory, route/DTO/security metadata, delegation, and documentation.
+`auth-v2-journey.spec.ts` covers real auth services with fake ports from onboarding
+through refresh/logout, cross-version tokens, and single audit emission. Its
+Supertest requests must be constructed sequentially: prebuilding two requests
+against a not-yet-listening server can leave the second using an ephemeral port
+that the first request has already closed.
+
+## Oracle startup readiness (2026-09-10)
+
+This extends the earlier Oracle pool-recovery notes: new pools warm the configured
+minimum number of simultaneously held connections (at least one, at most the
+maximum) before publication. Failed startup/broken pools also recover in the
+background through the same shared two-attempt/cooldown path; timers and in-flight
+cleanup are handled on shutdown. No failed SQL or submit is replayed.
+
+`GET /api/v1/health/ready` and its v2 counterpart report cached pool readiness with
+200/503, independently of diagnostics flags; disabled Oracle is an explicit ready/skipped dependency,
+while missing configuration is unready. Both Docker healthchecks use this route.
+The existing `/health` contract is unchanged. A load balancer/orchestrator must
+honor readiness to withhold traffic; Docker health alone does not close the port.
+Warmup does not remove SQL/schema-cache costs or warm concurrency above poolMin.
+
+Verification: build, full-app local DI/HTTP smoke and new feature tests pass.
+The full suite currently has six unchanged supervisor-query test failures:
+`core/database/oracle-username-paths.spec.ts` expects `UPPER(USERNAME)` while the
+unchanged supervisor repository uses `UPPER(USER_NAME)`. Do not guess the live
+column to make those assertions pass. Dependency-cruiser also reports three
+existing edges: dev-console to oracledb, profile module to approvals module, and
+profile service to approvals service. Semantic ESLint passes for changed files;
+existing formatting/CRLF debt remains. For a network-free full-app smoke, clear
+`USERS_DB_HOST` as well as setting disabled flags: the current MssqlService does
+not honor `USERS_DB_DISABLED` when a complete connection configuration exists.
+
+## Versioned Postman collection
+
+The maintained collection is `HMC_BackEnd/postman/HMC-Sanaad-Full.postman_collection.json`,
+with matching `HMC-Sanaad-Full.postman_environment.json`. It has top-level `v1`
+and `v2` folders, 133 requests each. The 111 previously curated requests/captures
+remain unchanged under v1; missing endpoints are generated from current backend
+metadata. V2 examples are explicitly adapted references, not new live captures.
+The older `Docs_Ai/Postman/sanaad.postman_collection.json` describes legacy gateway
+paths and is not this maintained backend collection.
+
+`baseUrl` remains the full v1 URL. Leave `baseUrlV2` blank to derive its `/v2`
+version in the v2 folder pre-request script, or override it for another backend.
+Both folders capture access/refresh tokens from successful login/refresh, including
+updating an existing environment token so it cannot shadow the collection token.
+Protected v2 requests omit identity queries; public admin filters and auth body
+fields retain their contracts. Fill empty attestation/email/document test inputs
+before sending. Do not run this mutating/admin collection wholesale in production.
+
+From `HMC_BackEnd/`, build first when backend routes/DTOs changed, then:
+- `node postman/version-collection.js` maintains both folders without resetting
+  curated requests; `--check` validates coverage without writing artifacts.
+- `node --test postman/version-collection.test.js` checks coverage, preservation,
+  URL/query conversion, scripts, and version-aware Swagger synchronization.
+- The older `generate-full-collection.js` delegates to this maintainer whenever
+  a collection exists instead of overwriting it from its legacy bootstrap registry.
+- `sync-from-swagger.js` traverses nested folders and matches each API version
+  separately. Refresh `postman/local-swagger.json` before intentionally syncing
+  body/response examples; absent v2 Swagger operations are left untouched.
+
+`backend-catalog.js` reads compiled controllers and creates an offline Swagger
+catalog using inert service providers. It does not load the app entry point,
+read dotenv credentials, start an HTTP listener, or execute API/database calls.
+Swagger-only exclusions are restored after catalog generation; backend access
+controls are never modified. Plain DTOs without Swagger property annotations
+have narrow, source-checked Postman input templates in `version-collection.js`.
+
+## Approvals subject spacing and submit success messages
+
+`ApprovalsService.summary` trims leading/trailing whitespace and collapses repeated
+whitespace to one space in each string `SUBJECT` in both `approvals` and
+`pendingQid`. It copies affected rows instead of mutating repository results;
+other fields, missing/null/non-string subjects, and caller scoping are unchanged.
+
+For business submits with BOTH `status === 'success'` and `successflag === 'S'`,
+`ResponseInterceptor` now returns the fixed message `Success` for English or
+`تم الأرسال` for Arabic (the client's exact requested spelling), regardless of
+the procedure's success text. Query `lang` wins over the `lang` header; absent or
+unsupported language defaults to English. This rule is deliberately limited to
+successful submits: failed-submit message selection, auth/OTP messages, skipped
+responses, and read-payload localization remain unchanged. The outer API logger
+captures the localized message in `responseSummary` automatically.
+
+Regression coverage from `HMC_BackEnd/`:
+`npm.cmd test -- --runInBand core/http modules/approvals core/database/base.repository.spec.ts core/audit`.
+The focused HTTP tests exercise `/api/v1/letters/apply?lang=ar`, its log summary, and the
+`/api/v1/approvals?enum=037400&lang=en` subject response using mocked data sources.

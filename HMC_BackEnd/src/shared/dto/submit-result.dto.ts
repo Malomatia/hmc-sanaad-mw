@@ -17,7 +17,7 @@ export class SubmitResultDto {
 
   @ApiProperty({
     example: 'Success',
-    description: 'errormessage (en) or errormessageAr (ar), depending on the request `lang` (default en).',
+    description: 'Successful submits return "Success" (en) or "تم الأرسال" (ar), using query lang before the lang header (default en). Failed submits retain their existing Oracle message selection.',
   })
   message!: string;
 

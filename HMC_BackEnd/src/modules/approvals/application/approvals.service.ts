@@ -71,8 +71,21 @@ export class ApprovalsService {
    * a client-supplied identifier must not be able to widen it to another
    * approver's queue.
    */
-  summary(user: AuthenticatedUser, lang: Lang = 'en', actAs?: string): Promise<ApprovalsSummary> {
-    return this.repo.getSummary(this.keysOf(user, actAs), lang);
+  async summary(
+    user: AuthenticatedUser,
+    lang: Lang = 'en',
+    actAs?: string,
+  ): Promise<ApprovalsSummary> {
+    const summary = await this.repo.getSummary(this.keysOf(user, actAs), lang);
+    const normalize = (row: ApprovalRow): ApprovalRow =>
+      typeof row.SUBJECT === 'string'
+        ? { ...row, SUBJECT: row.SUBJECT.trim().replace(/\s+/g, ' ') }
+        : row;
+    return {
+      ...summary,
+      approvals: summary.approvals.map(normalize),
+      pendingQid: summary.pendingQid.map(normalize),
+    };
   }
 
   pendingCounts(

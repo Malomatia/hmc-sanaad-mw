@@ -24,18 +24,29 @@
  */
 const fs = require('fs');
 const path = require('path');
+const { rewriteLinks } = require('./version-collection');
 
 const collectionPath = path.join(__dirname, 'HMC-Sanaad-Full.postman_collection.json');
 const swagger = require(path.join(__dirname, 'local-swagger.json'));
 const collection = JSON.parse(fs.readFileSync(collectionPath, 'utf8'));
 
 // ── swagger lookup by normalized METHOD + path ─────────────────────────────
-const normParams = (p) => p.replace(/\{[^}]+\}/g, '{*}').replace(/:([^/]+)/g, '{*}').replace(/\{\{([^}]+)\}\}/g, '{*}');
+const normParams = (p) => p.replace(/\{\{[^}]+\}\}|\{[^}]+\}|:[^/]+/g, '{*}');
 const swaggerOps = new Map();
 for (const [p, methods] of Object.entries(swagger.paths)) {
-  const rel = p.replace(/^\/api\/v1/, '') || '/';
+  const version = p.match(/^\/api\/(v[12])(?=\/|$)/)?.[1] ?? 'v1';
+  const rel = p.replace(/^\/api\/v[12](?=\/|$)/, '') || '/';
   for (const [m, op] of Object.entries(methods)) {
-    swaggerOps.set(`${m.toUpperCase()} ${normParams(rel)}`, op);
+    if (['get', 'post', 'put', 'patch', 'delete', 'head', 'options', 'trace'].includes(m)) {
+      swaggerOps.set(`${version} ${m.toUpperCase()} ${normParams(rel)}`, op);
+    }
+  }
+}
+
+function* requestGroups(items, version = 'v1', name = '') {
+  yield { item: items, version, name };
+  for (const item of items) {
+    if (item.item) yield* requestGroups(item.item, ['v1', 'v2'].includes(item.name) ? item.name : version, `${name}/${item.name}`);
   }
 }
 
@@ -89,13 +100,15 @@ let bodyUpdates = 0;
 let responseUpdates = 0;
 const unmatched = [];
 
-for (const folder of collection.item) {
+for (const folder of requestGroups(collection.item)) {
   for (const item of folder.item ?? []) {
     if (!item.request) continue;
     const url = item.request.url;
     const rawPath = '/' + ((url && url.path) || []).join('/');
-    const key = `${item.request.method.toUpperCase()} ${normParams(rawPath)}`;
-    const op = swaggerOps.get(key);
+    const namedPath = item.name?.match(/^[A-Z]+\s+(\/\S+)/)?.[1]?.split('?')[0];
+    const method = item.request.method.toUpperCase();
+    const key = `${folder.version} ${method} ${normParams(namedPath || rawPath)}`;
+    const op = swaggerOps.get(key) ?? swaggerOps.get(`${folder.version} ${method} ${normParams(rawPath)}`);
     if (!op) {
       unmatched.push(`${folder.name} / ${item.name}`);
       continue;
@@ -118,7 +131,7 @@ for (const folder of collection.item) {
     // 2. success response example
     const okExample = successResponseExample(op);
     if (okExample !== undefined) {
-      const body = JSON.stringify(okExample, null, 2);
+      const body = JSON.stringify(folder.version === 'v2' ? rewriteLinks(okExample) : okExample, null, 2);
       const responses = item.response ?? [];
       const non200 = responses.filter((r) => r.code !== 200);
       const existing200 = responses.find((r) => r.code === 200);

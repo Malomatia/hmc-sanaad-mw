@@ -20,6 +20,13 @@
 const fs = require('fs');
 const path = require('path');
 
+if (fs.existsSync(path.join(__dirname, 'HMC-Sanaad-Full.postman_collection.json'))) {
+  const { spawnSync } = require('node:child_process');
+  const result = spawnSync(process.execPath, [path.join(__dirname, 'version-collection.js'), ...process.argv.slice(2)], { stdio: 'inherit' });
+  if (result.error) throw result.error;
+  process.exit(result.status ?? 1);
+}
+
 const distDir = path.join(__dirname, '..', 'dist');
 const outDir = __dirname;
 

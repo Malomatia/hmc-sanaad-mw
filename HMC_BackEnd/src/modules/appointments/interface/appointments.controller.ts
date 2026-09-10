@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query, Version } from '@nestjs/common';
+import { requireIdentity } from '@core/auth/current-identity';
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Lang } from '@core/i18n/lang.decorator';
 import type { Lang as LangCode } from '@shared/domain/lang';
@@ -37,6 +38,40 @@ const MASTERS_EXAMPLE = {
 @Controller('appointments')
 export class AppointmentsController {
   constructor(private readonly service: AppointmentsService) {}
+
+  @Get('upcoming')
+  @Version('2')
+  @ApiOperation({
+    summary: 'op 41 — Upcoming staff-clinic appointments',
+    operationId: 'appointments_upcoming_v2',
+  })
+  @ApiOkResponse({
+    description:
+      'Read envelope; `result` carries the Cerner appointment rows unchanged. Requires CERNER_BASE_URL to be configured (otherwise 503).',
+    schema: { example: { result: UPCOMING_EXAMPLE, opstatus: 0, status: 'success', httpStatusCode: 200 } },
+  })
+  upcomingV2(@Query() q: LangQueryDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.service.getUpcoming(requireIdentity(user, 'employeeNumber'), q.lang);
+  }
+
+  @Get('booking-init')
+  @Version('2')
+  @ApiOperation({ summary: 'op 43 — Booking screen init', operationId: 'appointments_bookingInit_v2' })
+  @ApiOkResponse({
+    description:
+      'Read envelope; `result` aggregates { masters, upcoming }. Requires CERNER_BASE_URL to be configured (otherwise 503).',
+    schema: {
+      example: {
+        result: { masters: MASTERS_EXAMPLE, upcoming: UPCOMING_EXAMPLE },
+        opstatus: 0,
+        status: 'success',
+        httpStatusCode: 200,
+      },
+    },
+  })
+  bookingInitV2(@Query() q: LangQueryDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.service.initBooking(requireIdentity(user, 'employeeNumber'), q.lang);
+  }
 
   @Get('upcoming')
   @ApiOperation({ summary: 'op 41 — Upcoming staff-clinic appointments', operationId: 'appointments_upcoming' })
@@ -100,5 +135,39 @@ export class AppointmentsController {
     @Lang() lang: LangCode,
   ) {
     return this.service.book({ ...dto }, user, lang);
+  }
+
+  @Get('masters')
+  @Version('2')
+  @ApiOperation({ summary: 'op 42 — Clinic master details', operationId: 'appointments_masters_v2' })
+  @ApiOkResponse({
+    description:
+      'Read envelope; `result` = { clinics, locations, services }. Requires CERNER_BASE_URL to be configured (otherwise 503).',
+    schema: { example: { result: MASTERS_EXAMPLE, opstatus: 0, status: 'success', httpStatusCode: 200 } },
+  })
+  mastersV2(@Query() q: LangQueryDto) {
+    return this.masters(q);
+  }
+
+  @Post('book')
+  @Version('2')
+  @ApiOperation({ summary: 'op 44 — Book appointment', operationId: 'appointments_book_v2' })
+  @ApiOkResponse({ type: SubmitResultDto })
+  @VerifiedBody(
+    BookAppointmentRequestDto,
+    {
+      clinicId: 'CLINIC-001',
+      locationId: 'LOC-001',
+      serviceId: 'SVC-001',
+      slot: '2026-09-01T09:30:00',
+    },
+    'Shape only — the appointments module needs CERNER_BASE_URL configured on the environment (503 until then). Ids come from GET /appointments/masters.',
+  )
+  bookV2(
+    @Body() dto: BookAppointmentRequestDto,
+    @CurrentUser() user: AuthenticatedUser,
+    @Lang() lang: LangCode,
+  ) {
+    return this.book(dto, user, lang);
   }
 }

@@ -1,4 +1,4 @@
-import { Body, Controller, HttpCode, Post } from '@nestjs/common';
+import { Body, Controller, HttpCode, Post, Version } from '@nestjs/common';
 import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Public } from '@core/auth/decorators/public.decorator';
 import { SkipEnvelope } from '@core/http/response.interceptor';
@@ -19,5 +19,16 @@ export class HealthCheckController {
   @ApiOkResponse({ type: HealthCheckResponseDto })
   check(@Body() dto: HealthCheckRequestDto): Promise<HealthCheckResponseDto> {
     return this.service.check(dto);
+  }
+
+  @Public()
+  @SkipEnvelope()
+  @HttpCode(200)
+  @Post()
+  @Version('2')
+  @ApiOperation({ summary: 'API-1 — Health Check (app launch)', operationId: 'auth_healthCheck_v2' })
+  @ApiOkResponse({ type: HealthCheckResponseDto })
+  checkV2(@Body() dto: HealthCheckRequestDto): Promise<HealthCheckResponseDto> {
+    return this.check(dto);
   }
 }

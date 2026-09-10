@@ -54,6 +54,7 @@ function makeService(overrides: Partial<typeof AUTH_CFG> = {}, identityUsername 
     ),
     getOrThrow: jest.fn(() => authCfg),
   } as unknown as ConfigService;
+  const personIdentity = { findPersonId: jest.fn().mockResolvedValue('26023') };
   const service = new AuthService(
     jwt,
     mpinStore,
@@ -63,8 +64,9 @@ function makeService(overrides: Partial<typeof AUTH_CFG> = {}, identityUsername 
     audit,
     revocation,
     config,
+    personIdentity,
   );
-  return { service, jwt, revocation, devices, ldap, mpinStore };
+  return { service, jwt, revocation, devices, ldap, mpinStore, personIdentity };
 }
 
 const LOGIN = {
@@ -117,6 +119,45 @@ describe('AuthService login employeeusername casing', () => {
     for (const token of [response.token!, response.refreshtoken!]) {
       expect(jwt.decode(token)).toMatchObject({ userdata: { employeeusername: 'AIBRAHIM39' } });
     }
+  });
+});
+
+describe('AuthService Oracle identity enrichment', () => {
+  it.each([{}, { disabled: true }, { staticLogin: true }])(
+    'adds PERSON_ID before signing in mode %j and preserves it on refresh', async (mode) => {
+      const { service, jwt, personIdentity } = makeService(mode, 'resolved.User');
+      const login = await service.login(LOGIN);
+      const username = 'staticLogin' in mode ? 'AIBRAHIM39' : 'disabled' in mode ? LOGIN.username : 'resolved.User';
+      expect(personIdentity.findPersonId).toHaveBeenCalledWith(username);
+      for (const token of [login.token!, login.refreshtoken!]) {
+        expect(jwt.verify(token)).toMatchObject({ username, person_id: '26023' });
+      }
+      const refreshed = await service.refresh({ refreshtoken: login.refreshtoken! });
+      for (const token of [refreshed.token!, refreshed.refreshtoken!]) {
+        expect(jwt.verify(token)).toMatchObject({ person_id: '26023' });
+      }
+      expect(personIdentity.findPersonId).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('does not query Oracle for invalid credentials', async () => {
+    const { service, mpinStore, personIdentity } = makeService();
+    (mpinStore.verify as jest.Mock).mockResolvedValue(false);
+    expect(await service.login(LOGIN)).toEqual({ status: 'error', message: 'Invalid credentials.' });
+    expect(personIdentity.findPersonId).not.toHaveBeenCalled();
+  });
+
+  it.each(['unavailable', 'missing', 'invalid'])('allows partial login when PERSON_ID is %s', async (mode) => {
+    const { service, jwt, personIdentity } = makeService();
+    if (mode === 'unavailable') personIdentity.findPersonId.mockRejectedValue(new Error('Oracle unavailable'));
+    else personIdentity.findPersonId.mockResolvedValue(mode === 'missing' ? undefined : 'invalid');
+    const login = await service.login(LOGIN);
+    expect(login.status).toBe('success');
+    for (const token of [login.token!, login.refreshtoken!]) {
+      expect(jwt.verify(token)).not.toHaveProperty('person_id');
+    }
+    const refreshed = await service.refresh({ refreshtoken: login.refreshtoken! });
+    expect(jwt.verify(refreshed.token!)).not.toHaveProperty('person_id');
   });
 });
 

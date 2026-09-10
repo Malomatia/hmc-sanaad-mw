@@ -1,4 +1,4 @@
-import { Body, Controller, HttpCode, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, HttpCode, Post, UseGuards, Version } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { IsEmail, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 import { DiagnosticsEnabledGuard } from '../http/diagnostics-enabled.guard';
@@ -58,5 +58,16 @@ export class EmailDiagnosticsController {
       smtpConfigured: this.email.isConfigured,
       durationMs: Date.now() - started,
     };
+  }
+
+  @Version('2')
+  @Post('email/test')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Send a test email through the configured SMTP relay',
+    operationId: 'diag_emailTest_v2',
+  })
+  async testEmailV2(@Body() body: TestEmailRequestDto) {
+    return this.testEmail(body);
   }
 }

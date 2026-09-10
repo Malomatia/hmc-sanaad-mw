@@ -21,6 +21,7 @@ import { MpinService } from '@modules/auth/application/mpin.service';
 import { MssqlService } from '../database/mssql.service';
 import { MotcSmsDbService } from '../database/motc-sms-db.service';
 import { ResponseInterceptor } from '../http/response.interceptor';
+import { configureApiVersioning } from '../http/api-versioning';
 import { AuditInterceptor } from './audit.interceptor';
 import { AuditModule } from './audit.module';
 import { AuditService } from './audit.service';
@@ -172,7 +173,25 @@ describe('Function access audit classification', () => {
     },
   );
 
-  it.each(['contact_createAddress', 'contact_updateAddress'])(
+  it.each([
+    ['employee_employment_v2', 'MyEmpDetails'],
+    ['payslip_generate_v2', 'frmPayslip'],
+    ['leave_amendLov_v2', 'frmRequestLeaveAmendment'],
+    ['profile_notifications_v2', 'frmNotificationList'],
+    ['approvals_details_v2', 'frmApprovals'],
+    ['annualTicket_cancelOptions_v2', 'frmAnnualTicketCancellation'],
+    ['unknown_operation_v2', 'unknown_operation_v2'],
+  ])('preserves audit classification for %s', async (operationId, functionId) => {
+    expect(await recordCall(operationId)).toMatchObject({ functionId, actionTaken: 'view' });
+  });
+
+  it('keeps v2 login classified for the legacy login audit sink', async () => {
+    expect(await recordCall('auth_login_v2', 'POST')).toMatchObject({
+      functionId: 'auth_login', actionTaken: 'submit',
+    });
+  });
+
+  it.each(['contact_createAddress', 'contact_updateAddress', 'contact_createAddress_v2', 'contact_updateAddress_v2'])(
     'maps %s by country only, regardless of address type',
     async (operationId) => {
       for (const country of ['Qatar', 'QA', ' qAtAr ', 'qa']) {
@@ -260,13 +279,21 @@ describe('Function access audit classification', () => {
     'diag_oracleSql',
     'diag_usersDbSql',
     'diag_motcSmsDbSql',
+    'leave_calculate_v2',
+    'auth_healthCheck_v2',
+    'appIntegrity_verifyAndroid_v2',
+    'diag_oracleSql_v2',
+    'diag_usersDbSql_v2',
+    'diag_motcSmsDbSql_v2',
   ])('records read-only POST %s as view', async (operationId) =>
     expect(await recordCall(operationId, 'POST')).toMatchObject({ actionTaken: 'view' }),
   );
 
-  it('records persisted challenge creation as submit even though it uses GET', async () => {
-    expect(await recordCall('appIntegrity_challenge')).toMatchObject({ actionTaken: 'submit' });
-  });
+  it.each(['appIntegrity_challenge', 'appIntegrity_challenge_v2'])(
+    'records persisted challenge %s as submit even though it uses GET', async (operationId) => {
+      expect(await recordCall(operationId)).toMatchObject({ actionTaken: 'submit' });
+    },
+  );
 
   it('retains the mapped function and action on an exception', async () => {
     expect(
@@ -311,7 +338,7 @@ describe('API database auditing', () => {
       .compile();
 
     app = moduleRef.createNestApplication();
-    app.setGlobalPrefix('api/v1');
+    configureApiVersioning(app, 'api/v1');
     app.useGlobalPipes(
       new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }),
     );

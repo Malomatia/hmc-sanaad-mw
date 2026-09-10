@@ -20,8 +20,8 @@ export const envValidationSchema = Joi.object({
   ORACLE_USER: Joi.string().allow('').default(''),
   ORACLE_PASSWORD: Joi.string().allow('').default(''),
   ORACLE_DSN: Joi.string().allow('').default(''),
-  ORACLE_POOL_MIN: Joi.number().default(2),
-  ORACLE_POOL_MAX: Joi.number().default(10),
+  ORACLE_POOL_MIN: Joi.number().integer().min(0).default(2),
+  ORACLE_POOL_MAX: Joi.number().integer().min(1).default(10),
   ORACLE_POOL_TIMEOUT: Joi.number().default(60),
   ORACLE_QUEUE_TIMEOUT_MS: Joi.number().min(1).default(25000),
   ORACLE_CALL_TIMEOUT_MS: Joi.number().min(1).default(25000),
@@ -194,4 +194,11 @@ export const envValidationSchema = Joi.object({
   LOG_LEVEL: Joi.string()
     .valid('error', 'warn', 'log', 'debug', 'verbose')
     .default('debug'),
+}).custom((value, helpers) => {
+  if (value.ORACLE_POOL_MAX < value.ORACLE_POOL_MIN) {
+    return helpers.message({
+      custom: 'ORACLE_POOL_MAX must be greater than or equal to ORACLE_POOL_MIN',
+    });
+  }
+  return value;
 });

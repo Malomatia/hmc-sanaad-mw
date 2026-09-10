@@ -3,19 +3,19 @@ import {
   Body,
   Controller,
   Delete,
-  ForbiddenException,
   Get,
   Header,
   HttpCode,
   Post,
   Query,
   UseGuards,
+  Version,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as oracledb from 'oracledb';
 import { ApiExcludeEndpoint, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsIn, IsInt, IsNotEmpty, IsObject, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsIn, IsInt, IsObject, IsOptional, IsString, Max, Min } from 'class-validator';
 import { AppConfig, UsersDbConfig } from '../config/configuration';
 import { Public } from '../auth/decorators/public.decorator';
 import { SkipEnvelope } from '../http/response.interceptor';
@@ -405,5 +405,90 @@ export class DiagnosticsController {
   @ApiOperation({ summary: 'Clear the Oracle call log buffer', operationId: 'diag_oracleLogsClear' })
   clear() {
     return { cleared: this.store.clear() };
+  }
+
+  @Version('2')
+  @Get('oracle-views')
+  @ApiOperation({
+    summary: 'List all XXHMC_SND_* objects in the Oracle DB (default: views)',
+    operationId: 'diag_oracleViews_v2',
+  })
+  async oracleViewsV2(@Query() query: OracleViewsQueryDto) {
+    return this.oracleViews(query);
+  }
+
+  @Version('2')
+  @Post('oracle/sql')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Run a read-only SELECT against Oracle (no env gate - temporary)',
+    operationId: 'diag_oracleSql_v2',
+  })
+  async oracleSqlV2(@Body() body: OracleSqlRequestDto) {
+    return this.oracleSql(body);
+  }
+
+  @Version('2')
+  @Post('users-db/sql')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Run a read-only SELECT against the Users DB (no env gate - temporary)',
+    operationId: 'diag_usersDbSql_v2',
+  })
+  async usersDbSqlV2(@Body() body: UsersDbSqlRequestDto) {
+    return this.usersDbSql(body);
+  }
+
+  @Version('2')
+  @Post('motc-sms-db/sql')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Run a read-only SELECT against the MOTC SMS DB (no env gate - temporary)',
+    operationId: 'diag_motcSmsDbSql_v2',
+  })
+  async motcSmsDbSqlV2(@Body() body: UsersDbSqlRequestDto) {
+    return this.motcSmsDbSql(body);
+  }
+
+  @Version('2')
+  @Get('oracle-object')
+  @ApiOperation({ summary: 'Describe an Oracle object (type, columns, arguments)', operationId: 'diag_oracleObject_v2' })
+  describeObjectV2(@Query() query: OracleObjectQueryDto) {
+    return this.describeObject(query);
+  }
+
+  @Version('2')
+  @Public()
+  @SkipEnvelope()
+  @Header('Content-Type', 'text/html; charset=utf-8')
+  @Header(
+    'Content-Security-Policy',
+    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'",
+  )
+  @ApiExcludeEndpoint()
+  @Get('oracle-logs/view')
+  viewV2(): string {
+    return this.view();
+  }
+
+  @Version('2')
+  @Get('oracle-logs')
+  @ApiOperation({ summary: 'List Oracle call logs (filterable)', operationId: 'diag_oracleLogs_v2' })
+  listV2(@Query() query: OracleLogQueryDto) {
+    return this.list(query);
+  }
+
+  @Version('2')
+  @Get('oracle-logs/stats')
+  @ApiOperation({ summary: 'Oracle call log aggregates', operationId: 'diag_oracleLogStats_v2' })
+  statsV2() {
+    return this.stats();
+  }
+
+  @Version('2')
+  @Delete('oracle-logs')
+  @ApiOperation({ summary: 'Clear the Oracle call log buffer', operationId: 'diag_oracleLogsClear_v2' })
+  clearV2() {
+    return this.clear();
   }
 }

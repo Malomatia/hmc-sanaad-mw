@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Param, Post, Query, HttpCode } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, HttpCode, Version } from '@nestjs/common';
+import { requireIdentity } from '@core/auth/current-identity';
 import { ApiBearerAuth, ApiBody, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Lang } from '@core/i18n/lang.decorator';
 import type { Lang as LangCode } from '@shared/domain/lang';
@@ -14,6 +15,7 @@ import { UpdatePersonalRequestDto } from './dto/update-personal.request.dto';
 import {
   NotificationHistoryQueryDto,
   NotificationSummaryQueryDto,
+  NotificationSummaryV2QueryDto,
 } from './dto/notifications-query.dto';
 import {
   PROFILE_GET_EXAMPLE,
@@ -31,6 +33,40 @@ import {
 @Controller('profile')
 export class ProfileController {
   constructor(private readonly service: ProfileService) {}
+
+  @Get()
+  @Version('2')
+  @ApiOperation({ summary: 'op 2 — Personal detail', operationId: 'profile_get_v2' })
+  @ApiReadOkResponse({ example: PROFILE_GET_EXAMPLE })
+  getV2(@Query() q: LangQueryDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.service.getProfile(requireIdentity(user, 'username'), q.lang);
+  }
+
+  @Get('notifications')
+  @Version('2')
+  @ApiOperation({ summary: 'Notification list (WORKLISTS_V)', operationId: 'profile_notifications_v2' })
+  @ApiReadOkResponse({ example: PROFILE_NOTIFICATIONS_EXAMPLE })
+  notificationsV2(@Query() q: LangQueryDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.service.notifications(requireIdentity(user, 'username'), q.lang);
+  }
+
+  @Get('notifications/summary')
+  @Version('2')
+  @ApiOperation({
+    summary: 'op 69 — Notification summary (WORKLISTS_V by NOTIFICATION_ID)',
+    operationId: 'profile_notificationSummary_v2',
+  })
+  @ApiReadOkResponse({ example: PROFILE_NOTIFICATION_SUMMARY_EXAMPLE })
+  notificationSummaryV2(
+    @Query() q: NotificationSummaryV2QueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.service.notificationSummary(
+      requireIdentity(user, 'username'),
+      q.lang,
+      q.notificationId,
+    );
+  }
 
   @Get()
   @ApiOperation({ summary: 'op 2 — Personal detail', operationId: 'profile_get' })
@@ -103,5 +139,39 @@ export class ProfileController {
   @ApiReadOkResponse({ example: PROFILE_MARITAL_LOV_EXAMPLE })
   async maritalStatusLov(@Query() q: LangQueryDto): Promise<LovResponseDto> {
     return { items: await this.service.maritalStatusLov(q.lang) };
+  }
+
+  @Post('personal')
+  @Version('2')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'op 48 — Update personal details', operationId: 'profile_updatePersonal_v2' })
+  @ApiBody(PROFILE_UPDATE_PERSONAL_BODY)
+  @ApiActionOkResponse({ example: PROFILE_UPDATE_PERSONAL_EXAMPLE })
+  updatePersonalV2(
+    @Body() body: UpdatePersonalRequestDto,
+    @CurrentUser() user: AuthenticatedUser,
+    @Lang() lang: LangCode,
+  ) {
+    return this.updatePersonal(body, user, lang);
+  }
+
+  @Get('notifications/:id/history')
+  @Version('2')
+  @ApiOperation({
+    summary: 'op 70 — Notification action history (ACTION_HISTORY_V)',
+    operationId: 'profile_notificationHistory_v2',
+  })
+  @ApiReadOkResponse({ example: PROFILE_NOTIFICATION_HISTORY_EXAMPLE })
+  notificationHistoryV2(@Param('id') id: string, @Query() q: NotificationHistoryQueryDto) {
+    return this.notificationHistory(id, q);
+  }
+
+  @Get('lov/marital-status')
+  @Version('2')
+  @ApiOperation({ summary: 'op 63 — Marital status LOV', operationId: 'profile_maritalLov_v2' })
+  @ApiOkResponse({ type: LovResponseDto })
+  @ApiReadOkResponse({ example: PROFILE_MARITAL_LOV_EXAMPLE })
+  async maritalStatusLovV2(@Query() q: LangQueryDto): Promise<LovResponseDto> {
+    return this.maritalStatusLov(q);
   }
 }

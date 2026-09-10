@@ -1,4 +1,5 @@
-import { Body, Controller, Get, HttpCode, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Post, Query, Version } from '@nestjs/common';
+import { currentIdentity, requireIdentity } from '@core/auth/current-identity';
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Lang } from '@core/i18n/lang.decorator';
 import type { Lang as LangCode } from '@shared/domain/lang';
@@ -11,8 +12,10 @@ import { SAMPLE_ATTACHMENT, VerifiedBody } from '@shared/dto/verified-body';
 import { SchoolFeeService } from '../application/school-fees.service';
 import {
   SchoolChildrenQueryDto,
+  SchoolChildrenV2QueryDto,
   SchoolFeeApplyRequestDto,
   SchoolLovQueryDto,
+  SchoolLovV2QueryDto,
 } from './dto/school-fees.dto';
 
 /** School-fees endpoints (ops 37, 38, 39, 40, 50, 52, 53). op 51 is out of scope. */
@@ -21,6 +24,41 @@ import {
 @Controller('school-fees')
 export class SchoolFeesController {
   constructor(private readonly service: SchoolFeeService) {}
+
+  @Get('lov/schools')
+  @Version('2')
+  @ApiOperation({ summary: 'op 37 — School name LOV', operationId: 'schoolFees_schoolsLov_v2' })
+  @ApiOkResponse({ type: LovResponseDto })
+  async schoolsV2(
+    @Query() q: SchoolLovV2QueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<LovResponseDto> {
+    return {
+      items: await this.service.schoolsLovForCaller(q.lang, currentIdentity(user), {
+        search: q.search,
+        offset: (q.page - 1) * q.pageSize,
+        limit: q.pageSize,
+      }),
+    };
+  }
+
+  @Get('lov/request-type')
+  @Version('2')
+  @ApiOperation({ summary: 'op 53 — Request type LOV', operationId: 'schoolFees_requestTypeLov_v2' })
+  @ApiOkResponse({ type: LovResponseDto })
+  async requestTypeV2(
+    @Query() q: SchoolLovV2QueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<LovResponseDto> {
+    return { items: await this.service.requestTypeLovForCaller(q.lang, currentIdentity(user)) };
+  }
+
+  @Get('children')
+  @Version('2')
+  @ApiOperation({ summary: 'op 52 — Child details', operationId: 'schoolFees_children_v2' })
+  childrenV2(@Query() q: SchoolChildrenV2QueryDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.service.children(requireIdentity(user, 'username'), q.acadyrstrtdt, q.lang);
+  }
 
   @Post('apply')
   @HttpCode(200)
@@ -101,5 +139,58 @@ export class SchoolFeesController {
     // CHILD_DETS_VIEW's p_user_name takes the USERNAME, not the employee number
     // (confirmed by the DB team — '053613' returned no rows / PLS-00221 attempts).
     return this.service.children(user.username, q.acadyrstrtdt, q.lang);
+  }
+
+  @Post('apply')
+  @Version('2')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'op 39 — School-fee request', operationId: 'schoolFees_apply_v2' })
+  @ApiOkResponse({ type: SubmitResultDto })
+  @VerifiedBody(SchoolFeeApplyRequestDto, {
+    p_academic_year: '2025-2026',
+    p_acd_st_dt: '20250901',
+    p_acd_end_dt: '20260630',
+    p_child_name: 'Jerome Amir Sami Samir Ibrahim||Male||23-SEP-10',
+    p_child_date_birth: '20100923',
+    p_school_name: 'Al Arqam Academy',
+    p_educational_stage: 'Primary',
+    p_request_type: 'Cash',
+    p_term: 'Term1',
+    p_amount: '1000',
+    p_receipt_number: '123',
+    p_spouse_working: 'No',
+    p_file_name1: 'receipt.pdf',
+    p_attachment1: SAMPLE_ATTACHMENT,
+  })
+  applyV2(
+    @Body() body: SchoolFeeApplyRequestDto,
+    @CurrentUser() user: AuthenticatedUser,
+    @Lang() lang: LangCode,
+  ) {
+    return this.apply(body, user, lang);
+  }
+
+  @Get('lov/terms')
+  @Version('2')
+  @ApiOperation({ summary: 'op 38 — School term LOV', operationId: 'schoolFees_termsLov_v2' })
+  @ApiOkResponse({ type: LovResponseDto })
+  async termsV2(@Query() q: LangQueryDto): Promise<LovResponseDto> {
+    return this.terms(q);
+  }
+
+  @Get('lov/edu-stage')
+  @Version('2')
+  @ApiOperation({ summary: 'op 40 — Education stage LOV', operationId: 'schoolFees_eduStageLov_v2' })
+  @ApiOkResponse({ type: LovResponseDto })
+  async eduStageV2(@Query() q: LangQueryDto): Promise<LovResponseDto> {
+    return this.eduStage(q);
+  }
+
+  @Get('lov/academic-year')
+  @Version('2')
+  @ApiOperation({ summary: 'op 50 — Academic year LOV', operationId: 'schoolFees_academicYearLov_v2' })
+  @ApiOkResponse({ type: LovResponseDto })
+  async academicYearV2(@Query() q: LangQueryDto): Promise<LovResponseDto> {
+    return this.academicYear(q);
   }
 }

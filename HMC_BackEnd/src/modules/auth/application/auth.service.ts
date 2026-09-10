@@ -23,6 +23,8 @@ import {
 } from '../interface/dto/auth.dto';
 import { DEV_FUNCTION_ACCESS, devIdentity } from './dev-fallback';
 import { STATIC_FUNCTION_ACCESS, STATIC_LOGIN_IDENTITY } from './static-login.data';
+import { PERSON_IDENTITY_PORT, PersonIdentityPort } from '../domain/ports/person-identity.port';
+import { normalizePersonId } from '@shared/domain/caller-identity';
 
 /**
  * API-5 Login + current-identity. Verifies the MPIN (MpinStorePort), resolves the
@@ -56,6 +58,7 @@ export class AuthService {
     private readonly audit: AuditService,
     private readonly revocation: TokenRevocationService,
     config: ConfigService,
+    @Inject(PERSON_IDENTITY_PORT) private readonly personIdentity: PersonIdentityPort,
   ) {
     this.devBypass = config.get<boolean>('auth.disabled', false);
     const auth = config.getOrThrow<AuthConfig>('auth');
@@ -77,7 +80,7 @@ export class AuthService {
 
     if (this.staticLogin) {
       this.logger.warn(
-        `AUTH_STATIC_LOGIN: static login payload for "${dto.username}" (no MPIN/directory/DB).`,
+        `AUTH_STATIC_LOGIN: static login payload for "${dto.username}" (no MPIN/directory verification).`,
       );
       identity = STATIC_LOGIN_IDENTITY;
       functionList = STATIC_FUNCTION_ACCESS;
@@ -114,7 +117,14 @@ export class AuthService {
       .filter((f) => f.status === FunctionStatus.ENABLED)
       .map((f) => f.functioncode);
 
+    const personId = normalizePersonId(
+      await this.personIdentity.findPersonId(identity.username).catch(() => {
+        this.logger.warn('Oracle identity enrichment unavailable; issuing a partial session.');
+        return undefined;
+      }),
+    );
     const baseClaims: Record<string, unknown> = {
+      ...(personId && { person_id: personId }),
       sub: identity.employeeNumber ?? dto.username,
       username: identity.username,
       employeeNumber: identity.employeeNumber,

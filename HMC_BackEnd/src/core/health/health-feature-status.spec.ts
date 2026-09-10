@@ -1,4 +1,14 @@
+import { INestApplication } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
+import { Test } from '@nestjs/testing';
+import request from 'supertest';
+import { readFileSync } from 'fs';
+import { resolve } from 'path';
 import { ConfigService } from '@nestjs/config';
+import { configureApiVersioning } from '../http/api-versioning';
+import { IS_PUBLIC_KEY } from '../auth/decorators/public.decorator';
+import { SKIP_INTEGRITY_KEY } from '../integrity/skip-integrity.decorator';
+import { ResponseInterceptor } from '../http/response.interceptor';
 import type { App } from 'firebase-admin/app';
 import { HealthController } from './health.controller';
 import { OracleService } from '../database/oracle.service';
@@ -125,4 +135,78 @@ describe('/health reporting the feature credentials', () => {
     expect(body.usersDb.status).toBe('ok');
     expect(body.motcSmsDb.status).toBe('ok');
   });
+});
+
+describe.each(['1', '2'])('/health/ready v%s', (version) => {
+  let app: INestApplication;
+  const oracle = {
+    getReadiness: jest.fn(),
+    ping: jest.fn(),
+    acquire: jest.fn(),
+    diagnose: jest.fn(),
+  };
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    const module = await Test.createTestingModule({
+      controllers: [HealthController],
+      providers: [
+        { provide: OracleService, useValue: oracle },
+        { provide: MssqlService, useValue: {} },
+        { provide: MotcSmsDbService, useValue: {} },
+        { provide: ConfigService, useValue: { get: () => ({ enabled: false }) } },
+      ],
+    }).compile();
+    app = module.createNestApplication();
+    configureApiVersioning(app, 'api/v1');
+    const reflector = app.get(Reflector);
+    app.useGlobalGuards({
+      canActivate: (context) => {
+        const targets = [context.getHandler(), context.getClass()];
+        return (
+          reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, targets) &&
+          reflector.getAllAndOverride<boolean>(SKIP_INTEGRITY_KEY, targets)
+        );
+      },
+    });
+    app.useGlobalInterceptors(new ResponseInterceptor(reflector));
+    await app.init();
+  });
+
+  afterEach(async () => {
+    await app.close();
+  });
+
+  it.each([
+    [true, 'ready', 200],
+    [true, 'disabled', 200],
+    [false, 'unconfigured', 503],
+    [false, 'recovering', 503],
+    [false, 'unavailable', 503],
+    [false, 'stopping', 503],
+  ])(
+    'returns fast unwrapped readiness %s/%s with HTTP %s when diagnostics are off',
+    async (ready, status, httpStatus) => {
+      oracle.getReadiness.mockReturnValue({ ready, status });
+      const response = await request(app.getHttpServer())
+        .get(`/api/v${version}/health/ready`)
+        .expect(httpStatus as number);
+      expect(response.body).toEqual({ ready, status });
+      expect(oracle.getReadiness).toHaveBeenCalledTimes(1);
+      expect(oracle.ping).not.toHaveBeenCalled();
+      expect(oracle.acquire).not.toHaveBeenCalled();
+      expect(oracle.diagnose).not.toHaveBeenCalled();
+      await request(app.getHttpServer()).get(`/api/v${version}/health/db`).expect(404);
+    },
+  );
+
+  it.each(['Dockerfile', 'docker-compose.yml'])(
+    'uses readiness and configurable port/prefix in %s',
+    (name) => {
+      const source = readFileSync(resolve(__dirname, '../../..', name), 'utf8');
+      expect(source).toContain("(process.env.API_PREFIX||'api/v1')+'/health/ready'");
+      expect(source).toContain('(process.env.PORT||443)');
+      expect(source).not.toContain("+'/health').then");
+    },
+  );
 });

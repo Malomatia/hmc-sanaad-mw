@@ -7,6 +7,7 @@ import helmet from 'helmet';
 import compression from 'compression';
 import { AppModule } from './app.module';
 import { AppConfig, DiagnosticsConfig } from '@core/config/configuration';
+import { apiVersionPrefix, configureApiVersioning, removeDiagnosticsFromDocument } from '@core/http/api-versioning';
 
 /**
  * Max request body. Sized for a submit carrying several base64 attachments
@@ -20,18 +21,7 @@ const BODY_LIMIT = '25mb';
  * Swagger must not advertise endpoints that do not exist.
  */
 function stripDiagnosticsPaths(document: OpenAPIObject, apiPrefix: string): void {
-  const base = `/${apiPrefix}`.replace(/\/+$/, '');
-  const gatedPrefixes = [`${base}/diagnostics`, `${base}/api-logs`];
-  const gatedExact = new Set([
-    `${base}/health/db`,
-    `${base}/health/users-db`,
-    `${base}/health/motc-sms-db`,
-  ]);
-  for (const path of Object.keys(document.paths)) {
-    if (gatedExact.has(path) || gatedPrefixes.some((p) => path === p || path.startsWith(`${p}/`))) {
-      delete document.paths[path];
-    }
-  }
+  removeDiagnosticsFromDocument(document, apiPrefix);
 }
 
 async function bootstrap(): Promise<void> {
@@ -66,7 +56,7 @@ async function bootstrap(): Promise<void> {
   });
 
   // All routes under /{prefix} (e.g. /api/v1)
-  app.setGlobalPrefix(appCfg.apiPrefix);
+  configureApiVersioning(app, appCfg.apiPrefix);
   app.enableShutdownHooks();
 
   // OpenAPI / Swagger UI at /docs
@@ -75,7 +65,7 @@ async function bootstrap(): Promise<void> {
     .setDescription(
       'NestJS backend re-exposing the 71 Sanaad operations over Oracle XXHMC_SND_* (14 modules).',
     )
-    .setVersion('1.0.0')
+    .setVersion('2.0.0')
     .addBearerAuth()
     .build();
   const document = SwaggerModule.createDocument(app, swaggerConfig);
@@ -88,7 +78,8 @@ async function bootstrap(): Promise<void> {
 
   await app.listen(appCfg.port);
   Logger.log(
-    `Sanaad backend listening on http://localhost:${appCfg.port}/${appCfg.apiPrefix} (Swagger: /docs)`,
+    `Sanaad backend listening on http://localhost:${appCfg.port}/${appCfg.apiPrefix} ` +
+      `and /${apiVersionPrefix(appCfg.apiPrefix, '2')} (Swagger: /docs)`,
     'Bootstrap',
   );
 }

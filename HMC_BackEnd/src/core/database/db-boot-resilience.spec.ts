@@ -96,6 +96,7 @@ describe('database boot resilience', () => {
     // the failure is visible where it belongs, not as a dead process
     await expect(service.ping()).resolves.toBe(false);
     await expect(service['getPool']()).rejects.toThrow(OracleUnavailableException);
+    await service.onModuleDestroy();
   });
 
   it('starts without the Users DB when the pool cannot be created', async () => {
@@ -151,6 +152,7 @@ describe('database boot resilience', () => {
 
     const diag = await service.diagnose();
     expect(diag.error?.message).toBeDefined();
+    await service.onModuleDestroy();
   });
 
   /**
@@ -174,6 +176,7 @@ describe('database boot resilience', () => {
     // ...but only one of them was meant to be running
     expect(broken.isConfigured()).toBe(true);
     expect(off.isConfigured()).toBe(false);
+    await Promise.all([broken.onModuleDestroy(), off.onModuleDestroy()]);
   });
 
   describe('Oracle pool recovery', () => {
@@ -212,6 +215,267 @@ describe('database boot resilience', () => {
 
     afterEach(() => {
       jest.useRealTimers();
+    });
+
+    function deferred<T>() {
+      let resolve!: (value: T) => void;
+      const promise = new Promise<T>((done) => {
+        resolve = done;
+      });
+      return { promise, resolve };
+    }
+
+    it.each([0, 1, 3, 4])(
+      'warms and holds max(1, %s) distinct connections before publication',
+      async (poolMin) => {
+        const { service } = makeOracle({ poolMin });
+        const target = Math.max(1, poolMin);
+        const connections = Array.from({ length: target }, () => makePool().conn);
+        const lastPing = deferred<void>();
+        const lastClose = deferred<void>();
+        connections[target - 1].ping.mockReturnValue(lastPing.promise);
+        connections[target - 1].close.mockReturnValue(lastClose.promise);
+        let next = 0;
+        const pool = makePool().pool;
+        pool.getConnection.mockImplementation(async () => connections[next++ % target]);
+        createPool.mockResolvedValue(pool);
+        const boot = service.onModuleInit();
+        await jest.advanceTimersByTimeAsync(0);
+
+        expect(pool.getConnection).toHaveBeenCalledTimes(target);
+        expect(service.isEnabled()).toBe(false);
+        for (const conn of connections) {
+          expect(conn.callTimeout).toBe(25000);
+          expect(conn.ping).toHaveBeenCalledTimes(1);
+          expect(conn.close).not.toHaveBeenCalled();
+        }
+        lastPing.resolve();
+        await jest.advanceTimersByTimeAsync(0);
+        expect(service.isEnabled()).toBe(false);
+        for (const conn of connections) expect(conn.close).toHaveBeenCalledTimes(1);
+        lastClose.resolve();
+        await boot;
+        expect(service.isEnabled()).toBe(true);
+        await expect(
+          Promise.all(Array.from({ length: target }, () => service.query('SELECT 1'))),
+        ).resolves.toEqual(Array(target).fill([{ OK: 1 }]));
+        expect(createPool).toHaveBeenCalledTimes(1);
+        expect(pool.getConnection).toHaveBeenCalledTimes(target * 2);
+        await service.onModuleDestroy();
+      },
+    );
+
+    it('waits for every partial acquisition and releases all acquired connections on failure', async () => {
+      const { service } = makeOracle({ poolMin: 3 });
+      const first = makePool();
+      const last = makePool().conn;
+      const acquisition = deferred<typeof last>();
+      first.pool.getConnection
+        .mockResolvedValueOnce(first.conn)
+        .mockRejectedValueOnce(FAILURE)
+        .mockReturnValueOnce(acquisition.promise);
+      createPool.mockResolvedValueOnce(first.pool).mockRejectedValue(FAILURE);
+      const boot = service.onModuleInit();
+      await jest.advanceTimersByTimeAsync(0);
+      expect(first.pool.getConnection).toHaveBeenCalledTimes(3);
+      expect(first.pool.close).not.toHaveBeenCalled();
+      expect(first.conn.close).not.toHaveBeenCalled();
+      acquisition.resolve(last);
+      await jest.advanceTimersByTimeAsync(0);
+      expect(first.conn.close).toHaveBeenCalledTimes(1);
+      expect(last.close).toHaveBeenCalledTimes(1);
+      expect(first.pool.close).toHaveBeenCalledTimes(1);
+      expect(service.isEnabled()).toBe(false);
+      await jest.advanceTimersByTimeAsync(1000);
+      await boot;
+      await service.onModuleDestroy();
+    });
+
+    it('waits for all warmup pings and closes every connection when a ping or close fails', async () => {
+      const { service } = makeOracle({ poolMin: 3 });
+      const first = makePool();
+      const connections = [first.conn, makePool().conn, makePool().conn];
+      const pending = deferred<void>();
+      connections[0].ping.mockRejectedValue(FAILURE);
+      connections[1].close.mockRejectedValue(CLOSED);
+      connections[2].ping.mockReturnValue(pending.promise);
+      for (const conn of connections) first.pool.getConnection.mockResolvedValueOnce(conn);
+      createPool.mockResolvedValueOnce(first.pool).mockRejectedValue(FAILURE);
+      const boot = service.onModuleInit();
+      await jest.advanceTimersByTimeAsync(0);
+      for (const conn of connections) expect(conn.close).not.toHaveBeenCalled();
+      pending.resolve();
+      await jest.advanceTimersByTimeAsync(0);
+      for (const conn of connections) expect(conn.close).toHaveBeenCalledTimes(1);
+      expect(first.pool.close).toHaveBeenCalledTimes(1);
+      expect(service.isEnabled()).toBe(false);
+      await jest.advanceTimersByTimeAsync(1000);
+      await boot;
+      await service.onModuleDestroy();
+    });
+
+    it('waits for pending warmup acquisitions and closes them without publication during shutdown', async () => {
+      const { service } = makeOracle({ poolMin: 3 });
+      const first = makePool();
+      const connections = [first.conn, makePool().conn, makePool().conn];
+      const acquisition = deferred<typeof first.conn>();
+      first.pool.getConnection
+        .mockResolvedValueOnce(connections[0])
+        .mockResolvedValueOnce(connections[1])
+        .mockReturnValueOnce(acquisition.promise);
+      createPool.mockResolvedValue(first.pool);
+      const boot = service.onModuleInit();
+      await jest.advanceTimersByTimeAsync(0);
+      let stopped = false;
+      const shutdown = service.onModuleDestroy().then(() => {
+        stopped = true;
+      });
+      await jest.advanceTimersByTimeAsync(0);
+      expect(stopped).toBe(false);
+      acquisition.resolve(connections[2]);
+      await Promise.all([boot, shutdown]);
+      for (const conn of connections) expect(conn.close).toHaveBeenCalledTimes(1);
+      expect(first.pool.close).toHaveBeenCalledTimes(1);
+      expect(service.isEnabled()).toBe(false);
+      expect(createPool).toHaveBeenCalledTimes(1);
+      expect(jest.getTimerCount()).toBe(0);
+    });
+
+    it('waits for warmup probes and every release when shutdown starts during a ping', async () => {
+      const { service } = makeOracle({ poolMin: 2 });
+      const first = makePool();
+      const other = makePool().conn;
+      const ping = deferred<void>();
+      const release = deferred<void>();
+      first.conn.ping.mockReturnValue(ping.promise);
+      other.close.mockReturnValue(release.promise);
+      first.pool.getConnection.mockResolvedValueOnce(first.conn).mockResolvedValueOnce(other);
+      createPool.mockResolvedValue(first.pool);
+      const boot = service.onModuleInit();
+      await jest.advanceTimersByTimeAsync(0);
+      let stopped = false;
+      const shutdown = service.onModuleDestroy().then(() => {
+        stopped = true;
+      });
+      expect(service.getReadiness()).toEqual({ ready: false, status: 'stopping' });
+      ping.resolve();
+      await jest.advanceTimersByTimeAsync(0);
+      expect(stopped).toBe(false);
+      expect(first.conn.close).toHaveBeenCalledTimes(1);
+      expect(other.close).toHaveBeenCalledTimes(1);
+      expect(first.pool.close).not.toHaveBeenCalled();
+      release.resolve();
+      await Promise.all([boot, shutdown]);
+      expect(first.pool.close).toHaveBeenCalledTimes(1);
+      expect(createPool).toHaveBeenCalledTimes(1);
+      expect(service.isEnabled()).toBe(false);
+      expect(jest.getTimerCount()).toBe(0);
+    });
+
+    it('recovers from failed boot in the background with bounded nonoverlapping cycles', async () => {
+      const { service } = makeOracle();
+      const boot = service.onModuleInit();
+      await jest.advanceTimersByTimeAsync(1000);
+      await boot;
+      expect(createPool).toHaveBeenCalledTimes(2);
+      expect(jest.getTimerCount()).toBe(1);
+      await jest.advanceTimersByTimeAsync(1999);
+      expect(createPool).toHaveBeenCalledTimes(2);
+      await jest.advanceTimersByTimeAsync(1);
+      expect(createPool).toHaveBeenCalledTimes(3);
+      await jest.advanceTimersByTimeAsync(1000);
+      expect(createPool).toHaveBeenCalledTimes(4);
+      createPool.mockResolvedValue(makePool().pool);
+      await jest.advanceTimersByTimeAsync(2000);
+      expect(createPool).toHaveBeenCalledTimes(5);
+      expect(service.isEnabled()).toBe(true);
+      expect(jest.getTimerCount()).toBe(0);
+      await service.onModuleDestroy();
+    });
+
+    it('shares an in-flight background warmup with requests and cancels queued recovery on shutdown', async () => {
+      const { service } = makeOracle();
+      const boot = service.onModuleInit();
+      await jest.advanceTimersByTimeAsync(1000);
+      await boot;
+      const next = makePool();
+      const creation = deferred<typeof next.pool>();
+      createPool.mockReturnValue(creation.promise);
+      await jest.advanceTimersByTimeAsync(2000);
+      const request = service.query('SELECT 1');
+      await jest.advanceTimersByTimeAsync(10000);
+      expect(createPool).toHaveBeenCalledTimes(3);
+      creation.resolve(next.pool);
+      await expect(request).resolves.toEqual([{ OK: 1 }]);
+      expect(jest.getTimerCount()).toBe(0);
+      next.conn.execute.mockRejectedValue(FAILURE);
+      await expect(service.query('SELECT 1')).rejects.toThrow();
+      expect(jest.getTimerCount()).toBe(1);
+      await service.onModuleDestroy();
+      expect(jest.getTimerCount()).toBe(0);
+      await jest.advanceTimersByTimeAsync(10000);
+      expect(createPool).toHaveBeenCalledTimes(3);
+    });
+
+    it('recovers a broken execution pool without waiting for another request or replaying SQL', async () => {
+      const { service } = makeOracle();
+      const old = makePool();
+      createPool.mockResolvedValueOnce(old.pool);
+      await service.onModuleInit();
+      old.conn.execute.mockRejectedValueOnce(FAILURE);
+      await expect(service.query('SELECT original')).rejects.toThrow();
+      const replacement = makePool();
+      createPool.mockResolvedValue(replacement.pool);
+      await jest.advanceTimersByTimeAsync(2000);
+      expect(createPool).toHaveBeenCalledTimes(2);
+      expect(old.conn.execute).toHaveBeenCalledTimes(1);
+      expect(replacement.conn.execute).not.toHaveBeenCalled();
+      expect(service.isEnabled()).toBe(true);
+      await service.onModuleDestroy();
+    });
+
+    it('exposes fast readiness through warmup, broken-pool recovery, and shutdown', async () => {
+      const { service } = makeOracle();
+      expect(service.isReady()).toBe(false);
+      expect(service.getReadiness()).toEqual({ ready: false, status: 'unavailable' });
+      const initial = makePool();
+      const ping = deferred<void>();
+      initial.conn.ping.mockReturnValueOnce(ping.promise);
+      createPool.mockResolvedValueOnce(initial.pool);
+      const boot = service.onModuleInit();
+      await jest.advanceTimersByTimeAsync(0);
+      expect(service.isReady()).toBe(false);
+      expect(service.getReadiness()).toEqual({ ready: false, status: 'recovering' });
+      ping.resolve();
+      await boot;
+      expect(service.isReady()).toBe(true);
+      expect(service.getReadiness()).toEqual({ ready: true, status: 'ready' });
+      initial.conn.execute.mockRejectedValueOnce(FAILURE);
+      await expect(service.query('SELECT 1')).rejects.toThrow();
+      expect(service.isReady()).toBe(false);
+      expect(service.getReadiness()).toEqual({ ready: false, status: 'recovering' });
+      expect(service['recoveryTimer']?.hasRef()).toBe(false);
+      createPool.mockResolvedValue(makePool().pool);
+      await jest.advanceTimersByTimeAsync(2000);
+      expect(service.isReady()).toBe(true);
+      await service.onModuleDestroy();
+      expect(service.isReady()).toBe(false);
+      expect(service.getReadiness()).toEqual({ ready: false, status: 'stopping' });
+    });
+
+    it.each([
+      [{ disabled: true }, { ready: true, status: 'disabled' }],
+      [{ user: '' }, { ready: false, status: 'unconfigured' }],
+      [{ dsn: '' }, { ready: false, status: 'unconfigured' }],
+    ])('never retries disabled or unconfigured Oracle: %j', async (overrides, readiness) => {
+      const { service } = makeOracle(overrides);
+      await service.onModuleInit();
+      expect(service.isReady()).toBe(false);
+      expect(service.getReadiness()).toEqual(readiness);
+      await jest.advanceTimersByTimeAsync(60000);
+      expect(createPool).not.toHaveBeenCalled();
+      expect(jest.getTimerCount()).toBe(0);
+      await service.onModuleDestroy();
     });
 
     it('shares two creation attempts and waits before retrying a missing pool', async () => {
@@ -254,8 +518,8 @@ describe('database boot resilience', () => {
       await expect(service.acquire()).rejects.toBeInstanceOf(OracleUnavailableException);
       expect(createPool).toHaveBeenCalledTimes(2);
 
-      await jest.advanceTimersByTimeAsync(1);
       createPool.mockResolvedValue(makePool().pool);
+      await jest.advanceTimersByTimeAsync(1);
       await expect(service.query('SELECT 1')).resolves.toEqual([{ OK: 1 }]);
       expect(createPool).toHaveBeenCalledTimes(3);
     });
@@ -268,8 +532,8 @@ describe('database boot resilience', () => {
       expect(service.isEnabled()).toBe(false);
       expect(createPool).toHaveBeenCalledTimes(2);
 
-      await jest.advanceTimersByTimeAsync(2000);
       createPool.mockResolvedValue(makePool().pool);
+      await jest.advanceTimersByTimeAsync(2000);
       await expect(service.query('SELECT 1')).resolves.toEqual([{ OK: 1 }]);
       expect(service.isEnabled()).toBe(true);
     });
@@ -523,9 +787,9 @@ describe('database boot resilience', () => {
       const checked = expect(service.acquire()).rejects.toBeInstanceOf(OracleUnavailableException);
       await jest.advanceTimersByTimeAsync(0);
       const shutdown = service.onModuleDestroy();
-      await jest.advanceTimersByTimeAsync(1000);
       await Promise.all([checked, shutdown]);
 
+      expect(jest.getTimerCount()).toBe(0);
       expect(createPool).toHaveBeenCalledTimes(1);
       await expect(service.acquire()).rejects.toBeInstanceOf(OracleUnavailableException);
       expect(createPool).toHaveBeenCalledTimes(1);

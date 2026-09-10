@@ -1,4 +1,4 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional, OmitType } from '@nestjs/swagger';
 import { IsNotEmpty, IsOptional, IsString, Matches, ValidateIf } from 'class-validator';
 import { LangQueryDto } from '@shared/dto/lang-query.dto';
 import { EFFECTIVE_DATE_ALL } from '@shared/utils/date.util';
@@ -49,6 +49,11 @@ export class LeaveBalanceQueryDto extends LangQueryDto {
   @IsString()
   effectivedate: string = EFFECTIVE_DATE_ALL;
 }
+
+export class LeaveBalanceV2QueryDto extends OmitType(LeaveBalanceQueryDto, [
+  'username',
+  'person_id',
+] as const) {}
 
 /**
  * Optional LEAV_OF_ABSEN_NEW_PR request params (the procedure's documented
@@ -200,6 +205,12 @@ export class LeaveAmendLovQueryDto extends LangQueryDto {
   leave_type?: string;
 }
 
+export class LeaveAmendLovV2QueryDto extends OmitType(LeaveAmendLovQueryDto, [
+  'person_id',
+  'username',
+  'enum',
+] as const) {}
+
 /** op 13 — GET /leave/lov/reasons `?lang=&leave_type=` (ABSENCE_REASON_V). */
 export class LeaveReasonsQueryDto extends LangQueryDto {
   @ApiPropertyOptional({
@@ -227,6 +238,8 @@ export class LeavesQueryDto extends LangQueryDto {
   @IsString()
   leave_type?: string;
 }
+
+export class LeavesV2QueryDto extends OmitType(LeavesQueryDto, ['user_name'] as const) {}
 
 /** One ABSENCE_V row (GET /leaves). `absenceType`/`absenceReason` follow the request's lang. */
 export class LeaveRecordDto {

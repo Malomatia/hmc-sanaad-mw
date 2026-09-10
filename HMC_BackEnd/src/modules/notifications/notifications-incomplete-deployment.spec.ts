@@ -4,6 +4,7 @@ import { Test } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import request from 'supertest';
 import { MssqlService } from '@core/database/mssql.service';
+import { configureApiVersioning } from '@core/http/api-versioning';
 import { MssqlQueryError } from '@core/database/mssql.error';
 import { FIREBASE_APP } from '@core/firebase/firebase-app';
 import { NotificationsService } from './application/notifications.service';
@@ -74,6 +75,7 @@ describe('notifications on an incomplete deployment', () => {
       .compile();
 
     app = moduleRef.createNestApplication();
+    configureApiVersioning(app, '');
     // The same pipe CoreModule installs - validation is part of "requests
     // still work correctly", so it has to be exercised here too.
     app.useGlobalPipes(

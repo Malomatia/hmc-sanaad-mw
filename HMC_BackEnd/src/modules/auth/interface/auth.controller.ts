@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Post, Version } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Lang } from '@core/i18n/lang.decorator';
 import type { Lang as LangCode } from '@shared/domain/lang';
@@ -171,5 +171,131 @@ export class AuthController {
   @ApiOkResponse({ type: MeResponseDto })
   me(@CurrentUser() user: AuthenticatedUser): MeResponseDto {
     return this.auth.me(user);
+  }
+
+  @Public()
+  @SkipEnvelope()
+  @HttpCode(200)
+  @Post('initiate')
+  @Version('2')
+  @ApiOperation({ summary: 'API-2 — User Validate (LDAP + send OTP)', operationId: 'auth_initiate_v2' })
+  @ApiOkResponse({ type: UserValidateResponseDto })
+  initiateV2(
+    @Body() dto: UserValidateRequestDto,
+    @Lang() lang: LangCode,
+  ): Promise<UserValidateResponseDto> {
+    return this.initiate(dto, lang);
+  }
+
+  @Public()
+  @SkipEnvelope()
+  @HttpCode(200)
+  @Post('send-otp')
+  @Version('2')
+  @ApiOperation({
+    summary: 'Send OTP — generate + store in MOTC_SMS_PushTable (SMS fired by the gateway)',
+    operationId: 'auth_sendOtp_v2',
+  })
+  @ApiOkResponse({ type: SendOtpResponseDto })
+  sendOtpV2(@Body() dto: SendOtpRequestDto, @Lang() lang: LangCode): Promise<SendOtpResponseDto> {
+    return this.sendOtp(dto, lang);
+  }
+
+  @Public()
+  @SkipEnvelope()
+  @HttpCode(200)
+  @Post('otp/validate')
+  @Version('2')
+  @ApiOperation({ summary: 'API-3 — Validate OTP', operationId: 'auth_validateOtp_v2' })
+  @ApiOkResponse({ type: StatusMessageDto })
+  validateOtpV2(@Body() dto: ValidateOtpRequestDto): Promise<StatusMessageDto> {
+    return this.validateOtp(dto);
+  }
+
+  @Public()
+  @SkipEnvelope()
+  @HttpCode(200)
+  @Post('mpin/update')
+  @Version('2')
+  @ApiOperation({ summary: 'API-4 — Set MPIN (first-time)', operationId: 'auth_setMpin_v2' })
+  @ApiOkResponse({ type: StatusMessageDto })
+  setMpinV2(@Body() dto: SetMpinRequestDto): Promise<StatusMessageDto> {
+    return this.setMpin(dto);
+  }
+
+  @Public()
+  @SkipEnvelope()
+  @HttpCode(200)
+  @Post('login')
+  @Version('2')
+  @ApiOperation({ summary: 'API-5 — Login (MPIN → JWT + functionAccessList)', operationId: 'auth_login_v2' })
+  @ApiOkResponse({ type: LoginResponseDto })
+  loginV2(@Body() dto: LoginRequestDto): Promise<LoginResponseDto> {
+    return this.login(dto);
+  }
+
+  @Public()
+  @SkipEnvelope()
+  @HttpCode(200)
+  @Post('mpin/forgot')
+  @Version('2')
+  @ApiOperation({ summary: 'API-6 — Initiate Forgot MPIN (send OTP)', operationId: 'auth_forgotMpin_v2' })
+  @ApiOkResponse({ type: ForgotMpinInitResponseDto })
+  forgotMpinV2(
+    @Body() dto: ForgotMpinInitRequestDto,
+    @Lang() lang: LangCode,
+  ): Promise<ForgotMpinInitResponseDto> {
+    return this.forgotMpin(dto, lang);
+  }
+
+  @Public()
+  @SkipEnvelope()
+  @HttpCode(200)
+  @Post('mpin/update/reset')
+  @Version('2')
+  @ApiOperation({ summary: 'API-7 — Reset MPIN (OTP + new MPIN)', operationId: 'auth_resetMpin_v2' })
+  @ApiOkResponse({ type: StatusMessageDto })
+  resetMpinV2(@Body() dto: ResetMpinRequestDto): Promise<StatusMessageDto> {
+    return this.resetMpin(dto);
+  }
+
+  @Public()
+  @SkipEnvelope()
+  @HttpCode(200)
+  @Post('token/refresh')
+  @Version('2')
+  @ApiOperation({
+    summary: 'Exchange a refresh token for a new access + refresh pair',
+    operationId: 'auth_refreshToken_v2',
+  })
+  @ApiOkResponse({ type: RefreshTokenResponseDto })
+  refreshTokenV2(@Body() dto: RefreshTokenRequestDto): Promise<RefreshTokenResponseDto> {
+    return this.refreshToken(dto);
+  }
+
+  @ApiBearerAuth()
+  @SkipEnvelope()
+  @HttpCode(200)
+  @Post('logout')
+  @Version('2')
+  @ApiOperation({
+    summary: 'Logout — revoke the current access token (and optionally the refresh token)',
+    operationId: 'auth_logout_v2',
+  })
+  @ApiOkResponse({ type: StatusMessageDto })
+  logoutV2(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: LogoutRequestDto,
+  ): Promise<StatusMessageDto> {
+    return this.logout(user, dto);
+  }
+
+  @ApiBearerAuth()
+  @Get('me')
+  @Version('2')
+  @ApiOperation({ summary: 'Current authenticated identity', operationId: 'auth_me_v2' })
+  @ApiOkResponse({ type: MeResponseDto })
+  meV2(@CurrentUser() user: AuthenticatedUser): MeResponseDto {
+    return this.me(user);
   }
 }

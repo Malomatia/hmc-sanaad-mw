@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, Header, HttpCode, Post, Query, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Header, HttpCode, Post, Query, UseGuards, Version } from '@nestjs/common';
 import { ApiExcludeController } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { IsBoolean, IsInt, IsObject, IsOptional, IsString, Max, Min } from 'class-validator';
@@ -187,5 +187,78 @@ export class DevConsoleController {
   @SkipEnvelope()
   apiCall(@Body() dto: ApiCallDto) {
     return this.service.callApi(dto);
+  }
+
+  @Version('2')
+  @Get()
+  @SkipEnvelope()
+  @Header('Content-Type', 'text/html; charset=utf-8')
+  @Header(
+    'Content-Security-Policy',
+    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'",
+  )
+  @Header('X-Robots-Tag', 'noindex, nofollow')
+  pageV2(): string {
+    return this.page();
+  }
+
+  @Version('2')
+  @Get('settings')
+  @SkipEnvelope()
+  settingsV2() {
+    return this.settings();
+  }
+
+  @Version('2')
+  @Post('mode')
+  @HttpCode(200)
+  @SkipEnvelope()
+  modeV2(@Body() dto: WriteModeDto) {
+    return this.mode(dto);
+  }
+
+  @Version('2')
+  @Post('execute')
+  @HttpCode(200)
+  @SkipEnvelope()
+  executeV2(@Body() dto: ExecuteSqlDto) {
+    return this.execute(dto);
+  }
+
+  @Version('2')
+  @Get('objects')
+  @SkipEnvelope()
+  objectsV2(@Query('search') search?: string, @Query('type') type?: string) {
+    return this.objects(search, type);
+  }
+
+  @Version('2')
+  @Get('describe')
+  @SkipEnvelope()
+  describeV2(@Query('name') name: string) {
+    return this.describe(name);
+  }
+
+  @Version('2')
+  @Get('source')
+  @SkipEnvelope()
+  sourceV2(@Query() q: SourceQueryDto) {
+    return this.source(q);
+  }
+
+  @Version('2')
+  @Post('explain')
+  @HttpCode(200)
+  @SkipEnvelope()
+  explainV2(@Body() dto: ExecuteSqlDto) {
+    return this.explain(dto);
+  }
+
+  @Version('2')
+  @Post('api-call')
+  @HttpCode(200)
+  @SkipEnvelope()
+  apiCallV2(@Body() dto: ApiCallDto) {
+    return this.apiCall(dto);
   }
 }

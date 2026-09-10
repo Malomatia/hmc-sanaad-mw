@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Post, Query, HttpCode } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query, HttpCode, Version } from '@nestjs/common';
+import { requireIdentity } from '@core/auth/current-identity';
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Lang } from '@core/i18n/lang.decorator';
 import type { Lang as LangCode } from '@shared/domain/lang';
@@ -30,6 +31,14 @@ export class IdentityController {
     private readonly qid: QidService,
     private readonly idCard: IdCardService,
   ) {}
+
+  @Get('qid')
+  @Version('2')
+  @ApiOperation({ summary: 'op 18 — QID details', operationId: 'identity_qid_v2' })
+  @ApiReadOkResponse({ example: IDENTITY_QID_EXAMPLE })
+  getQidV2(@Query() q: LangQueryDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.qid.getQid(requireIdentity(user, 'username'), q.lang);
+  }
 
   @Get('qid')
   @ApiOperation({ summary: 'op 18 — QID details', operationId: 'identity_qid' })
@@ -109,5 +118,81 @@ export class IdentityController {
   @ApiReadOkResponse({ example: IDENTITY_REASON_LOV_EXAMPLE })
   async reasonLov(@Query() q: LangQueryDto): Promise<LovResponseDto> {
     return { items: await this.idCard.reasonLov(q.lang) };
+  }
+
+  @Post('qid/update')
+  @Version('2')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'op 19 — QID update', operationId: 'identity_qidUpdate_v2' })
+  @ApiActionOkResponse({ example: IDENTITY_QID_UPDATE_EXAMPLE })
+  @VerifiedBody(
+    QidUpdateRequestDto,
+    {
+      p_qid_number: '28481809470',
+      p_iss_date: '2025-10-17',
+      p_exp_date: '2029-10-16',
+      p_qid_job: 'Analyst',
+      p_file_name1: 'qid-front.jpg',
+      p_attachment1: SAMPLE_ATTACHMENT,
+    },
+    'Verified against staging. Dates accept yyyy-MM-dd or dd-Mon-yyyy; an attachment of the QID is expected.',
+  )
+  updateQidV2(
+    @Body() body: QidUpdateRequestDto,
+    @CurrentUser() user: AuthenticatedUser,
+    @Lang() lang: LangCode,
+  ) {
+    return this.updateQid(body, user, lang);
+  }
+
+  @Post('idcard/apply')
+  @Version('2')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'op 54 — Request company ID', operationId: 'identity_idCardApply_v2' })
+  @ApiActionOkResponse({ example: IDENTITY_IDCARD_APPLY_EXAMPLE })
+  @VerifiedBody(
+    CompanyIdApplyRequestDto,
+    {
+      p_reason: 'Damaged',
+      p_charge_for_new_id: 'No',
+      p_delivery_loc: 'Al Wakra Hospital',
+      p_working_location: 'Others',
+      p_comments: 'test',
+    },
+    'Verified against staging. All three list values come from the op 54 LOVs (GET /identity/lov/reason, /lov/delivery-location, /lov/work-location).',
+  )
+  requestCompanyIdV2(
+    @Body() body: CompanyIdApplyRequestDto,
+    @CurrentUser() user: AuthenticatedUser,
+    @Lang() lang: LangCode,
+  ) {
+    return this.requestCompanyId(body, user, lang);
+  }
+
+  @Get('lov/work-location')
+  @Version('2')
+  @ApiOperation({ summary: 'op 53b — Work location LOV', operationId: 'identity_workLocLov_v2' })
+  @ApiOkResponse({ type: LovResponseDto })
+  @ApiReadOkResponse({ example: IDENTITY_WORK_LOCATION_LOV_EXAMPLE })
+  async workLocationLovV2(@Query() q: LangQueryDto): Promise<LovResponseDto> {
+    return this.workLocationLov(q);
+  }
+
+  @Get('lov/delivery-location')
+  @Version('2')
+  @ApiOperation({ summary: 'op 59 — Delivery location LOV', operationId: 'identity_deliveryLov_v2' })
+  @ApiOkResponse({ type: LovResponseDto })
+  @ApiReadOkResponse({ example: IDENTITY_DELIVERY_LOCATION_LOV_EXAMPLE })
+  async deliveryLocationLovV2(@Query() q: LangQueryDto): Promise<LovResponseDto> {
+    return this.deliveryLocationLov(q);
+  }
+
+  @Get('lov/reason')
+  @Version('2')
+  @ApiOperation({ summary: 'op 60 — ID reason LOV', operationId: 'identity_reasonLov_v2' })
+  @ApiOkResponse({ type: LovResponseDto })
+  @ApiReadOkResponse({ example: IDENTITY_REASON_LOV_EXAMPLE })
+  async reasonLovV2(@Query() q: LangQueryDto): Promise<LovResponseDto> {
+    return this.reasonLov(q);
   }
 }

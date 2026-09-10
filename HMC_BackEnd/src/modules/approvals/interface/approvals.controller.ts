@@ -1,25 +1,41 @@
-import { Body, Controller, Get, Param, Post, Query, HttpCode, Res } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Query,
+  HttpCode,
+  Res,
+  Version,
+  Optional,
+} from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { currentIdentity, requireIdentity } from '@core/auth/current-identity';
+import { apiVersionPrefix } from '@core/http/api-versioning';
+import { LangQueryDto } from '@shared/dto/lang-query.dto';
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { SkipEnvelope } from '@core/http/response.interceptor';
 import { Lang } from '@core/i18n/lang.decorator';
 import type { Lang as LangCode } from '@shared/domain/lang';
 import { CurrentUser } from '@core/auth/decorators/current-user.decorator';
-import { AuthenticatedUser, Role } from '@core/auth/auth-user.interface';
+import { AuthenticatedUser } from '@core/auth/auth-user.interface';
 import { ProfileQueryDto } from '@shared/dto/common-query.dto';
 import { SubmitResultDto } from '@shared/dto/submit-result.dto';
 import { VerifiedBody } from '@shared/dto/verified-body';
 import { ApprovalsService, WorklistService } from '../application/approvals.service';
 import {
   ActionHistoryQueryDto,
-  ApprovalDetailQueryDto,
   ApproveRejectRequestDto,
   OwnScopeQueryDto,
   PendingCountQueryDto,
+  PendingCountV2QueryDto,
   PendingCountResponseDto,
   ReassignApprovalRequestDto,
   RequestInfoRequestDto,
   WorklistSummaryQueryDto,
+  WorklistSummaryV2QueryDto,
 } from './dto/approvals.dto';
 
 /**
@@ -38,7 +54,97 @@ export class ApprovalsController {
   constructor(
     private readonly approvals: ApprovalsService,
     private readonly worklist: WorklistService,
+    @Optional() private readonly config?: ConfigService,
   ) {}
+
+  @Get()
+  @Version('2')
+  @ApiOperation({ summary: 'op 20 — Approvals summary', operationId: 'approvals_summary_v2' })
+  summaryV2(@Query() q: LangQueryDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.approvals.summary(currentIdentity(user), q.lang);
+  }
+
+  @Get('my-requests')
+  @Version('2')
+  @ApiOperation({ summary: 'op 23 — My requests', operationId: 'approvals_myRequests_v2' })
+  myRequestsV2(@Query() q: LangQueryDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.approvals.myRequests(currentIdentity(user), q.lang);
+  }
+
+  @Get('pending-count')
+  @Version('2')
+  @ApiOperation({
+    summary: 'Pending request counts filtered by requestor and request type',
+    operationId: 'approvals_pendingCount_v2',
+  })
+  @ApiOkResponse({ type: PendingCountResponseDto })
+  async pendingCountV2(
+    @Query() q: PendingCountV2QueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<PendingCountResponseDto> {
+    return { items: await this.approvals.pendingCounts(currentIdentity(user), q.pendreq) };
+  }
+
+  @Get('worklist')
+  @Version('2')
+  @ApiOperation({ summary: 'op 68 — Worklist main', operationId: 'approvals_worklist_v2' })
+  worklistMainV2(@Query() q: LangQueryDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.worklist.worklist(requireIdentity(user, 'username'), q.lang);
+  }
+
+  @Get('worklist/summary')
+  @Version('2')
+  @ApiOperation({ summary: 'op 69 — Worklist summary', operationId: 'approvals_worklistSummary_v2' })
+  worklistSummaryV2(@Query() q: WorklistSummaryV2QueryDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.worklist.worklistSummary(requireIdentity(user, 'username'), q.lang, q.notificationId);
+  }
+
+  @Get(':id/details')
+  @Version('2')
+  @ApiOperation({ summary: 'op 21 — Approval detail', operationId: 'approvals_details_v2' })
+  async detailsV2(
+    @Param('id') id: string,
+    @Query() q: LangQueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    const result = await this.approvals.details(id, q.lang, currentIdentity(user));
+    const prefix = apiVersionPrefix(
+      this.config?.get<string>('app.apiPrefix') ?? process.env.API_PREFIX ?? 'api/v1',
+      '2',
+    );
+    return {
+      ...result,
+      attachments: result.attachments.map((attachment) => ({
+        ...attachment,
+        url: `/${prefix}/approvals/attachments/${attachment.id}`,
+      })),
+    };
+  }
+
+  @SkipEnvelope()
+  @Get('attachments/:documentId')
+  @Version('2')
+  @ApiOperation({
+    summary: 'op 21b — Download a request attachment (binary)',
+    operationId: 'approvals_attachment_v2',
+  })
+  @ApiOkResponse({
+    description: 'The file itself, with its own content-type.',
+    content: { 'application/octet-stream': { schema: { type: 'string', format: 'binary' } } },
+  })
+  async attachmentV2(
+    @Param('documentId') documentId: string,
+    @Query() q: LangQueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+    @Res() res: Response,
+  ) {
+    const file = await this.approvals.attachment(documentId, currentIdentity(user));
+    const body = Buffer.from(file.contentBase64, 'base64');
+    res.setHeader('Content-Type', file.contentType);
+    res.setHeader('Content-Length', body.length);
+    res.setHeader('Content-Disposition', `inline; filename="${file.fileName.replace(/"/g, '')}"`);
+    res.send(body);
+  }
 
   /**
    * What is waiting for the CALLER's approval — APPROVE_SUMRY_V and
@@ -274,5 +380,78 @@ export class ApprovalsController {
       user,
       lang,
     );
+  }
+
+  @Get('worklist/:id/history')
+  @Version('2')
+  @ApiOperation({ summary: 'op 70 — Worklist action history', operationId: 'approvals_history_v2' })
+  historyV2(@Param('id') id: string, @Query() q: ActionHistoryQueryDto) {
+    return this.history(id, q);
+  }
+
+  @Post(':id/decision')
+  @Version('2')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'op 22 — Approve/Reject', operationId: 'approvals_decision_v2' })
+  @ApiOkResponse({ type: SubmitResultDto })
+  @VerifiedBody(
+    ApproveRejectRequestDto,
+    { decision: 'APPROVE', itemKey: '18875905', itemType: 'HRSSA', comment: 'Approved.' },
+    'Take the path id AND itemKey from one row of GET /approvals/worklist (STATUS=OPEN and actionable — FYI notifications reject APPROVE).',
+  )
+  decisionV2(
+    @Param('id') id: string,
+    @Body() dto: ApproveRejectRequestDto,
+    @CurrentUser() user: AuthenticatedUser,
+    @Lang() lang: LangCode,
+  ) {
+    return this.decision(id, dto, user, lang);
+  }
+
+  @Post(':id/request-info')
+  @Version('2')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'RFMI — Request more information (HR_RFMI_PR)',
+    operationId: 'approvals_requestInfo_v2',
+  })
+  @ApiOkResponse({ type: SubmitResultDto })
+  @VerifiedBody(
+    RequestInfoRequestDto,
+    {
+      itemKey: '18875965',
+      itemType: 'HRSSA',
+      mode: 'QUESTION',
+      toUsername: 'V-NFERNANDO',
+      comment: 'Please attach the supporting documents.',
+    },
+    'Verified against staging (successflag S) with a real OPEN notification of the caller — take id + itemKey from GET /approvals/worklist.',
+  )
+  requestInfoV2(
+    @Param('id') id: string,
+    @Body() dto: RequestInfoRequestDto,
+    @CurrentUser() user: AuthenticatedUser,
+    @Lang() lang: LangCode,
+  ) {
+    return this.requestInfo(id, dto, user, lang);
+  }
+
+  @Post(':id/reassign')
+  @Version('2')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'op 71 — Reassign approval', operationId: 'approvals_reassign_v2' })
+  @ApiOkResponse({ type: SubmitResultDto })
+  @VerifiedBody(
+    ReassignApprovalRequestDto,
+    { assignTo: 'V-NFERNANDO', type: 'DELEGATE', comment: 'Reassigning while on leave.' },
+    'Verified against staging (successflag S) with an OPEN notification owned by the caller — the path id comes from GET /approvals/worklist.',
+  )
+  reassignV2(
+    @Param('id') id: string,
+    @Body() dto: ReassignApprovalRequestDto,
+    @CurrentUser() user: AuthenticatedUser,
+    @Lang() lang: LangCode,
+  ) {
+    return this.reassign(id, dto, user, lang);
   }
 }

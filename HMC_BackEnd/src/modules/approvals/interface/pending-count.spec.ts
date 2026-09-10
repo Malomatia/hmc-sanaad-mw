@@ -10,6 +10,7 @@ import { JwtStrategy } from '@core/auth/jwt.strategy';
 import { RolesGuard } from '@core/auth/roles.guard';
 import { TokenRevocationService } from '@core/auth/token-revocation.service';
 import { ResponseInterceptor } from '@core/http/response.interceptor';
+import { configureApiVersioning } from '@core/http/api-versioning';
 import { ApprovalsService, WorklistService } from '../application/approvals.service';
 import { APPROVALS_REPOSITORY } from '../domain/approvals.repository';
 import { ApprovalsController } from './approvals.controller';
@@ -44,7 +45,7 @@ describe.each(['production', 'development'])('pending counts in %s', (nodeEnv) =
     }).compile();
 
     app = moduleRef.createNestApplication();
-    app.setGlobalPrefix('api/v1');
+    configureApiVersioning(app, 'api/v1');
     app.useGlobalPipes(
       new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }),
     );

@@ -1,5 +1,7 @@
 import { BadRequestException, Inject, Injectable, UnauthorizedException } from '@nestjs/common';
 import { Lang } from '@shared/domain/lang';
+import { CallerIdentity } from '@shared/domain/caller-identity';
+import { requireCallerClaim } from '@core/auth/current-identity';
 import { LovItem } from '@shared/domain/lov-item';
 import { ORACLE_OBJECTS } from '@shared/constants/oracle-objects';
 import {
@@ -46,6 +48,34 @@ export class LookupsService {
       return this.lov.readLov(object, lang, undefined, { userName: authenticatedUsername });
     }
     return this.lov.readLov(object, lang, username, personId ? { personId } : undefined);
+  }
+
+  getLovForCaller(lovname: string, lang: Lang, caller: CallerIdentity): Promise<LovItem[]> {
+    const object = resolveLovObject(lovname);
+    if (!object) throw new BadRequestException(`Unknown LOV name: ${lovname}`);
+    return this.getByObjectForCaller(
+      object,
+      lang,
+      caller,
+      lovname === 'CONTRACT_YEARS_V'
+        ? { requiredScope: 'username', userName: requireCallerClaim(caller, 'username') }
+        : undefined,
+    );
+  }
+
+  getByObjectForCaller(
+    object: string,
+    lang: Lang,
+    caller: CallerIdentity,
+    options: LovReadOptions = {},
+  ): Promise<LovItem[]> {
+    requireCallerClaim(caller, 'username');
+    if (options.requiredScope) requireCallerClaim(caller, options.requiredScope);
+    const { username, employeeNumber, personId } = caller;
+    return this.lov.readLov(object, lang, undefined, {
+      ...options,
+      callerScope: { username, employeeNumber, personId },
+    });
   }
 
   /** Generic `/lookups/master?lookupname=` — Cerner masters are served elsewhere. */

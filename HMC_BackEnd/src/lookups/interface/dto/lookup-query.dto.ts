@@ -1,4 +1,4 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional, OmitType } from '@nestjs/swagger';
 import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
 import { LangQueryDto } from '@shared/dto/lang-query.dto';
 
@@ -28,6 +28,11 @@ export class LovLookupQueryDto extends LangQueryDto {
   @IsString()
   person_id?: string;
 }
+
+export class LovLookupV2QueryDto extends OmitType(LovLookupQueryDto, [
+  'username',
+  'person_id',
+] as const) {}
 
 /** `/lookups/master?lookupname=...&lang=...` */
 export class MasterLookupQueryDto extends LangQueryDto {

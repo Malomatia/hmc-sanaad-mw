@@ -25,6 +25,8 @@ import { EmailOtpDeliveryAdapter } from './infrastructure/adapters/email-otp-del
 import { MotcPushOtpDeliveryAdapter } from './infrastructure/adapters/motc-push-otp-delivery.adapter';
 import { MssqlFunctionAccessRepository } from './infrastructure/adapters/mssql-function-access.repository';
 import { MssqlUserRepository } from './infrastructure/adapters/mssql-user.repository';
+import { PERSON_IDENTITY_PORT } from './domain/ports/person-identity.port';
+import { PersonIdentityOracleRepository } from './infrastructure/oracle/person-identity.oracle.repository';
 
 /**
  * Auth feature module — Sanaad User Authentication & Access Control framework
@@ -102,6 +104,7 @@ import { MssqlUserRepository } from './infrastructure/adapters/mssql-user.reposi
     { provide: MPIN_STORE_PORT, useClass: MssqlMpinStoreRepository },
     { provide: DEVICE_REGISTRY_PORT, useClass: MssqlDeviceRegistryRepository },
     { provide: FUNCTION_ACCESS_PORT, useClass: MssqlFunctionAccessRepository },
+    { provide: PERSON_IDENTITY_PORT, useClass: PersonIdentityOracleRepository },
   ],
 })
 export class AuthModule {}

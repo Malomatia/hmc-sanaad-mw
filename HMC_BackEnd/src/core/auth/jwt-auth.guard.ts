@@ -9,6 +9,10 @@ import { AuthGuard } from '@nestjs/passport';
 import { IS_PUBLIC_KEY } from './decorators/public.decorator';
 import { AuthenticatedUser, DEV_USER } from './auth-user.interface';
 import { ERROR_MESSAGES } from '@shared/constants/error-codes';
+import { BadRequestException } from '@nestjs/common';
+import { VERSION_METADATA } from '@nestjs/common/constants';
+import { currentIdentity } from './current-identity';
+import { normalizePersonId } from '@shared/domain/caller-identity';
 
 /**
  * Global bearer guard. Skips @Public() routes. When AUTH_DISABLED=true it
@@ -33,6 +37,13 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
       context.getClass(),
     ]);
     if (isPublic) return true;
+    const version = this.reflector.getAllAndOverride<string | string[]>(VERSION_METADATA, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (version === '2' || (Array.isArray(version) && version.includes('2'))) {
+      return this.verifyV2(context);
+    }
 
     if (this.authDisabled) {
       const req = context
@@ -75,12 +86,31 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
         ...DEV_USER,
         username: String(username),
         employeeNumber: claims.employeeNumber ? String(claims.employeeNumber) : undefined,
+        personId: normalizePersonId(claims.person_id),
         employeeName: claims.name ? String(claims.name) : DEV_USER.employeeName,
         claims,
       } as AuthenticatedUser;
     } catch {
       return undefined;
     }
+  }
+
+  private async verifyV2(context: ExecutionContext): Promise<boolean> {
+    await super.canActivate(context);
+    const req = context.switchToHttp().getRequest<{
+      user: AuthenticatedUser;
+      originalUrl?: string;
+      url?: string;
+    }>();
+    req.user = currentIdentity(req.user);
+    const url = req.originalUrl ?? req.url ?? '';
+    const query = new URLSearchParams(url.includes('?') ? url.slice(url.indexOf('?') + 1) : '');
+    for (const key of query.keys()) {
+      if (/^(username|enum|person_id|user_name)(?:$|\[)/i.test(key)) {
+        throw new BadRequestException('Identity query parameters are not accepted in v2; use the access token.');
+      }
+    }
+    return true;
   }
 
   handleRequest<TUser = AuthenticatedUser>(err: unknown, user: TUser): TUser {

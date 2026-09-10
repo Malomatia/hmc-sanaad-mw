@@ -1,4 +1,4 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional, OmitType } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { IsInt, IsOptional, IsString, Matches, Max, Min } from 'class-validator';
 import { LovUserQueryDto, ProfileQueryDto } from '@shared/dto/common-query.dto';
@@ -35,6 +35,10 @@ export class SchoolLovQueryDto extends LovUserQueryDto {
   @Max(200)
   pageSize = 100;
 }
+
+export class SchoolChildrenV2QueryDto extends OmitType(SchoolChildrenQueryDto, ['enum'] as const) {}
+
+export class SchoolLovV2QueryDto extends OmitType(SchoolLovQueryDto, ['username'] as const) {}
 
 /**
  * op 39 — SCHOOL_FEE_PR. Verified end-to-end on 2026-08-24 (successflag Y).

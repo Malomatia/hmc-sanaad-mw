@@ -1,4 +1,4 @@
-import { ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiPropertyOptional, OmitType } from '@nestjs/swagger';
 import { IsOptional, IsString } from 'class-validator';
 import { LangQueryDto } from '@shared/dto/lang-query.dto';
 import { LovUserQueryDto } from '@shared/dto/common-query.dto';
@@ -16,6 +16,10 @@ export class NotificationSummaryQueryDto extends LovUserQueryDto {
   @IsString()
   notificationId?: string;
 }
+
+export class NotificationSummaryV2QueryDto extends OmitType(NotificationSummaryQueryDto, [
+  'username',
+] as const) {}
 
 /**
  * op 70 (getworklistactionhistory) — `/profile/notifications/:id/history?itemType=&lang=`.

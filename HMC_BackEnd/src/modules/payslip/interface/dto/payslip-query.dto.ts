@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, OmitType } from '@nestjs/swagger';
 import { IsNotEmpty, IsString, Matches } from 'class-validator';
 import { PersonIdQueryDto } from '@shared/dto/common-query.dto';
 
@@ -25,3 +25,7 @@ export class PayslipQueryDto extends PersonIdQueryDto {
   @IsNotEmpty()
   assignmentid!: string;
 }
+
+export class PayslipCountV2QueryDto extends OmitType(PayslipCountQueryDto, ['person_id'] as const) {}
+
+export class PayslipV2QueryDto extends OmitType(PayslipQueryDto, ['person_id'] as const) {}

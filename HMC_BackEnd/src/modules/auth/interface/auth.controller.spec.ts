@@ -5,8 +5,13 @@ import { AuthService } from '../application/auth.service';
 import { OnboardingService } from '../application/onboarding.service';
 import { MpinService } from '../application/mpin.service';
 import { AuthController } from './auth.controller';
+import { configureApiVersioning } from '@core/http/api-versioning';
+import { ConfigService } from '@nestjs/config';
+import { JwtAuthGuard } from '@core/auth/jwt-auth.guard';
+import { JwtStrategy } from '@core/auth/jwt.strategy';
+import { TokenRevocationService } from '@core/auth/token-revocation.service';
 
-describe('AuthController', () => {
+describe.each(['1', '2'])('AuthController v%s', (version) => {
   let app: INestApplication;
   const onboarding = {
     validateUser: jest.fn().mockResolvedValue({ status: 'success' }),
@@ -24,6 +29,8 @@ describe('AuthController', () => {
     const moduleRef = await Test.createTestingModule({
       controllers: [AuthController],
       providers: [
+        JwtAuthGuard, JwtStrategy, TokenRevocationService,
+        { provide: ConfigService, useValue: new ConfigService({ auth: { disabled: false, jwtSecret: 'auth-controller-test-secret-not-for-production' } }) },
         { provide: AuthService, useValue: {} },
         { provide: OnboardingService, useValue: onboarding },
         { provide: MpinService, useValue: mpin },
@@ -31,7 +38,8 @@ describe('AuthController', () => {
     }).compile();
 
     app = moduleRef.createNestApplication();
-    app.setGlobalPrefix('api/v1');
+    configureApiVersioning(app, 'api/v1');
+    app.useGlobalGuards(app.get(JwtAuthGuard));
     app.useGlobalPipes(
       new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }),
     );
@@ -53,7 +61,7 @@ describe('AuthController', () => {
       };
 
       await request(app.getHttpServer())
-        .post('/api/v1/auth/mpin/update')
+        .post(`/api/v${version}/auth/mpin/update`)
         .send(requestBody)
         .expect(200)
         .expect({ status: 'success', message: 'MPIN updated successfully' });
@@ -70,7 +78,7 @@ describe('AuthController', () => {
       { label: 'array', value: ['1234'] },
     ])('rejects a $label MPIN before calling the service', async ({ value }) => {
       await request(app.getHttpServer())
-        .post('/api/v1/auth/mpin/update')
+        .post(`/api/v${version}/auth/mpin/update`)
         .send({ ...body, mpin: value })
         .expect(400);
 
@@ -89,7 +97,7 @@ describe('AuthController', () => {
       [undefined, 'en'],
       ['unsupported', 'en'],
     ] as const)('resolves lang header %s to %s', async (header, expected) => {
-      const req = request(app.getHttpServer()).post(`/api/v1/auth/${route}`);
+      const req = request(app.getHttpServer()).post(`/api/v${version}/auth/${route}`);
       if (header !== undefined) req.set('lang', header);
 
       await req.send(body).expect(200);
@@ -99,7 +107,7 @@ describe('AuthController', () => {
 
     it('preserves the existing query-language precedence', async () => {
       await request(app.getHttpServer())
-        .post(`/api/v1/auth/${route}?lang=en`)
+        .post(`/api/v${version}/auth/${route}?lang=en`)
         .set('lang', 'ar')
         .send(body)
         .expect(200);

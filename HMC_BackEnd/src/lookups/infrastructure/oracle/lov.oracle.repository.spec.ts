@@ -8,6 +8,7 @@ import { JwtStrategy } from '@core/auth/jwt.strategy';
 import { TokenRevocationService } from '@core/auth/token-revocation.service';
 import { OracleService } from '@core/database/oracle.service';
 import { OracleSchemaService } from '@core/database/oracle-schema.service';
+import { configureApiVersioning } from '@core/http/api-versioning';
 import { LookupsService } from '../../application/lookups.service';
 import { LOV_REPOSITORY } from '../../domain/lov.repository';
 import { LookupsController } from '../../interface/lookups.controller';
@@ -328,7 +329,7 @@ describe('CONTRACT_YEARS_V authenticated lookup', () => {
       ],
     }).compile();
     app = moduleRef.createNestApplication();
-    app.setGlobalPrefix('api/v1');
+    configureApiVersioning(app, 'api/v1');
     app.useGlobalPipes(
       new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }),
     );

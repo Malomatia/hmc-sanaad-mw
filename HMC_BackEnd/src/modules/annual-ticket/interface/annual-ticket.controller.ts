@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Post, Query, HttpCode } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query, HttpCode, Version } from '@nestjs/common';
+import { requireIdentity } from '@core/auth/current-identity';
 import { ApiBearerAuth, ApiBody, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Lang } from '@core/i18n/lang.decorator';
 import type { Lang as LangCode } from '@shared/domain/lang';
@@ -22,6 +23,16 @@ import { ANNUAL_TICKET_APPLY_BODY } from './annual-ticket.examples';
 @Controller('annual-ticket')
 export class AnnualTicketController {
   constructor(private readonly service: AnnualTicketService) {}
+
+  @Get('cancel-options')
+  @Version('2')
+  @ApiOperation({
+    summary: 'op 72 — Ticket-cancellation options (tickets + takenAs + repayment)',
+    operationId: 'annualTicket_cancelOptions_v2',
+  })
+  cancelOptionsV2(@Query() q: LangQueryDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.service.cancelOptions(requireIdentity(user, 'personId'));
+  }
 
   @Get('master')
   @ApiOperation({ summary: 'op 66 — Annual ticket master LOV', operationId: 'annualTicket_master' })
@@ -86,5 +97,56 @@ export class AnnualTicketController {
     @Lang() lang: LangCode,
   ) {
     return this.service.cancel(body, user, lang);
+  }
+
+  @Get('master')
+  @Version('2')
+  @ApiOperation({ summary: 'op 66 — Annual ticket master LOV', operationId: 'annualTicket_master_v2' })
+  @ApiOkResponse({ type: LovResponseDto })
+  async masterV2(
+    @Query() q: LangQueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<LovResponseDto> {
+    return this.master(q, user);
+  }
+
+  @Post('apply')
+  @Version('2')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'op 67 — Submit annual ticket', operationId: 'annualTicket_apply_v2' })
+  @ApiBody(ANNUAL_TICKET_APPLY_BODY)
+  @ApiOkResponse({ type: SubmitResultDto })
+  applyV2(
+    @Body() body: AnnualTicketApplyRequestDto,
+    @CurrentUser() user: AuthenticatedUser,
+    @Lang() lang: LangCode,
+  ) {
+    return this.apply(body, user, lang);
+  }
+
+  @Post('cancel')
+  @Version('2')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'op 72 — Cancel annual ticket', operationId: 'annualTicket_cancel_v2' })
+  @ApiOkResponse({ type: SubmitResultDto })
+  @VerifiedBody(
+    AnnualTicketCancelRequestDto,
+    {
+      p_annual_tkt:
+        'Self and Family |Amir |Caroline |Jerome Amir Sami |Jolie Amir Sami | |01-SEP-2025 to 31-AUG-2026 |Cash |20920',
+      p_contractual_year: '01-SEP-2025 to 31-AUG-2026',
+      p_reason: 'Travel plans cancelled',
+      p_ticket_as: 'Cash',
+      p_repayment_method: 'Payroll Deduction',
+      p_comments: 'Cancelling the unused ticket.',
+    },
+    'Real cancellable ticket of the test user (person_id 26023), read from GET /annual-ticket/cancel-options. p_ticket_as pairs with p_repayment_method: Cash -> Payroll Deduction, Voucher -> Cancel Voucher.',
+  )
+  cancelV2(
+    @Body() body: AnnualTicketCancelRequestDto,
+    @CurrentUser() user: AuthenticatedUser,
+    @Lang() lang: LangCode,
+  ) {
+    return this.cancel(body, user, lang);
   }
 }

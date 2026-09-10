@@ -1,4 +1,5 @@
-import { Controller, Get, Inject, Optional, UseGuards } from '@nestjs/common';
+import { Controller, Get, Inject, Optional, Res, UseGuards, Version } from '@nestjs/common';
+import type { Response } from 'express';
 import { ConfigService } from '@nestjs/config';
 import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { App } from 'firebase-admin/app';
@@ -24,6 +25,16 @@ export class HealthController {
     private readonly config: ConfigService,
     @Optional() @Inject(FIREBASE_APP) private readonly firebase?: App,
   ) {}
+
+  @Public()
+  @SkipEnvelope()
+  @Get('ready')
+  @ApiOperation({ summary: 'Oracle pool readiness', operationId: 'health_ready' })
+  ready(@Res({ passthrough: true }) response: Response) {
+    const readiness = this.oracle.getReadiness();
+    response.status(readiness.ready ? 200 : 503);
+    return readiness;
+  }
 
   @Public()
   @SkipEnvelope()
@@ -150,5 +161,58 @@ export class HealthController {
   async motcSmsDbHealth() {
     const diagnostics = await this.motcSmsDb.diagnose();
     return { status: diagnostics.connected ? 'ok' : 'error', ...diagnostics };
+  }
+
+  @Version('2')
+  @Public()
+  @SkipEnvelope()
+  @Get('ready')
+  @ApiOperation({ summary: 'Oracle pool readiness', operationId: 'health_ready_v2' })
+  readyV2(@Res({ passthrough: true }) response: Response) {
+    return this.ready(response);
+  }
+
+  @Version('2')
+  @Public()
+  @SkipEnvelope()
+  @Get()
+  async checkV2() {
+    return this.check();
+  }
+
+  @Version('2')
+  @UseGuards(DiagnosticsEnabledGuard)
+  @Public()
+  @SkipEnvelope()
+  @Get('db')
+  @ApiOperation({ summary: 'Oracle DB connectivity test', operationId: 'health_db_v2' })
+  @ApiOkResponse({ description: 'Connectivity diagnostics (status=ok when connected).' })
+  async dbV2() {
+    return this.db();
+  }
+
+  @Version('2')
+  @UseGuards(DiagnosticsEnabledGuard)
+  @Public()
+  @SkipEnvelope()
+  @Get('users-db')
+  @ApiOperation({ summary: 'Users DB (SQL Server) connectivity test', operationId: 'health_users_db_v2' })
+  @ApiOkResponse({ description: 'Connectivity diagnostics (status=ok when connected).' })
+  async usersDbHealthV2() {
+    return this.usersDbHealth();
+  }
+
+  @Version('2')
+  @UseGuards(DiagnosticsEnabledGuard)
+  @Public()
+  @SkipEnvelope()
+  @Get('motc-sms-db')
+  @ApiOperation({
+    summary: 'MOTC SMS DB (SQL Server) connectivity test',
+    operationId: 'health_motc_sms_db_v2',
+  })
+  @ApiOkResponse({ description: 'Connectivity diagnostics (status=ok when connected).' })
+  async motcSmsDbHealthV2() {
+    return this.motcSmsDbHealth();
   }
 }

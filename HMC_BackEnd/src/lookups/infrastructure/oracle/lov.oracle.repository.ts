@@ -1,4 +1,6 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import { requireCallerClaim } from '@core/auth/current-identity';
+import { CallerIdentity } from '@shared/domain/caller-identity';
 import { ConfigService } from '@nestjs/config';
 import * as oracledb from 'oracledb';
 import { OracleService } from '@core/database/oracle.service';
@@ -60,6 +62,9 @@ export class LovOracleRepository implements LovRepository {
     if (!isKnownOracleObject(object)) {
       throw new BadRequestException(`Unknown Oracle object: ${object}`);
     }
+    if (options.requiredScope && !options.callerScope) {
+      requireCallerClaim({ username: '' }, options.requiredScope);
+    }
     const cacheKey = JSON.stringify([object, lang, username ?? '', options]);
     const cached = this.cache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) return cached.items;
@@ -88,25 +93,30 @@ export class LovOracleRepository implements LovRepository {
     // One caller may be identified by several forms (username / employee
     // number / PERSON_ID); match ANY of them against the view's scoping
     // column so the client never has to know which form a given view uses.
-    const supplied = [
-      ...new Set(
-        [username, ...(options.scopeAlternatives ?? [])].filter(
-          (v): v is string => !!v && v.trim() !== '',
-        ),
-      ),
-    ];
+    const strictScope = options.callerScope ? await this.callerFilter(object, options) : undefined;
+    const supplied = strictScope
+      ? []
+      : [
+          ...new Set(
+            [username, ...(options.scopeAlternatives ?? [])].filter(
+              (v): v is string => !!v && v.trim() !== '',
+            ),
+          ),
+        ];
     const keyColumn = supplied.length ? await this.userColumnOf(object) : undefined;
     const scopeValues = keyColumn ? await this.matchable(object, keyColumn, supplied) : supplied;
     const personIdColumn =
-      options.personId && (await this.schema.hasColumn(object, PERSON_ID_COLUMN))
+      !strictScope && options.personId && (await this.schema.hasColumn(object, PERSON_ID_COLUMN))
         ? PERSON_ID_COLUMN
         : undefined;
-    const searchColumn = options.search ? await this.searchColumnOf(object) : undefined;
-    const typeColumn = options.dataType ? await this.typeColumnOf(object) : undefined;
-    const leaveTypeColumn = options.leaveType ? await this.leaveTypeColumnOf(object) : undefined;
-    const conditions: string[] = [];
-    const binds: oracledb.BindParameters = {};
-    if (options.userName !== undefined) {
+    const searchColumn = options.search ? await this.searchColumnOf(object, !!strictScope) : undefined;
+    const typeColumn = options.dataType ? await this.typeColumnOf(object, !!strictScope) : undefined;
+    const leaveTypeColumn = options.leaveType
+      ? await this.leaveTypeColumnOf(object, !!strictScope)
+      : undefined;
+    const conditions: string[] = strictScope?.conditions ?? [];
+    const binds: oracledb.BindParameters = strictScope?.binds ?? {};
+    if (!strictScope && options.userName !== undefined) {
       conditions.push('USER_NAME = :username');
       binds.username = normalizeOracleUsername('USER_NAME', options.userName) as string;
     }
@@ -173,6 +183,64 @@ export class LovOracleRepository implements LovRepository {
       : LovMapper.toItems(rows, lang);
   }
 
+  private async callerFilter(
+    object: string,
+    options: LovReadOptions,
+  ): Promise<{ conditions: string[]; binds: Record<string, string> }> {
+    const caller = options.callerScope as CallerIdentity;
+    requireCallerClaim(caller, 'username');
+    const candidates: Record<keyof CallerIdentity, readonly string[]> = {
+      username: ['USER_NAME', 'USERNAME'],
+      employeeNumber: ['EMPLOYEE_NUMBER', 'EMP_NUM'],
+      personId: ['PERSON_ID'],
+    };
+    const personScoped =
+      object === ORACLE_OBJECTS.LEAVE_CANCEL_V || object === ORACLE_OBJECTS.LEAVE_AMEND_V;
+    const usernameScoped: readonly string[] = [
+      ORACLE_OBJECTS.SCHOOL_NAME_LOV,
+      ORACLE_OBJECTS.REQUEST_TYPE_LOV,
+      ORACLE_OBJECTS.LETTER_MOBILE_NO_LOV,
+      ORACLE_OBJECTS.RFL_REL_LEAVE1_V,
+      ORACLE_OBJECTS.RFL_REL_LEAVE2_V,
+      ORACLE_OBJECTS.RFL_LEAVE_DET_V,
+    ];
+    const required =
+      personScoped || object === ORACLE_OBJECTS.TICKET_MASTER
+        ? 'personId'
+        : usernameScoped.includes(object)
+          ? 'username'
+          : options.requiredScope ?? (options.userName !== undefined ? 'username' : undefined);
+    if (required) requireCallerClaim(caller, required);
+    if (options.requiredScope) requireCallerClaim(caller, options.requiredScope);
+    const bindScope = (claim: keyof CallerIdentity, column: string) => ({
+      conditions: [`${column} = :${claim}`],
+      binds: { [claim]: normalizeOracleUsername(column, requireCallerClaim(caller, claim)) as string },
+    });
+    if (personScoped) return bindScope('personId', 'PERSON_ID');
+    if (options.userName !== undefined && required === 'username') {
+      return bindScope('username', 'USER_NAME');
+    }
+    const columns = await this.schema.columnsOfStrict(object);
+    const claims: (keyof CallerIdentity)[] = required
+      ? [required]
+      : ['username', 'employeeNumber', 'personId'];
+    for (const claim of claims) {
+      const column = candidates[claim].find((candidate) => columns.has(candidate));
+      if (column) return bindScope(claim, column);
+    }
+    const personalObjects: readonly string[] = [
+      ORACLE_OBJECTS.ANNUAL_TICKT_LOV,
+      ORACLE_OBJECTS.CONTRACT_YEAR_V,
+      ORACLE_OBJECTS.CONTRACT_YEARS_V,
+    ];
+    if (required || personalObjects.includes(object)) {
+      throw new ServiceUnavailableException(
+        'Lookup scoping is temporarily unavailable. Please try again.',
+      );
+    }
+    return { conditions: [], binds: {} };
+  }
+
   /**
    * The scoping column of a user-scoped LOV: the user column when the view
    * has one, otherwise the employee-number / person-id column (LEAVE_AMEND_V
@@ -204,9 +272,15 @@ export class LovOracleRepository implements LovRepository {
     return values.filter((v) => /^\d+$/.test(v.trim()));
   }
 
-  private async searchColumnOf(object: string): Promise<string | undefined> {
+  private async hasReadColumn(object: string, column: string, strict: boolean): Promise<boolean> {
+    return strict
+      ? (await this.schema.columnsOfStrict(object)).has(column)
+      : this.schema.hasColumn(object, column);
+  }
+
+  private async searchColumnOf(object: string, strict = false): Promise<string | undefined> {
     for (const candidate of ['NAME', 'VALUE', 'MEANING', 'FLEX_VALUE_MEANING']) {
-      if (await this.schema.hasColumn(object, candidate)) return candidate;
+      if (await this.hasReadColumn(object, candidate, strict)) return candidate;
     }
     return undefined;
   }
@@ -216,9 +290,9 @@ export class LovOracleRepository implements LovRepository {
    * `D_DATA_TYPE`), resolved from the data dictionary like the other filters
    * so a dataType passed for a single-type LOV is ignored instead of failing.
    */
-  private async typeColumnOf(object: string): Promise<string | undefined> {
+  private async typeColumnOf(object: string, strict = false): Promise<string | undefined> {
     for (const candidate of ['D_DATA_TYPE', 'DATATYPE', 'DATA_TYPE', 'LOOKUP_TYPE']) {
-      if (await this.schema.hasColumn(object, candidate)) return candidate;
+      if (await this.hasReadColumn(object, candidate, strict)) return candidate;
     }
     return undefined;
   }
@@ -231,9 +305,9 @@ export class LovOracleRepository implements LovRepository {
    * instead of failing. `NAME` is last on purpose: it only applies when the
    * view has no dedicated leave-type column.
    */
-  private async leaveTypeColumnOf(object: string): Promise<string | undefined> {
+  private async leaveTypeColumnOf(object: string, strict = false): Promise<string | undefined> {
     for (const candidate of ['LEAVE_TYPE', 'ABSENCE_TYPE', 'NAME']) {
-      if (await this.schema.hasColumn(object, candidate)) return candidate;
+      if (await this.hasReadColumn(object, candidate, strict)) return candidate;
     }
     return undefined;
   }

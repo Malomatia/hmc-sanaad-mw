@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Post, Version } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
@@ -135,5 +135,55 @@ export class AppIntegrityController {
       ...(verdict.reason ? { reason: verdict.reason } : {}),
       ...(verdict.details ? { verdicts: verdict.details } : {}),
     };
+  }
+
+  @Get('challenge')
+  @Version('2')
+  @ApiOperation({
+    summary: 'Issue a one-time attestation challenge',
+    operationId: 'appIntegrity_challenge_v2',
+  })
+  @ApiOkResponse({ schema: { example: { challenge: 'q1w2e3...', expiresInMs: 300000 } } })
+  async challengeV2(@CurrentUser() user: AuthenticatedUser) {
+    return this.challenge(user);
+  }
+
+  @Post('ios/register')
+  @Version('2')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Register an App Attest key (iOS, once per install)',
+    operationId: 'appIntegrity_registerIos_v2',
+  })
+  @ApiOkResponse({ schema: { example: { status: 'success', message: 'Device attested.' } } })
+  async registerIosV2(
+    @Body() dto: RegisterAttestationDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.registerIos(dto, user);
+  }
+
+  @Post('android/verify')
+  @Version('2')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Check a Play Integrity token (Android, development aid)',
+    operationId: 'appIntegrity_verifyAndroid_v2',
+  })
+  @ApiOkResponse({
+    schema: {
+      example: {
+        verified: true,
+        verdicts: {
+          appRecognitionVerdict: 'PLAY_RECOGNIZED',
+          deviceRecognitionVerdict: ['MEETS_DEVICE_INTEGRITY'],
+          appLicensingVerdict: 'LICENSED',
+          packageName: 'com.hmc.sanaad',
+        },
+      },
+    },
+  })
+  async verifyAndroidV2(@Body() dto: VerifyAndroidTokenDto) {
+    return this.verifyAndroid(dto);
   }
 }

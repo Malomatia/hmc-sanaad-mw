@@ -1,4 +1,6 @@
-import { Body, Controller, Get, Post, Query, HttpCode } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query, HttpCode, Version } from '@nestjs/common';
+import { requireIdentity } from '@core/auth/current-identity';
+import { LangQueryDto } from '@shared/dto/lang-query.dto';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Lang } from '@core/i18n/lang.decorator';
 import type { Lang as LangCode } from '@shared/domain/lang';
@@ -9,7 +11,10 @@ import { ApiReadOkResponse } from '@shared/swagger/api-read-ok-response.decorato
 import { ApiActionOkResponse } from '@shared/swagger/api-action-ok-response.decorator';
 import { EmployeeService, SupervisorService } from '../application/employee.service';
 import { SupervisorUpdateRequestDto } from './dto/supervisor-update.request.dto';
-import { SupervisorViewsQueryDto } from './dto/supervisor-views.query.dto';
+import {
+  SupervisorViewsQueryDto,
+  SupervisorViewsV2QueryDto,
+} from './dto/supervisor-views.query.dto';
 import {
   EMPLOYEE_EMPLOYMENT_EXAMPLE,
   EMPLOYEE_EMPLOYMENT_INFO_EXAMPLE,
@@ -28,6 +33,41 @@ export class EmployeeController {
     private readonly employee: EmployeeService,
     private readonly supervisor: SupervisorService,
   ) {}
+
+  @Get('employment')
+  @Version('2')
+  @ApiOperation({
+    summary: 'op 3 — Employee (employment) details + salary/assignment history',
+    operationId: 'employee_employment_v2',
+  })
+  @ApiReadOkResponse({ example: EMPLOYEE_EMPLOYMENT_INFO_EXAMPLE })
+  employmentV2(@Query() q: LangQueryDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.employee.employment(requireIdentity(user, 'username'), q.lang);
+  }
+
+  @Get('basic')
+  @Version('2')
+  @ApiOperation({ summary: 'op 8 — Basic employee info', operationId: 'employee_basic_v2' })
+  @ApiReadOkResponse({ example: EMPLOYEE_EMPLOYMENT_EXAMPLE })
+  basicV2(@Query() q: LangQueryDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.employee.basic(requireIdentity(user, 'employeeNumber'), q.lang);
+  }
+
+  @Get('performance')
+  @Version('2')
+  @ApiOperation({ summary: 'op 7 — Performance records', operationId: 'employee_performance_v2' })
+  @ApiReadOkResponse({ example: EMPLOYEE_PERFORMANCE_EXAMPLE })
+  performanceV2(@Query() q: LangQueryDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.employee.performance(requireIdentity(user, 'username'), q.lang);
+  }
+
+  @Get('supervisor/views')
+  @Version('2')
+  @ApiOperation({ summary: 'op 35 — Supervisor view', operationId: 'employee_supervisorViews_v2' })
+  @ApiReadOkResponse({ example: EMPLOYEE_SUPERVISOR_VIEWS_EXAMPLE })
+  supervisorViewsV2(@Query() q: SupervisorViewsV2QueryDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.supervisor.views(requireIdentity(user, 'username'), q.lang, q.searchKeyWord);
+  }
 
   @Get('employment')
   @ApiOperation({
@@ -74,5 +114,19 @@ export class EmployeeController {
   ) {
     // Accepts the spec's SUPERVISOR_PR body (p_* keys, incl. attachments).
     return this.supervisor.update(body, user, lang);
+  }
+
+  @Post('supervisor')
+  @Version('2')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'op 36 — Supervisor update', operationId: 'employee_supervisorUpdate_v2' })
+  @ApiBody(EMPLOYEE_SUPERVISOR_UPDATE_BODY)
+  @ApiActionOkResponse({ example: EMPLOYEE_SUPERVISOR_UPDATE_EXAMPLE })
+  supervisorUpdateV2(
+    @Body() body: SupervisorUpdateRequestDto,
+    @CurrentUser() user: AuthenticatedUser,
+    @Lang() lang: LangCode,
+  ) {
+    return this.supervisorUpdate(body, user, lang);
   }
 }

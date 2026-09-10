@@ -6,6 +6,7 @@ import { AuditService } from './audit.service';
 import { AuditContext } from './audit-event';
 
 const FUNCTION_IDS: Readonly<Partial<Record<string, string>>> = {
+  auth_login: 'auth_login',
   letters_lov: 'frmRequestCertificates',
   letters_apply: 'frmRequestCertificates',
   schoolFees_apply: 'frmSchoolFees',
@@ -112,13 +113,14 @@ const asRecord = (v: unknown): Record<string, unknown> =>
   v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
 
 const resolveFunctionId = (operationId: string, body: Record<string, unknown>): string => {
-  if (operationId === 'contact_createAddress' || operationId === 'contact_updateAddress') {
+  const legacyId = operationId.replace(/_v2$/, '');
+  if (legacyId === 'contact_createAddress' || legacyId === 'contact_updateAddress') {
     const country = asString(body.p_country)?.trim().toLowerCase();
     if (country) {
       return ['qatar', 'qa'].includes(country) ? 'frmAddressinQatar' : 'frmAddressOutsideQatar';
     }
   }
-  return FUNCTION_IDS[operationId] ?? operationId;
+  return FUNCTION_IDS[operationId] ?? FUNCTION_IDS[legacyId] ?? operationId;
 };
 
 const errorCode = (err: unknown): string | undefined => {
@@ -164,6 +166,7 @@ export class AuditInterceptor implements NestInterceptor {
       functionId: resolveFunctionId(operationId, body),
       actionTaken:
         ACTION_OVERRIDES.get(operationId) ??
+        ACTION_OVERRIDES.get(operationId.replace(/_v2$/, '')) ??
         (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method.toUpperCase()) ? 'submit' : 'view'),
       source: req.ip,
       correlationId:

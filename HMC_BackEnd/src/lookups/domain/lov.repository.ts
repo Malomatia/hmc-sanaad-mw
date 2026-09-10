@@ -1,4 +1,5 @@
 import { Lang } from '@shared/domain/lang';
+import { CallerIdentity } from '@shared/domain/caller-identity';
 import { LovItem } from '@shared/domain/lov-item';
 
 /**
@@ -7,6 +8,8 @@ import { LovItem } from '@shared/domain/lov-item';
  * adapter and bound via the LOV_REPOSITORY token.
  */
 export interface LovReadOptions {
+  callerScope?: CallerIdentity;
+  requiredScope?: keyof CallerIdentity;
   userName?: string;
   search?: string;
   offset?: number;

@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, HttpCode, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, HttpCode, Post, UseGuards, Version } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { DiagnosticsEnabledGuard } from '@core/http/diagnostics-enabled.guard';
 import { CurrentUser } from '@core/auth/decorators/current-user.decorator';
@@ -136,5 +136,73 @@ export class NotificationsController {
   ) {
     await this.service.unregister(user.username, dto.imei);
     return { message: 'Device unregistered.' };
+  }
+
+  @Post('device-token')
+  @Version('2')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Register this device for push notifications',
+    operationId: 'notifications_registerDevice_v2',
+  })
+  @ApiOkResponse({
+    schema: { example: { status: 'success', message: 'Device registered for notifications.' } },
+  })
+  async registerV2(@Body() dto: RegisterDeviceTokenDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.register(dto, user);
+  }
+
+  @Post('device-token/unregister')
+  @Version('2')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Stop sending push notifications to this device',
+    operationId: 'notifications_unregisterDevice_v2',
+  })
+  @ApiOkResponse({
+    schema: { example: { status: 'success', message: 'Device unregistered.' } },
+  })
+  async unregisterV2(
+    @Body() dto: UnregisterDeviceTokenDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.unregister(dto, user);
+  }
+
+  @UseGuards(DiagnosticsEnabledGuard)
+  @Post('device-token/test')
+  @Version('2')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Send a test notification to your own devices and report the result',
+    operationId: 'notifications_testPush_v2',
+  })
+  @ApiOkResponse({
+    schema: {
+      example: {
+        devices: 2,
+        sent: 2,
+        failed: 0,
+        invalidTokens: [],
+        pushConfigured: true,
+      },
+    },
+  })
+  async testV2(@CurrentUser() user: AuthenticatedUser) {
+    return this.test(user);
+  }
+
+  @Delete('device-token')
+  @Version('2')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Unregister a device (DELETE — blocked by the WAF, use the POST)',
+    operationId: 'notifications_unregisterDeviceLegacy_v2',
+  })
+  async unregisterViaDeleteV2(
+    @Body() dto: UnregisterDeviceTokenDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.unregisterViaDelete(dto, user);
   }
 }

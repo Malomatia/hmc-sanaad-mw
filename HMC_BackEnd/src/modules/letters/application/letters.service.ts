@@ -1,5 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { Lang } from '@shared/domain/lang';
+import { CallerIdentity } from '@shared/domain/caller-identity';
+import { requireCallerClaim } from '@core/auth/current-identity';
 import { LovItem } from '@shared/domain/lov-item';
 import { SubmitResult } from '@shared/domain/submit-result';
 import { ORACLE_OBJECTS } from '@shared/constants/oracle-objects';
@@ -28,18 +30,39 @@ export class LettersService {
    */
   async getLetterLovs(lang: Lang, ...identifiers: (string | undefined)[]): Promise<Record<string, LovItem[]>> {
     const [primary, ...alternatives] = identifiers.filter((v): v is string => !!v && v.trim() !== '');
-    const [mobileNo, defaultCopy, country, name, language, exitCopies, deliveryLoc] =
-      await Promise.all([
-        this.lookups.getByObject(ORACLE_OBJECTS.LETTER_MOBILE_NO_LOV, lang, primary, {
-          scopeAlternatives: alternatives,
-        }),
-        this.lookups.getByObject(ORACLE_OBJECTS.EMP_LTR_DEFAULT_COPY, lang),
-        this.lookups.getByObject(ORACLE_OBJECTS.LETTER_COUNTRY_LOV, lang),
-        this.lookups.getByObject(ORACLE_OBJECTS.LETTER_NAME_LOV, lang),
-        this.lookups.getByObject(ORACLE_OBJECTS.LETTER_LANGUAGE_LOV, lang),
-        this.lookups.getByObject(ORACLE_OBJECTS.EXIT_COPIES_LOV, lang),
-        this.lookups.getByObject(ORACLE_OBJECTS.DELIVERY_LOC_V, lang),
-      ]);
+    return this.letterLovs((object) =>
+      object === ORACLE_OBJECTS.LETTER_MOBILE_NO_LOV
+        ? this.lookups.getByObject(object, lang, primary, { scopeAlternatives: alternatives })
+        : this.lookups.getByObject(object, lang),
+    );
+  }
+
+  async getLetterLovsForCaller(lang: Lang, caller: CallerIdentity): Promise<Record<string, LovItem[]>> {
+    requireCallerClaim(caller, 'username');
+    return this.letterLovs((object) =>
+      this.lookups.getByObjectForCaller(
+        object,
+        lang,
+        caller,
+        object === ORACLE_OBJECTS.LETTER_MOBILE_NO_LOV ? { requiredScope: 'username' } : undefined,
+      ),
+    );
+  }
+
+  private async letterLovs(
+    read: (object: string) => Promise<LovItem[]>,
+  ): Promise<Record<string, LovItem[]>> {
+    const [mobileNo, defaultCopy, country, name, language, exitCopies, deliveryLoc] = await Promise.all(
+      [
+        ORACLE_OBJECTS.LETTER_MOBILE_NO_LOV,
+        ORACLE_OBJECTS.EMP_LTR_DEFAULT_COPY,
+        ORACLE_OBJECTS.LETTER_COUNTRY_LOV,
+        ORACLE_OBJECTS.LETTER_NAME_LOV,
+        ORACLE_OBJECTS.LETTER_LANGUAGE_LOV,
+        ORACLE_OBJECTS.EXIT_COPIES_LOV,
+        ORACLE_OBJECTS.DELIVERY_LOC_V,
+      ].map(read),
+    );
     return { mobileNo, defaultCopy, country, name, language, exitCopies, deliveryLoc };
   }
 

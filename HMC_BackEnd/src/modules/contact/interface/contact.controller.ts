@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Post, Query, Version } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Lang } from '@core/i18n/lang.decorator';
 import type { Lang as LangCode } from '@shared/domain/lang';
@@ -131,5 +131,107 @@ export class ContactController {
   @ApiOkResponse({ type: LovResponseDto })
   async countryLov(@Query() q: LangQueryDto): Promise<LovResponseDto> {
     return { items: await this.address.countryLov(q.lang) };
+  }
+
+  @Get('lov/phone-type')
+  @Version('2')
+  @ApiOperation({ summary: 'op 27 — Phone-type LOV', operationId: 'contact_phoneTypeLov_v2' })
+  @ApiOkResponse({ type: LovResponseDto })
+  async phoneTypeLovV2(@Query() q: LangQueryDto): Promise<LovResponseDto> {
+    return this.phoneTypeLov(q);
+  }
+
+  @Post('phone')
+  @Version('2')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'op 28 — Update phone number(s)', operationId: 'contact_upsertPhone_v2' })
+  @ApiOkResponse({ type: SubmitResultDto })
+  @VerifiedBody(
+    UpdatePhoneRequestDto,
+    { phones: [{ phoneId: '310129', phoneType: 'Qatar Mobile Number', phoneNumber: '55723893' }] },
+    'Verified against staging. Replace phoneId/phoneNumber with your own — read the ids from GET /profile → phones[].phoneId.',
+  )
+  upsertPhoneV2(
+    @Body() dto: UpdatePhoneRequestDto,
+    @CurrentUser() user: AuthenticatedUser,
+    @Lang() lang: LangCode,
+  ) {
+    return this.upsertPhone(dto, user, lang);
+  }
+
+  @Post('phone/delete')
+  @Version('2')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'op 32 — Delete phone', operationId: 'contact_deletePhone_v2' })
+  @ApiOkResponse({ type: SubmitResultDto })
+  @VerifiedBody(
+    DeletePhoneRequestDto,
+    { phoneId: '310129', phoneType: 'Qatar Mobile Number', phoneNumber: '55723893' },
+    'Shape verified; not executed on staging — the test user has a single real phone we will not delete. An unknown id answers successflag N "Phone ID doesnot exist".',
+  )
+  deletePhoneV2(
+    @Body() dto: DeletePhoneRequestDto,
+    @CurrentUser() user: AuthenticatedUser,
+    @Lang() lang: LangCode,
+  ) {
+    return this.deletePhone(dto, user, lang);
+  }
+
+  @Post('address')
+  @Version('2')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'op 29 — Create address', operationId: 'contact_createAddress_v2' })
+  @ApiOkResponse({ type: SubmitResultDto })
+  @VerifiedBody(
+    CreateAddressRequestDto,
+    {
+      p_effective_date: '20260824',
+      p_primary_flag: 'N',
+      p_country: 'Qatar',
+      p_address_type: 'Temporary Offer Address',
+      p_address_line1: 'Building 45',
+      p_town_or_city: 'Doha',
+      p_po_box: '12345',
+    },
+    'Verified against staging (successflag S). Use an address type the employee does not already have, and a fresh p_effective_date.',
+  )
+  createAddressV2(
+    @Body() body: CreateAddressRequestDto,
+    @CurrentUser() user: AuthenticatedUser,
+    @Lang() lang: LangCode,
+  ) {
+    return this.createAddress(body, user, lang);
+  }
+
+  @Post('address/update')
+  @Version('2')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'op 25 — Update address', operationId: 'contact_updateAddress_v2' })
+  @ApiOkResponse({ type: SubmitResultDto })
+  @VerifiedBody(
+    UpdateAddressRequestDto,
+    {
+      p_address_id: '1720601',
+      p_effective_date: '20260824',
+      p_address_type: 'Primary Home Country Address',
+      p_country: 'Qatar',
+      p_address_line1: 'Building 45',
+    },
+    'Verified against staging (successflag S). Use your own p_address_id (GET /profile → addresses) and a NEW p_effective_date each time.',
+  )
+  updateAddressV2(
+    @Body() body: UpdateAddressRequestDto,
+    @CurrentUser() user: AuthenticatedUser,
+    @Lang() lang: LangCode,
+  ) {
+    return this.updateAddress(body, user, lang);
+  }
+
+  @Get('lov/country')
+  @Version('2')
+  @ApiOperation({ summary: 'op 30 — Country LOV', operationId: 'contact_countryLov_v2' })
+  @ApiOkResponse({ type: LovResponseDto })
+  async countryLovV2(@Query() q: LangQueryDto): Promise<LovResponseDto> {
+    return this.countryLov(q);
   }
 }

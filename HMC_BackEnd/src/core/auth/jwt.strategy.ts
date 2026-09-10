@@ -5,6 +5,7 @@ import { ExtractJwt, Strategy } from 'passport-jwt';
 import { AuthConfig } from '../config/configuration';
 import { AuthenticatedUser, Role } from './auth-user.interface';
 import { TokenRevocationService } from './token-revocation.service';
+import { normalizePersonId } from '@shared/domain/caller-identity';
 
 interface JwtPayload {
   sub?: string;
@@ -54,6 +55,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     return {
       username: payload.username ?? payload.sub ?? 'unknown',
       employeeNumber: payload.employeeNumber ?? payload.enum ?? payload.sub,
+      personId: normalizePersonId(payload.person_id),
       roles: payload.roles ?? [Role.EMPLOYEE],
       functions: payload.functions,
       employeeName: payload.name,

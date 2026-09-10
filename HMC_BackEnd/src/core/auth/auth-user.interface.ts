@@ -12,6 +12,7 @@ export enum Role {
 export interface AuthenticatedUser {
   username: string;
   employeeNumber?: string;
+  personId?: string;
   roles: Role[];
   /** Enabled function/module codes from the login functionaccesslist (API-5). */
   functions?: string[];

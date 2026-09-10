@@ -36,6 +36,49 @@ describe('OracleSchemaService', () => {
     return { service: new OracleSchemaService(metadata), describe, describeColumns, describeArguments };
   }
 
+  it('coalesces strict metadata reads and caches successful discoveries', async () => {
+    const { service, describeColumns, describe } = make();
+    const results = await Promise.all([
+      service.columnsOfStrict(object),
+      service.columnsOfStrict(object.toLowerCase()),
+    ]);
+    expect(results).toEqual([new Set(['USER_NAME']), new Set(['USER_NAME'])]);
+    await service.columnsOfStrict(object);
+    expect(describeColumns).toHaveBeenCalledTimes(1);
+    expect(describe).not.toHaveBeenCalled();
+  });
+
+  it('retries strict metadata after failure instead of confirming a global LOV', async () => {
+    const { service, describeColumns } = make();
+    describeColumns.mockRejectedValueOnce(new Error('offline'));
+    await expect(service.columnsOfStrict(object)).rejects.toMatchObject({ status: 503 });
+    await expect(service.columnsOfStrict(object)).resolves.toEqual(new Set(['USER_NAME']));
+    expect(describeColumns).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects empty strict metadata and retries on the next request', async () => {
+    const { service, describeColumns } = make();
+    describeColumns.mockResolvedValueOnce([]);
+    await expect(service.columnsOfStrict(object)).rejects.toMatchObject({ status: 503 });
+    await expect(service.columnsOfStrict(object)).resolves.toEqual(new Set(['USER_NAME']));
+    expect(describeColumns).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not trust cached empty legacy metadata after an outage', async () => {
+    const { service, describeColumns } = make();
+    describeColumns.mockRejectedValueOnce(new Error('offline'));
+    await expect(service.hasColumn(object, 'USER_NAME')).resolves.toBe(false);
+    await expect(service.columnsOfStrict(object)).resolves.toEqual(new Set(['USER_NAME']));
+    expect(describeColumns).toHaveBeenCalledTimes(2);
+    await expect(service.hasColumn(object, 'USER_NAME')).resolves.toBe(false);
+  });
+
+  it('confirms global columns only after a nonempty successful discovery', async () => {
+    const { service, describeColumns } = make();
+    describeColumns.mockResolvedValue([{ name: 'NAME', dataType: 'VARCHAR2' }]);
+    await expect(service.columnsOfStrict(object)).resolves.toEqual(new Set(['NAME']));
+  });
+
   it('resolves a key column from the column-only read, never the full describe', async () => {
     const { service, describe, describeColumns } = make();
     await expect(service.resolveKeyColumn(object, ['user_name', 'username'])).resolves.toBe('user_name');

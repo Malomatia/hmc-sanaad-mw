@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { Lang } from '@shared/domain/lang';
+import { CallerIdentity } from '@shared/domain/caller-identity';
 import { LovItem } from '@shared/domain/lov-item';
 import { SubmitResult } from '@shared/domain/submit-result';
 import { ORACLE_OBJECTS } from '@shared/constants/oracle-objects';
@@ -35,6 +36,23 @@ export class SchoolFeeService {
   ): Promise<LovItem[]> {
     return this.lookups.getByObject(ORACLE_OBJECTS.SCHOOL_NAME_LOV, lang, username, options);
   }
+  schoolsLovForCaller(
+    lang: Lang,
+    caller: CallerIdentity,
+    options?: LovReadOptions,
+  ): Promise<LovItem[]> {
+    return this.lookups.getByObjectForCaller(ORACLE_OBJECTS.SCHOOL_NAME_LOV, lang, caller, {
+      ...options,
+      requiredScope: 'username',
+    });
+  }
+
+  requestTypeLovForCaller(lang: Lang, caller: CallerIdentity): Promise<LovItem[]> {
+    return this.lookups.getByObjectForCaller(ORACLE_OBJECTS.REQUEST_TYPE_LOV, lang, caller, {
+      requiredScope: 'username',
+    });
+  }
+
   termsLov(lang: Lang): Promise<LovItem[]> {
     return this.lookups.getByObject(ORACLE_OBJECTS.SCHOOL_TERM_LOV, lang);
   }

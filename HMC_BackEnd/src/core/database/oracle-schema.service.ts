@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import * as oracledb from 'oracledb';
 import { OracleArgumentInfo, OracleMetadataService } from './oracle-metadata.service';
 import { SchemaColumnNotFoundException } from './schema-column-not-found.error';
@@ -58,7 +58,42 @@ export class OracleSchemaService {
   /** object → declared parameters, or null when the dictionary knows none. */
   private readonly paramCache = new Map<string, ProcedureSignature[] | null | undefined>();
 
+  private readonly strictColumnCache = new Map<string, ReadonlySet<string>>();
+  private readonly strictColumnPending = new Map<string, Promise<ReadonlySet<string>>>();
+
   constructor(private readonly metadata: OracleMetadataService) {}
+
+  async columnsOfStrict(object: string): Promise<ReadonlySet<string>> {
+    const key = object.toUpperCase();
+    const cached = this.strictColumnCache.get(key);
+    if (cached) return cached;
+    const active = this.strictColumnPending.get(key);
+    if (active) return active;
+    const read = this.readStrictColumns(key);
+    this.strictColumnPending.set(key, read);
+    try {
+      const columns = await read;
+      this.strictColumnCache.set(key, columns);
+      return columns;
+    } finally {
+      this.strictColumnPending.delete(key);
+    }
+  }
+
+  private async readStrictColumns(object: string): Promise<ReadonlySet<string>> {
+    try {
+      const columns = await this.metadata.describeColumns(object);
+      if (!columns.length || columns.some((column) => !column.name?.trim())) {
+        throw new Error('Empty column metadata');
+      }
+      return new Set(columns.map((column) => column.name.toUpperCase()));
+    } catch {
+      this.logger.warn(`Could not confirm LOV scope metadata for ${object}`);
+      throw new ServiceUnavailableException(
+        'Lookup scoping is temporarily unavailable. Please try again.',
+      );
+    }
+  }
 
   /**
    * Returns the first candidate column that exists on `object`. Falls back to the

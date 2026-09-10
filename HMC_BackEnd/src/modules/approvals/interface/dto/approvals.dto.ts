@@ -1,4 +1,4 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional, OmitType } from '@nestjs/swagger';
 import { IsIn, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { LangQueryDto } from '@shared/dto/lang-query.dto';
@@ -62,6 +62,8 @@ export class PendingCountQueryDto extends LangQueryDto {
   pendreq!: string;
 }
 
+export class PendingCountV2QueryDto extends OmitType(PendingCountQueryDto, ['username'] as const) {}
+
 export class PendingCountItemDto implements PendingRequestCountRow {
   @ApiProperty({ example: 7 })
   COUNT_DATA!: number;
@@ -97,6 +99,8 @@ export class WorklistSummaryQueryDto extends ProfileQueryDto {
   @IsString()
   notificationId?: string;
 }
+
+export class WorklistSummaryV2QueryDto extends OmitType(WorklistSummaryQueryDto, ['enum'] as const) {}
 
 /**
  * op 22 — Approve/Reject. APPROVE_REJECT_PR needs the workflow item type and

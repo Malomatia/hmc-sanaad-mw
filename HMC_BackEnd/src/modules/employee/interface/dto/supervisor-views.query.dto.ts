@@ -1,4 +1,4 @@
-import { ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiPropertyOptional, OmitType } from '@nestjs/swagger';
 import { IsOptional, IsString } from 'class-validator';
 import { LovUserQueryDto } from '@shared/dto/common-query.dto';
 
@@ -16,3 +16,7 @@ export class SupervisorViewsQueryDto extends LovUserQueryDto {
   @IsString()
   searchKeyWord?: string;
 }
+
+export class SupervisorViewsV2QueryDto extends OmitType(SupervisorViewsQueryDto, [
+  'username',
+] as const) {}

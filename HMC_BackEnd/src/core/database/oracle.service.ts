@@ -8,6 +8,11 @@ import { RequestContext } from '../http/request-context';
 import { OracleLogStore } from './oracle-log.store';
 import { normalizeOracleUsernameBinds } from './oracle-username.util';
 
+export interface OracleReadiness {
+  ready: boolean;
+  status: 'ready' | 'disabled' | 'unconfigured' | 'recovering' | 'unavailable' | 'stopping';
+}
+
 /** Rich result of a connectivity probe used by the DB health-test endpoint. */
 export interface OracleDiagnostics {
   /** Pool was successfully created at startup. */
@@ -50,6 +55,8 @@ export class OracleService implements OnModuleInit, OnModuleDestroy {
   private pool: oracledb.Pool | undefined;
   private brokenPool: oracledb.Pool | undefined;
   private creating: Promise<oracledb.Pool> | undefined;
+  private recoveryTimer: ReturnType<typeof setTimeout> | undefined;
+  private cancelRetryDelay: (() => void) | undefined;
   private retryAfter = 0;
   private stopping = false;
   private lastPoolError: unknown;
@@ -96,13 +103,15 @@ export class OracleService implements OnModuleInit, OnModuleDestroy {
       // oracle.reachable = false, which also makes the cause obvious.
       this.logger.error(
         `Failed to create Oracle pool: ${(err as Error).message} — starting without it; ` +
-          'Oracle-backed endpoints will retry pool creation on demand after the cooldown.',
+          'Oracle pool recovery will retry in the background and on demand after the cooldown.',
       );
     }
   }
 
   async onModuleDestroy(): Promise<void> {
     this.stopping = true;
+    this.clearRecoveryTimer();
+    this.cancelRetryDelay?.();
     await this.creating?.catch(() => undefined);
     const pool = this.pool;
     this.pool = undefined;
@@ -157,6 +166,69 @@ export class OracleService implements OnModuleInit, OnModuleDestroy {
     return closing;
   }
 
+  private async warmPool(pool: oracledb.Pool): Promise<void> {
+    const started = Date.now();
+    const target = Math.min(this.cfg.poolMax, Math.max(1, this.cfg.poolMin));
+    const acquired = await Promise.allSettled(
+      Array.from({ length: target }, () => this.connect(pool)),
+    );
+    const connections = acquired.flatMap((result) =>
+      result.status === 'fulfilled' ? [result.value] : [],
+    );
+    let released: PromiseSettledResult<void>[] = [];
+    try {
+      const failedAcquisition = acquired.find((result) => result.status === 'rejected');
+      if (failedAcquisition?.status === 'rejected') throw failedAcquisition.reason;
+      if (this.stopping) throw this.poolUnavailable();
+      const probes = await Promise.allSettled(connections.map(async (conn) => conn.ping()));
+      const failedProbe = probes.find((result) => result.status === 'rejected');
+      if (failedProbe?.status === 'rejected') throw failedProbe.reason;
+    } finally {
+      released = await Promise.allSettled(connections.map(async (conn) => conn.close()));
+    }
+    const failedRelease = released.find((result) => result.status === 'rejected');
+    if (failedRelease?.status === 'rejected') throw failedRelease.reason;
+    if (this.stopping) throw this.poolUnavailable();
+    this.logger.log(
+      `Oracle pool warmup completed (connections=${target}, durationMs=${Date.now() - started}).`,
+    );
+  }
+
+  private clearRecoveryTimer(): void {
+    if (this.recoveryTimer) clearTimeout(this.recoveryTimer);
+    this.recoveryTimer = undefined;
+  }
+
+  private scheduleRecovery(): void {
+    if (
+      this.stopping ||
+      !this.isConfigured() ||
+      this.isReady() ||
+      this.creating ||
+      this.recoveryTimer
+    ) {
+      return;
+    }
+    const delay = Math.max(OracleService.POOL_RETRY_COOLDOWN_MS, this.retryAfter - Date.now());
+    this.recoveryTimer = setTimeout(() => {
+      this.recoveryTimer = undefined;
+      void this.getPool().catch(() => this.scheduleRecovery());
+    }, delay);
+    this.recoveryTimer.unref();
+  }
+
+  private waitForRetry(): Promise<void> {
+    return new Promise((resolve) => {
+      const finish = () => {
+        clearTimeout(timer);
+        this.cancelRetryDelay = undefined;
+        resolve();
+      };
+      const timer = setTimeout(finish, OracleService.POOL_RETRY_DELAY_MS);
+      this.cancelRetryDelay = finish;
+    });
+  }
+
   private async recoverPool(oldPool?: oracledb.Pool): Promise<oracledb.Pool> {
     this.pool = undefined;
     this.brokenPool = undefined;
@@ -169,12 +241,7 @@ export class OracleService implements OnModuleInit, OnModuleDestroy {
       try {
         candidate = await this.createPool();
         if (this.stopping) throw this.poolUnavailable();
-        const conn = await this.connect(candidate);
-        try {
-          await conn.ping();
-        } finally {
-          await conn.close();
-        }
+        await this.warmPool(candidate);
         if (this.stopping) throw this.poolUnavailable();
         this.pool = candidate;
         this.retryAfter = 0;
@@ -191,7 +258,7 @@ export class OracleService implements OnModuleInit, OnModuleDestroy {
           `Oracle pool creation attempt ${attempt}/${OracleService.POOL_CREATE_ATTEMPTS} failed: ${(err as Error).message}`,
         );
         if (attempt < OracleService.POOL_CREATE_ATTEMPTS) {
-          await new Promise((resolve) => setTimeout(resolve, OracleService.POOL_RETRY_DELAY_MS));
+          await this.waitForRetry();
         }
       }
     }
@@ -228,6 +295,7 @@ export class OracleService implements OnModuleInit, OnModuleDestroy {
     this.brokenPool = pool;
     this.lastPoolError = err;
     if (cooldown) this.retryAfter = Date.now() + OracleService.POOL_RETRY_COOLDOWN_MS;
+    this.scheduleRecovery();
   }
 
   private async connect(pool: oracledb.Pool, callTimeoutMs?: number): Promise<oracledb.Connection> {
@@ -290,13 +358,29 @@ export class OracleService implements OnModuleInit, OnModuleDestroy {
     return !this.cfg.disabled && Boolean(this.cfg.user) && Boolean(this.cfg.dsn);
   }
 
+  isReady(): boolean {
+    return (
+      !this.stopping && this.isConfigured() && this.pool !== undefined && this.pool !== this.brokenPool
+    );
+  }
+
+  getReadiness(): OracleReadiness {
+    if (this.stopping) return { ready: false, status: 'stopping' };
+    if (this.cfg.disabled) return { ready: true, status: 'disabled' };
+    if (!this.isConfigured()) return { ready: false, status: 'unconfigured' };
+    if (this.isReady()) return { ready: true, status: 'ready' };
+    return { ready: false, status: this.creating || this.recoveryTimer ? 'recovering' : 'unavailable' };
+  }
+
   private async getPool(): Promise<oracledb.Pool> {
     if (this.stopping || this.cfg.disabled) throw this.poolUnavailable();
     if (this.creating) return this.creating;
     if (this.pool && this.pool !== this.brokenPool) return this.pool;
     if (!this.isConfigured() || Date.now() < this.retryAfter) throw this.poolUnavailable();
+    this.clearRecoveryTimer();
     this.creating = this.recoverPool(this.pool).finally(() => {
       this.creating = undefined;
+      this.scheduleRecovery();
     });
     return this.creating;
   }

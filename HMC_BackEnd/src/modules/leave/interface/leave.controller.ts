@@ -1,11 +1,21 @@
-import { BadRequestException, Body, Controller, Get, Post, Query, HttpCode } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Post,
+  Query,
+  HttpCode,
+  Version,
+} from '@nestjs/common';
+import { currentIdentity, requireIdentity } from '@core/auth/current-identity';
 import { ApiBearerAuth, ApiBody, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Lang } from '@core/i18n/lang.decorator';
 import type { Lang as LangCode } from '@shared/domain/lang';
 import { CurrentUser } from '@core/auth/decorators/current-user.decorator';
 import { AuthenticatedUser } from '@core/auth/auth-user.interface';
 import { LangQueryDto } from '@shared/dto/lang-query.dto';
-import { ProfileQueryDto, LovUserQueryDto, LovScopedQueryDto } from '@shared/dto/common-query.dto';
+import { ProfileQueryDto, LovUserQueryDto } from '@shared/dto/common-query.dto';
 import { LovResponseDto } from '@shared/dto/lov-response.dto';
 import { SubmitResultDto } from '@shared/dto/submit-result.dto';
 import { ApiReadOkResponse } from '@shared/swagger/api-read-ok-response.decorator';
@@ -15,8 +25,10 @@ import { VerifiedBody } from '@shared/dto/verified-body';
 import {
   ApplyLeaveRequestDto,
   LeaveAmendLovQueryDto,
+  LeaveAmendLovV2QueryDto,
   LeaveAmendRequestDto,
   LeaveBalanceQueryDto,
+  LeaveBalanceV2QueryDto,
   LeaveCalcRequestDto,
   LeaveCancelRequestDto,
   LeaveReasonsQueryDto,
@@ -45,6 +57,101 @@ import {
 @Controller('leave')
 export class LeaveController {
   constructor(private readonly service: LeaveService) {}
+
+  @Get('balance')
+  @Version('2')
+  @ApiOperation({ summary: 'op 9 — Leave balance', operationId: 'leave_balance_v2' })
+  balanceV2(@Query() q: LeaveBalanceV2QueryDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.service.getBalance({
+      username: requireIdentity(user, 'username'),
+      lang: q.lang,
+      effectiveDate: q.effectivedate,
+      accrualPlan: q.accurlpln,
+    });
+  }
+
+  @Get('lov/defaults')
+  @Version('2')
+  @ApiOperation({ summary: 'op 45 — Leave defaults', operationId: 'leave_defaults_v2' })
+  @ApiReadOkResponse({ example: LEAVE_DEFAULTS_EXAMPLE })
+  defaultsV2(@Query() q: LangQueryDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.service.defaultsForCaller(currentIdentity(user), q.lang);
+  }
+
+  @Get('lov/request-lov')
+  @Version('2')
+  @ApiOperation({ summary: 'op 46 — Leave request LOVs', operationId: 'leave_requestLov_v2' })
+  @ApiReadOkResponse({ example: LEAVE_REQUEST_LOV_EXAMPLE })
+  requestLovV2(@Query() q: LangQueryDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.service.requestLovForCaller(currentIdentity(user), q.lang);
+  }
+
+  @Get('lov/return')
+  @Version('2')
+  @ApiOperation({ summary: 'op 55 — Return-from-leave LOV', operationId: 'leave_returnLov_v2' })
+  @ApiOkResponse({ type: LovResponseDto })
+  @ApiReadOkResponse({ example: LEAVE_EMPTY_ITEMS_EXAMPLE })
+  async returnLovV2(
+    @Query() q: LangQueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<LovResponseDto> {
+    return { items: await this.service.returnLovForCaller(currentIdentity(user), q.lang) };
+  }
+
+  @Get('lov/return-details')
+  @Version('2')
+  @ApiOperation({
+    summary: 'RFL_LEAVE_DET_LOV — return-from-leave details (all view columns)',
+    operationId: 'leave_returnDetailsLov_v2',
+  })
+  @ApiReadOkResponse({ example: LEAVE_RFL_LOV_EXAMPLE })
+  async returnDetailsLovV2(@Query() q: LangQueryDto, @CurrentUser() user: AuthenticatedUser) {
+    return { items: await this.service.returnDetailsLov(requireIdentity(user, 'username')) };
+  }
+
+  @Get('lov/return-related1')
+  @Version('2')
+  @ApiOperation({
+    summary: 'RFL_REL_LEAVE1_LOV — related leave 1 (all view columns)',
+    operationId: 'leave_relatedLeave1Lov_v2',
+  })
+  @ApiReadOkResponse({ example: LEAVE_RFL_LOV_EXAMPLE })
+  async relatedLeave1LovV2(@Query() q: LangQueryDto, @CurrentUser() user: AuthenticatedUser) {
+    return { items: await this.service.relatedLeave1Lov(requireIdentity(user, 'username')) };
+  }
+
+  @Get('lov/return-related2')
+  @Version('2')
+  @ApiOperation({
+    summary: 'RFL_REL_LEAVE2_LOV — related leave 2 (all view columns)',
+    operationId: 'leave_relatedLeave2Lov_v2',
+  })
+  @ApiReadOkResponse({ example: LEAVE_RFL_LOV_EXAMPLE })
+  async relatedLeave2LovV2(@Query() q: LangQueryDto, @CurrentUser() user: AuthenticatedUser) {
+    return { items: await this.service.relatedLeave2Lov(requireIdentity(user, 'username')) };
+  }
+
+  @Get('lov/cancel')
+  @Version('2')
+  @ApiOperation({ summary: 'op 61 — Leave cancel LOV', operationId: 'leave_cancelLov_v2' })
+  @ApiOkResponse({ type: LovResponseDto })
+  async cancelLovV2(
+    @Query() q: LeaveAmendLovV2QueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<LovResponseDto> {
+    return { items: await this.service.cancelLovForCaller(currentIdentity(user), q.lang, q.leave_type) };
+  }
+
+  @Get('lov/amend')
+  @Version('2')
+  @ApiOperation({ summary: 'op 62 — Leave amend LOV', operationId: 'leave_amendLov_v2' })
+  @ApiOkResponse({ type: LovResponseDto })
+  async amendLovV2(
+    @Query() q: LeaveAmendLovV2QueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<LovResponseDto> {
+    return { items: await this.service.amendLovForCaller(currentIdentity(user), q.lang, q.leave_type) };
+  }
 
   @Get('balance')
   @ApiOperation({ summary: 'op 9 — Leave balance', operationId: 'leave_balance' })
@@ -268,5 +375,109 @@ export class LeaveController {
       throw new BadRequestException('person_id, username or enum query parameter is required.');
     }
     return keys;
+  }
+
+  @Post('apply')
+  @Version('2')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'op 10 — Leave submission', operationId: 'leave_apply_v2' })
+  @ApiBody(LEAVE_APPLY_BODY)
+  @ApiActionOkResponse({ example: LEAVE_APPLY_EXAMPLE })
+  applyV2(
+    @Body() dto: ApplyLeaveRequestDto,
+    @CurrentUser() user: AuthenticatedUser,
+    @Lang() lang: LangCode,
+  ) {
+    return this.apply(dto, user, lang);
+  }
+
+  @Post('calculate')
+  @Version('2')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'op 47 — Leave duration calculation', operationId: 'leave_calculate_v2' })
+  @ApiReadOkResponse({ example: LEAVE_CALCULATE_EXAMPLE })
+  @VerifiedBody(LeaveCalcRequestDto, {
+    absenceType: 'Casual Leave',
+    startDate: '12-Jun-2025',
+    endDate: '14-Jun-2025',
+  })
+  calculateV2(
+    @Body() dto: LeaveCalcRequestDto,
+    @CurrentUser() user: AuthenticatedUser,
+    @Lang() lang: LangCode,
+  ) {
+    return this.calculate(dto, user, lang);
+  }
+
+  @Post('amend')
+  @Version('2')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'op 57 — Leave amend', operationId: 'leave_amend_v2' })
+  @ApiBody(LEAVE_AMEND_BODY)
+  @ApiOkResponse({ type: SubmitResultDto })
+  amendV2(
+    @Body() body: LeaveAmendRequestDto,
+    @CurrentUser() user: AuthenticatedUser,
+    @Lang() lang: LangCode,
+  ) {
+    return this.amend(body, user, lang);
+  }
+
+  @Post('cancel')
+  @Version('2')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'op 58 — Leave cancel', operationId: 'leave_cancel_v2' })
+  @ApiBody(LEAVE_CANCEL_BODY)
+  @ApiOkResponse({ type: SubmitResultDto })
+  cancelV2(
+    @Body() body: LeaveCancelRequestDto,
+    @CurrentUser() user: AuthenticatedUser,
+    @Lang() lang: LangCode,
+  ) {
+    return this.cancel(body, user, lang);
+  }
+
+  @Post('return')
+  @Version('2')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'op 56 — Return from leave', operationId: 'leave_return_v2' })
+  @ApiBody(LEAVE_RETURN_BODY)
+  @ApiActionOkResponse({ example: LEAVE_RETURN_EXAMPLE })
+  returnFromLeaveV2(
+    @Body() body: LeaveReturnRequestDto,
+    @CurrentUser() user: AuthenticatedUser,
+    @Lang() lang: LangCode,
+  ) {
+    return this.returnFromLeave(body, user, lang);
+  }
+
+  @Get('lov/types')
+  @Version('2')
+  @ApiOperation({ summary: 'op 12 — Leave types LOV', operationId: 'leave_typesLov_v2' })
+  @ApiOkResponse({ type: LovResponseDto })
+  @ApiReadOkResponse({ example: LEAVE_TYPES_LOV_EXAMPLE })
+  async typesV2(@Query() q: LangQueryDto): Promise<LovResponseDto> {
+    return this.types(q);
+  }
+
+  @Get('lov/reasons')
+  @Version('2')
+  @ApiOperation({
+    summary: 'op 13 — Leave reasons LOV (optionally filtered by ?leave_type=)',
+    operationId: 'leave_reasonsLov_v2',
+  })
+  @ApiOkResponse({ type: LovResponseDto })
+  @ApiReadOkResponse({ example: LEAVE_REASONS_LOV_EXAMPLE })
+  async reasonsV2(@Query() q: LeaveReasonsQueryDto): Promise<LovResponseDto> {
+    return this.reasons(q);
+  }
+
+  @Get('lov/classes')
+  @Version('2')
+  @ApiOperation({ summary: 'op 14 — Leave classes LOV', operationId: 'leave_classesLov_v2' })
+  @ApiOkResponse({ type: LovResponseDto })
+  @ApiReadOkResponse({ example: LEAVE_CLASSES_LOV_EXAMPLE })
+  async classesV2(@Query() q: LangQueryDto): Promise<LovResponseDto> {
+    return this.classes(q);
   }
 }

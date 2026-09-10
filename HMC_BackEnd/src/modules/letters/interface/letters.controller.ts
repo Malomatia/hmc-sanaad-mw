@@ -1,4 +1,6 @@
-import { Body, Controller, Get, Post, Query, HttpCode } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query, HttpCode, Version } from '@nestjs/common';
+import { currentIdentity } from '@core/auth/current-identity';
+import { LangQueryDto } from '@shared/dto/lang-query.dto';
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Lang } from '@core/i18n/lang.decorator';
 import type { Lang as LangCode } from '@shared/domain/lang';
@@ -18,6 +20,14 @@ import { LETTERS_LOV_EXAMPLE } from './letters.examples';
 @Controller('letters')
 export class LettersController {
   constructor(private readonly service: LettersService) {}
+
+  @Get('lov')
+  @Version('2')
+  @ApiOperation({ summary: 'op 16 — Letter request LOVs', operationId: 'letters_lov_v2' })
+  @ApiReadOkResponse({ example: LETTERS_LOV_EXAMPLE })
+  lovV2(@Query() q: LangQueryDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.service.getLetterLovsForCaller(q.lang, currentIdentity(user));
+  }
 
   /**
    * The authenticated username is passed alongside `?enum=` because
@@ -59,5 +69,30 @@ export class LettersController {
   ) {
     // Accepts the spec's HR_EMPLYMNT_LTR_PR body (p_* keys).
     return this.service.submit(body, user, lang);
+  }
+
+  @Post('apply')
+  @Version('2')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'op 17 — Submit letter request', operationId: 'letters_apply_v2' })
+  @ApiOkResponse({ type: SubmitResultDto })
+  @VerifiedBody(
+    LetterApplyRequestDto,
+    {
+      p_letter_language: 'English',
+      p_letter_name: 'Bank letter with details with effective date',
+      p_no_of_copies: '1',
+      p_mobile_number: '55723893',
+      p_letter_delivery_loc: 'Al Wakra Hospital',
+      p_purpose_comments: 'test',
+    },
+    'Payload rules verified from the procedure source; p_mobile_number must be an existing mobile of the employee (GET /letters/lov → mobileNo).',
+  )
+  applyV2(
+    @Body() body: LetterApplyRequestDto,
+    @CurrentUser() user: AuthenticatedUser,
+    @Lang() lang: LangCode,
+  ) {
+    return this.apply(body, user, lang);
   }
 }

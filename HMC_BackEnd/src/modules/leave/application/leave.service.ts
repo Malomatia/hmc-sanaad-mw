@@ -1,6 +1,8 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Lang } from '@shared/domain/lang';
+import { CallerIdentity } from '@shared/domain/caller-identity';
+import { MissingIdentityClaimException, requireCallerClaim } from '@core/auth/current-identity';
 import { LovItem } from '@shared/domain/lov-item';
 import { SubmitResult } from '@shared/domain/submit-result';
 import { ORACLE_OBJECTS } from '@shared/constants/oracle-objects';
@@ -117,34 +119,73 @@ export class LeaveService {
     );
   }
 
+  async returnLovForCaller(caller: CallerIdentity, lang: Lang): Promise<LovItem[]> {
+    return this.lookups.getByObjectForCaller(ORACLE_OBJECTS.RFL_REL_LEAVE1_V, lang, caller, {
+      requiredScope: 'username',
+    });
+  }
+
+  async cancelLovForCaller(caller: CallerIdentity, lang: Lang, leaveType?: string): Promise<LovItem[]> {
+    return this.personLovForCaller(ORACLE_OBJECTS.LEAVE_CANCEL_V, caller, lang, leaveType);
+  }
+
+  async amendLovForCaller(caller: CallerIdentity, lang: Lang, leaveType?: string): Promise<LovItem[]> {
+    return this.personLovForCaller(ORACLE_OBJECTS.LEAVE_AMEND_V, caller, lang, leaveType);
+  }
+
+  private async personLovForCaller(
+    object: string,
+    caller: CallerIdentity,
+    lang: Lang,
+    leaveType?: string,
+  ): Promise<LovItem[]> {
+    requireCallerClaim(caller, 'personId');
+    const t = this.config.get<number>('app.aggregateReadTimeoutMs', 20000);
+    return this.settle(object, t, [] as LovItem[], () =>
+      this.lookups.getByObjectForCaller(object, lang, caller, { requiredScope: 'personId', leaveType }),
+    );
+  }
+
   // ── Aggregated LOVs (fan-out; parallelized) ───────────────
   async requestLov(lang: Lang): Promise<Record<string, LovItem[]>> {
+    return this.requestLovAggregate(lang);
+  }
+
+  async requestLovForCaller(caller: CallerIdentity, lang: Lang): Promise<Record<string, LovItem[]>> {
+    requireCallerClaim(caller, 'username');
+    return this.requestLovAggregate(lang, caller);
+  }
+
+  private async requestLovAggregate(
+    lang: Lang,
+    caller?: CallerIdentity,
+  ): Promise<Record<string, LovItem[]>> {
     const t = this.config.get<number>('app.aggregateReadTimeoutMs', 20000);
     const [numOfChild, leaveClass, examCentre, bereavement, contractYear, types, reasons, leaveType] =
       await Promise.all([
         this.settle('NUM_OF_CHILD_V', t, [] as LovItem[], () =>
-          this.lookups.getByObject(ORACLE_OBJECTS.NUM_OF_CHILD_V, lang),
+          this.aggregateLov(ORACLE_OBJECTS.NUM_OF_CHILD_V, lang, caller),
         ),
         this.settle('LEAV_CLASS_V', t, [] as LovItem[], () =>
-          this.lookups.getByObject(ORACLE_OBJECTS.LEAV_CLASS_V, lang),
+          this.aggregateLov(ORACLE_OBJECTS.LEAV_CLASS_V, lang, caller),
         ),
         this.settle('EXAM_CENTRE_V', t, [] as LovItem[], () =>
-          this.lookups.getByObject(ORACLE_OBJECTS.EXAM_CENTRE_V, lang),
+          this.aggregateLov(ORACLE_OBJECTS.EXAM_CENTRE_V, lang, caller),
         ),
         this.settle('BEREAV_RELAT_V', t, [] as LovItem[], () =>
-          this.lookups.getByObject(ORACLE_OBJECTS.BEREAV_RELAT_V, lang),
+          this.aggregateLov(ORACLE_OBJECTS.BEREAV_RELAT_V, lang, caller),
         ),
         this.settle('CONTRACT_YEARS_V', t, [] as LovItem[], () =>
-          this.lookups.getByObject(ORACLE_OBJECTS.CONTRACT_YEARS_V, lang),
+          this.aggregateLov(ORACLE_OBJECTS.CONTRACT_YEARS_V, lang, caller),
         ),
         this.settle('ABSENCE_TYPE_V', t, [] as LovItem[], () =>
-          this.lookups.getByObject(ORACLE_OBJECTS.ABSENCE_TYPE_V, lang),
+          this.aggregateLov(ORACLE_OBJECTS.ABSENCE_TYPE_V, lang, caller),
         ),
         this.settle('ABSENCE_REASON_V', t, [] as LovItem[], () =>
-          this.lookups.getByObject(ORACLE_OBJECTS.ABSENCE_REASON_V, lang),
+          this.aggregateLov(ORACLE_OBJECTS.ABSENCE_REASON_V, lang, caller),
         ),
         this.settle('LEAVE_TYPE_V', t, [] as LovItem[], () =>
-          this.lookups.getByObject(ORACLE_OBJECTS.LEAVE_TYPE_V, lang),
+          this.aggregateLov(ORACLE_OBJECTS.LEAVE_TYPE_V, lang, caller),
         ),
       ]);
     return {
@@ -163,25 +204,48 @@ export class LeaveService {
     employeeNumber: string,
     lang: Lang,
   ): Promise<{ employment?: Record<string, unknown>; lovs: Record<string, LovItem[]> }> {
+    return this.defaultsAggregate(employeeNumber, lang);
+  }
+
+  async defaultsForCaller(
+    caller: CallerIdentity,
+    lang: Lang,
+  ): Promise<{ employment?: Record<string, unknown>; lovs: Record<string, LovItem[]> }> {
+    const employeeNumber = requireCallerClaim(caller, 'employeeNumber');
+    requireCallerClaim(caller, 'username');
+    return this.defaultsAggregate(employeeNumber, lang, caller);
+  }
+
+  private async defaultsAggregate(
+    employeeNumber: string,
+    lang: Lang,
+    caller?: CallerIdentity,
+  ): Promise<{ employment?: Record<string, unknown>; lovs: Record<string, LovItem[]> }> {
     const t = this.config.get<number>('app.aggregateReadTimeoutMs', 20000);
     const [employment, annualTicket, library, alsr, contractYear] = await Promise.all([
       this.settle('EMPLOYMENT_DETAILS_V', t, undefined, () =>
         this.repo.getEmploymentContext(employeeNumber),
       ),
       this.settle('ANNUAL_TICKT_LOV', t, [] as LovItem[], () =>
-        this.lookups.getByObject(ORACLE_OBJECTS.ANNUAL_TICKT_LOV, lang),
+        this.aggregateLov(ORACLE_OBJECTS.ANNUAL_TICKT_LOV, lang, caller),
       ),
       this.settle('LIBR_DFALT_LOV', t, [] as LovItem[], () =>
-        this.lookups.getByObject(ORACLE_OBJECTS.LIBR_DFALT_LOV, lang),
+        this.aggregateLov(ORACLE_OBJECTS.LIBR_DFALT_LOV, lang, caller),
       ),
       this.settle('ALSR_DFALT_LOV', t, [] as LovItem[], () =>
-        this.lookups.getByObject(ORACLE_OBJECTS.ALSR_DFALT_LOV, lang),
+        this.aggregateLov(ORACLE_OBJECTS.ALSR_DFALT_LOV, lang, caller),
       ),
       this.settle('CONTRACT_YEARS_V', t, [] as LovItem[], () =>
-        this.lookups.getByObject(ORACLE_OBJECTS.CONTRACT_YEARS_V, lang),
+        this.aggregateLov(ORACLE_OBJECTS.CONTRACT_YEARS_V, lang, caller),
       ),
     ]);
     return { employment, lovs: { annualTicket, library, alsr, contractYear } };
+  }
+
+  private aggregateLov(object: string, lang: Lang, caller?: CallerIdentity): Promise<LovItem[]> {
+    return caller
+      ? this.lookups.getByObjectForCaller(object, lang, caller)
+      : this.lookups.getByObject(object, lang);
   }
 
   /**
@@ -200,6 +264,7 @@ export class LeaveService {
     factory: () => Promise<T>,
   ): Promise<T> {
     const read = factory().catch((err: unknown) => {
+      if (err instanceof MissingIdentityClaimException) throw err;
       this.logger.warn(
         `[READ_DEGRADED] object=${object} failed: ${(err as Error).message} — returning fallback`,
       );

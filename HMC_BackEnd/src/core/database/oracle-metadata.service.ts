@@ -154,26 +154,26 @@ export class OracleMetadataService {
   private async readArguments(object: string): Promise<OracleArgumentInfo[]> {
     const [pkg, member] = object.split('.');
     const rows = await this.ora.query<Record<string, any>>(
-      `SELECT a.owner,
-              CASE
-                WHEN a.owner = SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA') THEN 0
-                WHEN EXISTS (
-                  SELECT 1
-                    FROM all_synonyms s
-                   WHERE s.synonym_name = :pkg
-                     AND s.table_owner = a.owner
-                     AND s.owner IN (SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA'), 'PUBLIC')
-                ) THEN 1
-                WHEN a.owner = 'APPS' THEN 2
-                ELSE 3
-              END owner_rank,
-              a.package_name, a.object_name, a.overload, a.subprogram_id,
-              a.argument_name, a.position, a.sequence, a.data_level, a.data_type,
-              a.type_owner, a.type_name, a.type_subname, a.in_out, a.defaulted
-         FROM all_arguments a
-        WHERE (:member IS NOT NULL AND a.package_name = :pkg AND a.object_name = :member)
-           OR (:member IS NULL AND a.package_name IS NULL AND a.object_name = :pkg)
-        ORDER BY owner_rank, a.owner, a.subprogram_id, a.overload NULLS FIRST, a.sequence`,
+      `WITH synonym_owners AS (
+          SELECT DISTINCT table_owner
+            FROM user_synonyms
+           WHERE synonym_name = :pkg
+        )
+        SELECT a.owner,
+               CASE
+                 WHEN a.owner = SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA') THEN 0
+                 WHEN s.table_owner IS NOT NULL THEN 1
+                 WHEN a.owner = 'APPS' THEN 2
+                 ELSE 3
+               END owner_rank,
+               a.package_name, a.object_name, a.overload, a.subprogram_id,
+               a.argument_name, a.position, a.sequence, a.data_level, a.data_type,
+               a.type_owner, a.type_name, a.type_subname, a.in_out, a.defaulted
+          FROM all_arguments a
+          LEFT JOIN synonym_owners s ON a.owner = s.table_owner
+         WHERE (:member IS NOT NULL AND a.package_name = :pkg AND a.object_name = :member)
+            OR (:member IS NULL AND a.package_name IS NULL AND a.object_name = :pkg)
+         ORDER BY owner_rank, a.owner, a.subprogram_id, a.overload NULLS FIRST, a.sequence`,
       { pkg, member: member ?? null },
     );
     return rows.map((r) => ({

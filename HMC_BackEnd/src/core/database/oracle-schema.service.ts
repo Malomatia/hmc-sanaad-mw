@@ -46,7 +46,7 @@ export interface ProcedureSignature {
  *    `p_status` / `p_message` everywhere, while REASSIGN_PR (for one) declares
  *    `p_success_flag` / `p_error_msg` / `p_error_msg_ar`.
  *
- * Everything is read once per object and cached for the process lifetime.
+ * Successful metadata reads are cached for the process lifetime.
  */
 @Injectable()
 export class OracleSchemaService {
@@ -56,15 +56,15 @@ export class OracleSchemaService {
   /** object → column name → declared data type (populated with columnCache). */
   private readonly columnTypeCache = new Map<string, Map<string, string>>();
   /** object → declared parameters, or null when the dictionary knows none. */
-  private readonly paramCache = new Map<string, ProcedureSignature[] | null | undefined>();
+  private readonly paramCache = new Map<string, ProcedureSignature[] | null>();
 
   constructor(private readonly metadata: OracleMetadataService) {}
 
   /**
    * Returns the first candidate column that exists on `object`. Falls back to the
-   * first candidate when the dictionary lookup yields nothing (e.g. the account
-   * cannot read ALL_TAB_COLUMNS) so behaviour stays unchanged rather than
-   * breaking.
+   * first candidate when a successful dictionary query returns no columns.
+   * Query failures propagate so callers never use a guessed key after a failed
+   * lookup.
    */
   async resolveKeyColumn(object: string, candidates: readonly string[]): Promise<string> {
     const available = await this.columnsOf(object);
@@ -103,7 +103,7 @@ export class OracleSchemaService {
 
   /**
    * Declared parameters of a procedure (or of `PACKAGE.PROCEDURE`), in
-   * positional order, or undefined when the dictionary has no entry for it.
+   * positional order, or null when the dictionary has no entry for it.
    */
   async resolveParams(
     object: string,
@@ -119,8 +119,8 @@ export class OracleSchemaService {
    * `RETURN xxhmc_snd_child_detl_nt` means it must be queried with
    * `SELECT * FROM TABLE(fn(...))`, not `BEGIN fn(...); END;`, which raises
    * `PLS-00221: is not a procedure`). Null when the dictionary reports no
-   * arguments (a real table/view); undefined when the dictionary could not be
-   * read at all.
+   * arguments (a real table/view). Dictionary read failures propagate unchanged
+   * rather than being cached as missing metadata.
    */
   async resolveSignature(
     object: string,
@@ -177,7 +177,7 @@ export class OracleSchemaService {
     }
   }
 
-  private async readSignatures(object: string): Promise<ProcedureSignature[] | null | undefined> {
+  private async readSignatures(object: string): Promise<ProcedureSignature[] | null> {
     const [pkg, member] = object.toUpperCase().split('.');
     const target = member ?? pkg;
     try {
@@ -220,7 +220,7 @@ export class OracleSchemaService {
       });
     } catch (err) {
       this.logger.warn(`Could not read the signature of ${object}: ${(err as Error).message}`);
-      return undefined;
+      throw err;
     }
   }
 
@@ -288,6 +288,7 @@ export class OracleSchemaService {
       for (const c of columns) types.set(c.name.toUpperCase(), c.dataType.toUpperCase());
     } catch (err) {
       this.logger.warn(`Could not describe ${object}: ${(err as Error).message}`);
+      throw err;
     }
     this.columnCache.set(key, names);
     this.columnTypeCache.set(key, types);

@@ -1,7 +1,9 @@
 import { BaseOracleRepository } from './base.repository';
 import { OracleService } from './oracle.service';
 import { OracleSchemaService } from './oracle-schema.service';
+import { OracleMetadataService } from './oracle-metadata.service';
 import { SchemaColumnNotFoundException } from './schema-column-not-found.error';
+import { SchoolFeeOracleRepository } from '@modules/school-fees/infrastructure/oracle/school-fees.oracle.repository';
 
 /** Minimal concrete subclass so the protected `toSubmitResult` can be tested
  * directly, without going through a real Oracle call. */
@@ -29,6 +31,15 @@ class TestRepository extends BaseOracleRepository {
     containsFilter?: { column: string; value: string },
   ) {
     return this.queryTableFunction(object, args, maxRows, containsFilter);
+  }
+
+  public exposeConfigured(kind: 'submit' | 'rows' | 'function') {
+    const object = 'XXHMC_SND_TEST_PR';
+    const params = ['p_user_name'];
+    const values = { p_user_name: 'TESTUSER' };
+    if (kind === 'submit') return this.callSubmitProc(object, params, values);
+    if (kind === 'rows') return this.callRowsProc(object, params, values);
+    return this.callRowsOrTableFunction(object, params, values);
   }
 }
 
@@ -253,5 +264,121 @@ describe('BaseOracleRepository.queryTableFunction containsFilter', () => {
       'SELECT * FROM TABLE(XXHMC_SND_SUPERVISOR_VIEW(:arg0, :arg1)) WHERE ROWNUM <= :maxRows',
       { maxRows: 2000, arg0: 'V-TEST', arg1: null },
     );
+  });
+});
+
+describe('SchoolFeeOracleRepository.getChildren', () => {
+  const input = { employeeNumber: 'test.User', academicYearStartDate: '20250901', lang: 'en' as const };
+  const sql =
+    'SELECT * FROM TABLE(XXHMC_SND_CHILD_DETS_VIEW(:arg0, :arg1)) WHERE ROWNUM <= :maxRows';
+  const binds = { maxRows: 2000, arg0: '20250901', arg1: 'TEST.USER' };
+
+  function make() {
+    const rows = [{ CHILD_ID: 101, USER_NAME: 'TEST.USER', EXTRA: 'preserved' }];
+    const query = jest.fn().mockResolvedValue(rows);
+    const callCursor = jest.fn().mockResolvedValue([]);
+    const schema = {
+      resolveParams: jest.fn().mockResolvedValue(undefined),
+      resolveSignature: jest.fn().mockResolvedValue(undefined),
+      resolveKeyColumn: jest.fn().mockResolvedValue('USER_NAME'),
+    };
+    const repo = new SchoolFeeOracleRepository(
+      { query, callCursor } as unknown as OracleService,
+      schema as unknown as OracleSchemaService,
+    );
+    return { repo, query, callCursor, schema, rows };
+  }
+
+  it.each(['en', 'ar'] as const)('uses the confirmed positional function call for %s', async (lang) => {
+    const { repo, query, callCursor, schema, rows } = make();
+
+    await expect(repo.getChildren({ ...input, lang })).resolves.toBe(rows);
+
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(query).toHaveBeenCalledWith(sql, binds);
+    expect(callCursor).not.toHaveBeenCalled();
+    expect(schema.resolveParams).not.toHaveBeenCalled();
+    expect(schema.resolveSignature).not.toHaveBeenCalled();
+  });
+
+  it.each(['empty', 'unavailable', 'stale'])('does not depend on %s metadata', async (state) => {
+    const { repo, query, callCursor, schema } = make();
+    if (state === 'unavailable') {
+      schema.resolveParams.mockRejectedValue(new Error('Metadata unavailable'));
+    } else if (state === 'empty') {
+      schema.resolveParams.mockResolvedValue(null);
+    } else {
+      schema.resolveParams.mockResolvedValue([
+        { name: 'p_cursor', direction: 'OUT', dataType: 'REF CURSOR', defaulted: false },
+      ]);
+      schema.resolveSignature.mockResolvedValue({ params: [] });
+    }
+
+    await repo.getChildren(input);
+
+    expect(query).toHaveBeenCalledWith(sql, binds);
+    expect(callCursor).not.toHaveBeenCalled();
+    expect(schema.resolveParams).not.toHaveBeenCalled();
+    expect(schema.resolveSignature).not.toHaveBeenCalled();
+    expect(schema.resolveKeyColumn).not.toHaveBeenCalled();
+  });
+
+  it('preserves an empty result', async () => {
+    const { repo, query } = make();
+    query.mockResolvedValue([]);
+
+    await expect(repo.getChildren(input)).resolves.toEqual([]);
+  });
+
+  it('propagates query errors without retrying as a procedure', async () => {
+    const { repo, query, callCursor } = make();
+    const error = new Error('Oracle query failed');
+    query.mockRejectedValue(error);
+
+    await expect(repo.getChildren(input)).rejects.toBe(error);
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(callCursor).not.toHaveBeenCalled();
+  });
+});
+
+describe('BaseOracleRepository metadata failures', () => {
+  it.each(['submit', 'rows', 'function'] as const)(
+    'does not execute guessed SQL for %s after signature discovery fails',
+    async (kind) => {
+      const error = new Error('Signature discovery failed');
+      const describeArguments = jest.fn().mockRejectedValue(error);
+      const schema = new OracleSchemaService({ describeArguments } as unknown as OracleMetadataService);
+      const ora = {
+        call: jest.fn().mockResolvedValue({ p_success_flag: 'S' }),
+        callCursor: jest.fn().mockResolvedValue([]),
+        query: jest.fn().mockResolvedValue([]),
+      };
+      const repo = new TestRepository(ora, schema);
+
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        await expect(repo.exposeConfigured(kind)).rejects.toBe(error);
+        expect(describeArguments).toHaveBeenCalledTimes(attempt);
+      }
+      expect(ora.call).not.toHaveBeenCalled();
+      expect(ora.callCursor).not.toHaveBeenCalled();
+      expect(ora.query).not.toHaveBeenCalled();
+    },
+  );
+
+  it('does not read a view with an assumed key after column discovery fails', async () => {
+    const error = new Error('Column discovery failed');
+    const describeColumns = jest.fn().mockRejectedValueOnce(error).mockResolvedValue([
+      { name: 'PERSON_ID', dataType: 'NUMBER', nullable: false, position: 1 },
+    ]);
+    const schema = new OracleSchemaService({ describeColumns } as unknown as OracleMetadataService);
+    const query = jest.fn().mockResolvedValue([]);
+    const repo = new TestRepository({ query }, schema);
+
+    await expect(repo.exposeReadIn('TEST_VIEW', ['1'], ['person_id'])).rejects.toBe(error);
+    expect(query).not.toHaveBeenCalled();
+
+    await expect(repo.exposeReadIn('TEST_VIEW', ['1'], ['person_id'])).resolves.toEqual([]);
+    expect(describeColumns).toHaveBeenCalledTimes(2);
+    expect(query).toHaveBeenCalledWith('SELECT * FROM TEST_VIEW WHERE person_id IN (:k0)', { k0: '1' });
   });
 });

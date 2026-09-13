@@ -110,10 +110,40 @@ describe('OracleSchemaService', () => {
     );
   });
 
+  it('propagates signature failures and caches only a subsequent successful lookup', async () => {
+    const { service, describeArguments } = make();
+    const error = new Error('Signature discovery failed');
+    describeArguments.mockRejectedValueOnce(error);
+
+    await expect(service.resolveParams('XXHMC_SND_GET_PAYSLIP_PERIODS')).rejects.toBe(error);
+
+    const params = await service.resolveParams('XXHMC_SND_GET_PAYSLIP_PERIODS');
+    expect(params?.map((p) => p.name)).toEqual(['p_user_name', 'p_get_periods']);
+    await expect(service.resolveParams('xxhmc_snd_get_payslip_periods')).resolves.toEqual(params);
+    expect(describeArguments).toHaveBeenCalledTimes(2);
+  });
+
+  it('propagates column failures without poisoning column-name or column-type caches', async () => {
+    const { service, describeColumns } = make();
+    const error = new Error('Column discovery failed');
+    describeColumns.mockRejectedValueOnce(error).mockResolvedValue([
+      { name: 'PERSON_ID', dataType: 'NUMBER', nullable: false, position: 1 },
+    ]);
+
+    await expect(service.hasColumn(object, 'PERSON_ID')).rejects.toBe(error);
+
+    await expect(service.isNumericColumn(object, 'PERSON_ID')).resolves.toBe(true);
+    await expect(service.resolveKeyColumn(object, ['person_id', 'username'])).resolves.toBe('person_id');
+    await expect(service.hasColumn(object, 'PERSON_ID')).resolves.toBe(true);
+    expect(describeColumns).toHaveBeenCalledTimes(2);
+  });
+
   it('returns null when an object has no formal parameters', async () => {
     const describeArguments = jest.fn().mockResolvedValue([]);
     const { service } = make({ describeArguments } as Partial<jest.Mocked<OracleMetadataService>>);
     await expect(service.resolveParams('XXHMC_SND_CHILD_DETS_VIEW')).resolves.toBeNull();
+    await expect(service.resolveParams('XXHMC_SND_CHILD_DETS_VIEW')).resolves.toBeNull();
+    expect(describeArguments).toHaveBeenCalledTimes(1);
   });
 
   it('reports a returnType for a table function, distinguishing it from a procedure', async () => {

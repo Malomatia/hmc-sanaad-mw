@@ -5,7 +5,6 @@ import { OracleSchemaService } from '@core/database/oracle-schema.service';
 import { BaseOracleRepository } from '@core/database/base.repository';
 import { sanitizeOracleMessage } from '@core/http/error-category';
 import { SubmitResult } from '@shared/domain/submit-result';
-import { toOracleLanguage } from '@shared/domain/lang';
 import { parseOracleDate } from '@shared/utils/date.util';
 import { col, dateStr, pruneUndefined, str, strAr } from '@shared/utils/mapper.util';
 import { ORACLE_OBJECTS } from '@shared/constants/oracle-objects';
@@ -67,8 +66,15 @@ const LEAVE_RETURN_PARAMS = [
   'p_language',
 ] as const;
 
-/** LEAVE_BALANCE_PR input params (Sanaad spec — LeaveBalance input). */
-const LEAVE_BALANCE_PARAMS = ['p_user_name', 'p_effective_date', 'p_language'] as const;
+/** LEAVE_BALANCE_PR confirmed parameters — 2 IN + 4 OUT. */
+const LEAVE_BALANCE_PARAMS = [
+  'p_user_name',
+  'p_effective_date',
+  'p_get_balances',
+  'p_success_flag',
+  'p_error_msg',
+  'p_error_msg_ar',
+] as const;
 
 /**
  * CALC_LEAV_DUR_PR confirmed signature (there is NO p_language, and the OUT
@@ -93,8 +99,8 @@ export class LeaveOracleRepository extends BaseOracleRepository implements Leave
   }
 
   /**
-   * op 9 — leave balance. LEAVE_BALANCE_PR takes the user, effective date and
-   * language and returns the accrual-plan balances through a REF CURSOR.
+   * op 9 — leave balance. LEAVE_BALANCE_PR takes the user and effective date,
+   * returning the accrual-plan REF CURSOR plus status and bilingual error OUTs.
    *
    * `p_user_name` is bound to the value EXACTLY as it came from the request
    * (client request 2026-08-30): `?username=` as-is, or the legacy
@@ -108,14 +114,19 @@ export class LeaveOracleRepository extends BaseOracleRepository implements Leave
     if (!userName) {
       throw new BadRequestException('username (or the legacy person_id) is required.');
     }
-    return this.callRowsProc<LeaveBalance>(
-      ORACLE_OBJECTS.LEAVE_BALANCE_PR,
-      LEAVE_BALANCE_PARAMS,
+    const namedArgs = LEAVE_BALANCE_PARAMS.map((p) => `${p} => :${p}`).join(',\n          ');
+    return this.callCursor<LeaveBalance>(
+      `BEGIN APPS.${ORACLE_OBJECTS.LEAVE_BALANCE_PR}(\n          ${namedArgs}); END;`,
       {
-        p_user_name: userName,
-        p_effective_date: query.effectiveDate,
-        p_language: toOracleLanguage(query.lang),
+        p_user_name: userName.toUpperCase(),
+        p_effective_date: {
+          type: oracledb.DB_TYPE_DATE,
+          val: parseOracleDate(query.effectiveDate),
+        },
+        p_get_balances: { dir: oracledb.BIND_OUT, type: oracledb.CURSOR },
+        ...this.successFlagOutBinds(),
       },
+      'p_get_balances',
     );
   }
 

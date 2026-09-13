@@ -5,7 +5,6 @@ import { BaseOracleRepository } from '@core/database/base.repository';
 import { SubmitResult } from '@shared/domain/submit-result';
 import { toOracleLanguage } from '@shared/domain/lang';
 import { ORACLE_OBJECTS } from '@shared/constants/oracle-objects';
-import { USERNAME_KEY_CANDIDATES } from '@shared/constants/oracle-columns';
 import {
   ChildDetail,
   ChildrenQuery,
@@ -41,9 +40,9 @@ const SCHOOL_FEE_PARAMS = [
  * RETURN xxhmc_snd_child_detl_nt` (confirmed by Oracle) — so it takes exactly
  * these two, not the three-parameter `GetSchoolChildListDetails` request shape
  * (`user_name`/`s_date`/`language`) the Sanaad mapping documents; there is no
- * language parameter. Kept only as the `expectedParams` hint for
- * `OracleSchemaService.resolveSignature`'s overload scoring — the actual call
- * uses whatever the dictionary reports.
+ * language parameter. The confirmed parameter order drives the positional
+ * TABLE(...) call without consulting schema metadata, so a failed lookup
+ * cannot change the call into a procedure.
  */
 const CHILD_DETS_PARAMS = ['p_acad_yr_strt_dt', 'p_user_name'] as const;
 
@@ -54,9 +53,9 @@ const CHILD_DETS_PARAMS = ['p_acad_yr_strt_dt', 'p_user_name'] as const;
  * raised `ORA-04044: procedure, function, package, or type is not allowed here`,
  * and calling it as a procedure (`BEGIN object(...); END;`) raised
  * `PLS-00221: is not a procedure or is undefined` — it is a table FUNCTION, so
- * `callRowsOrTableFunction` queries it via `SELECT * FROM TABLE(fn(...))`. If
- * the dictionary instead reports it as a real table/view (no arguments), it
- * falls back to a SELECT.
+ * `queryTableFunction` always uses `SELECT * FROM TABLE(fn(...))` without
+ * consulting the dictionary. Metadata failures must never switch it to a
+ * direct view read or a cursor-returning procedure.
  */
 @Injectable()
 export class SchoolFeeOracleRepository extends BaseOracleRepository implements SchoolFeeRepository {
@@ -73,21 +72,14 @@ export class SchoolFeeOracleRepository extends BaseOracleRepository implements S
   }
 
   async getChildren(query: ChildrenQuery): Promise<ChildDetail[]> {
-    const object = ORACLE_OBJECTS.CHILD_DETS_VIEW;
-    const declared = await this.schema?.resolveParams(object);
-
-    // No declared parameters means the object really is a table/view.
-    if (declared !== undefined && declared === null) {
-      return this.readByResolvedKey<ChildDetail>(
-        object,
-        query.employeeNumber,
-        USERNAME_KEY_CANDIDATES,
-      );
-    }
-
-    return this.callRowsOrTableFunction<ChildDetail>(object, CHILD_DETS_PARAMS, {
-      p_user_name: query.employeeNumber,
+    // Bind the confirmed function signature even when schema discovery is unavailable.
+    const values = {
       p_acad_yr_strt_dt: query.academicYearStartDate,
-    });
+      p_user_name: query.employeeNumber.toUpperCase(),
+    };
+    return this.queryTableFunction<ChildDetail>(
+      ORACLE_OBJECTS.CHILD_DETS_VIEW,
+      CHILD_DETS_PARAMS.map((param) => values[param]),
+    );
   }
 }

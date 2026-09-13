@@ -1,5 +1,7 @@
+import * as oracledb from 'oracledb';
 import { OracleService } from '@core/database/oracle.service';
 import { OracleSchemaService } from '@core/database/oracle-schema.service';
+import { EFFECTIVE_DATE_ALL } from '@shared/utils/date.util';
 import { LeaveOracleRepository } from './leave.oracle.repository';
 
 /**
@@ -123,18 +125,88 @@ describe('LeaveOracleRepository — the leave procedures take no p_language', ()
  * op 9 binds `p_user_name` to the identifier EXACTLY as it came from the
  * request (client request 2026-08-30) — no PERSON_ID resolution round-trip.
  */
-describe('LeaveOracleRepository — getBalance binds the request value as-is', () => {
+describe('LeaveOracleRepository — getBalance confirmed Oracle call', () => {
   function make() {
     const query = jest.fn();
     const callCursor = jest.fn().mockResolvedValue([{ LEAVE_TYPE: 'Annual', BALANCE: 10 }]);
     const ora = { query, callCursor } as unknown as OracleService;
-    const schema = {
-      resolveParams: jest.fn().mockResolvedValue([]),
-    } as unknown as OracleSchemaService;
-    return { repository: new LeaveOracleRepository(ora, schema), query, callCursor };
+    const resolveParams = jest.fn().mockResolvedValue([]);
+    const schema = { resolveParams } as unknown as OracleSchemaService;
+    return { repository: new LeaveOracleRepository(ora, schema), query, callCursor, resolveParams };
   }
 
-  const QUERY = { username: 'AIBRAHIM39', lang: 'en' as const, effectiveDate: 'ALL' };
+  const QUERY = { username: 'AIBRAHIM39', lang: 'en' as const, effectiveDate: '20260913' };
+
+  it.each(['en', 'ar'] as const)('uses the exact six-parameter signature for lang=%s', async (lang) => {
+    const { repository, callCursor } = make();
+
+    const rows = await repository.getBalance({ ...QUERY, username: 'JCHANDY', lang });
+
+    expect(callCursor).toHaveBeenCalledTimes(1);
+    const [sql, binds, cursorName] = callCursor.mock.calls[0];
+    expect(sql.replace(/\s+/g, ' ')).toBe(
+      'BEGIN APPS.XXHMC_SND_LEAVE_BALANCE_PR( p_user_name => :p_user_name, ' +
+        'p_effective_date => :p_effective_date, p_get_balances => :p_get_balances, ' +
+        'p_success_flag => :p_success_flag, p_error_msg => :p_error_msg, ' +
+        'p_error_msg_ar => :p_error_msg_ar); END;',
+    );
+    expect(Object.keys(binds)).toEqual([
+      'p_user_name',
+      'p_effective_date',
+      'p_get_balances',
+      'p_success_flag',
+      'p_error_msg',
+      'p_error_msg_ar',
+    ]);
+    expect(binds).toMatchObject({
+      p_user_name: 'JCHANDY',
+      p_effective_date: {
+        type: oracledb.DB_TYPE_DATE,
+        val: new Date('2026-09-13T00:00:00.000Z'),
+      },
+      p_get_balances: { dir: oracledb.BIND_OUT, type: oracledb.CURSOR },
+    });
+    for (const name of ['p_success_flag', 'p_error_msg', 'p_error_msg_ar']) {
+      expect(binds[name]).toMatchObject({ dir: oracledb.BIND_OUT, type: oracledb.STRING });
+      expect(binds[name].maxSize).toBeGreaterThanOrEqual(200);
+    }
+    expect(cursorName).toBe('p_get_balances');
+    expect(rows).toEqual([{ LEAVE_TYPE: 'Annual', BALANCE: 10 }]);
+  });
+
+  it.each(['unavailable', 'stale'])('does not rely on %s schema metadata', async (state) => {
+    const { repository, callCursor, resolveParams } = make();
+    if (state === 'unavailable') {
+      resolveParams.mockRejectedValue(new Error('Metadata unavailable'));
+    } else {
+      resolveParams.mockResolvedValue([
+        { name: 'p_language', direction: 'IN', dataType: 'VARCHAR2', defaulted: false },
+      ]);
+    }
+
+    await repository.getBalance(QUERY);
+
+    expect(resolveParams).not.toHaveBeenCalled();
+    expect(callCursor.mock.calls[0][1]).not.toHaveProperty('p_language');
+    expect(callCursor.mock.calls[0][2]).toBe('p_get_balances');
+  });
+
+  it.each([
+    ['20260913', '2026-09-13'],
+    ['20260908', '2026-09-08'],
+    ['2026-09-13', '2026-09-13'],
+    ['13-Sep-2026', '2026-09-13'],
+    [EFFECTIVE_DATE_ALL, '1900-01-01'],
+  ])('binds effective date %s as a native Oracle DATE', async (effectiveDate, isoDate) => {
+    const { repository, callCursor } = make();
+
+    await repository.getBalance({ ...QUERY, effectiveDate });
+
+    expect(callCursor.mock.calls[0][1].p_effective_date).toEqual({
+      type: oracledb.DB_TYPE_DATE,
+      val: new Date(`${isoDate}T00:00:00.000Z`),
+    });
+  });
 
   it('binds ?username= to p_user_name untouched, with no extra reads', async () => {
     const { repository, query, callCursor } = make();
@@ -144,6 +216,14 @@ describe('LeaveOracleRepository — getBalance binds the request value as-is', (
     expect(rows).toHaveLength(1);
     expect(query).not.toHaveBeenCalled();
     expect(callCursor.mock.calls[0][1]).toMatchObject({ p_user_name: 'AIBRAHIM39' });
+  });
+
+  it('preserves trimming and uppercasing of Oracle usernames', async () => {
+    const { repository, callCursor } = make();
+
+    await repository.getBalance({ ...QUERY, username: ' vPavithran ' });
+
+    expect(callCursor.mock.calls[0][1].p_user_name).toBe('VPAVITHRAN');
   });
 
   it('binds the legacy ?person_id= the same way when username is absent', async () => {
@@ -163,11 +243,28 @@ describe('LeaveOracleRepository — getBalance binds the request value as-is', (
   });
 
   it('400s when neither username nor person_id is supplied', async () => {
-    const { repository } = make();
+    const { repository, callCursor } = make();
 
     await expect(
       repository.getBalance({ lang: 'en', effectiveDate: 'ALL' }),
     ).rejects.toMatchObject({ status: 400 });
+    expect(callCursor).not.toHaveBeenCalled();
+  });
+
+  it('keeps an empty cursor result as an empty array', async () => {
+    const { repository, callCursor } = make();
+    callCursor.mockResolvedValue([]);
+
+    await expect(repository.getBalance(QUERY)).resolves.toEqual([]);
+  });
+
+  it('propagates an Oracle failure without retrying another signature', async () => {
+    const { repository, callCursor } = make();
+    const error = new Error('ORA-06550: PLS-00306');
+    callCursor.mockRejectedValue(error);
+
+    await expect(repository.getBalance(QUERY)).rejects.toBe(error);
+    expect(callCursor).toHaveBeenCalledTimes(1);
   });
 });
 

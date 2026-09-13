@@ -12,8 +12,7 @@ export class QidUpdateRequestDto {
   @RequiredString('28481809470')
   p_qid_number!: string;
 
-  @RequiredString('2025-10-17')
-  p_iss_date!: string;
+  p_iss_date?: string;
 
   @RequiredString('2029-10-16')
   p_exp_date!: string;
@@ -21,8 +20,9 @@ export class QidUpdateRequestDto {
   [key: string]: unknown;
 }
 
-defineOptionalStringFields(QidUpdateRequestDto, ['p_qid_job', ...ATTACHMENT_FIELDS], {
+defineOptionalStringFields(QidUpdateRequestDto, ['p_iss_date','p_qid_job', ...ATTACHMENT_FIELDS], {
   p_qid_job: 'Analyst',
+  p_iss_date: '2025-10-17',
   p_file_name1: 'qid-front.jpg',
   p_attachment1: 'dGVzdCBhdHRhY2htZW50',
 });

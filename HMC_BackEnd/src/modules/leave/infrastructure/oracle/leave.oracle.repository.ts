@@ -219,7 +219,12 @@ export class LeaveOracleRepository extends BaseOracleRepository implements Leave
   }
 
   async cancel(cmd: LeaveMutationCommand): Promise<SubmitResult> {
-    return this.callSubmitProc(ORACLE_OBJECTS.HR_LEAV_CANCEL_PR, LEAVE_CANCEL_PARAMS, this.values(cmd));
+    return this.callDocumentedSubmitProc(
+      ORACLE_OBJECTS.HR_LEAV_CANCEL_PR,
+      LEAVE_CANCEL_PARAMS,
+      this.values(cmd),
+      this.stringOutBinds(['p_success_flag', 'p_error_msg', 'p_error_msg_ar']),
+    );
   }
 
   async returnFromLeave(cmd: LeaveMutationCommand): Promise<SubmitResult> {

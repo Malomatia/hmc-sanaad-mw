@@ -89,6 +89,44 @@ export abstract class BaseOracleRepository {
     return this.ora.callCursor<T>(plsql, binds, cursorBindName);
   }
 
+  protected procedureBlock(object: string, params: readonly string[]): string {
+    const namedArgs = params.map((name) => `${name} => :${name}`).join(',\n          ');
+    return `BEGIN ${object}(\n          ${namedArgs}); END;`;
+  }
+
+  protected stringOutBinds(params: readonly string[]): oracledb.BindParameters {
+    return Object.fromEntries(
+      params.map((name) => [name, { dir: oracledb.BIND_OUT, type: oracledb.STRING, maxSize: 4000 }]),
+    );
+  }
+
+  protected cursorOutBinds(params: readonly string[]): oracledb.BindParameters {
+    return Object.fromEntries(
+      params.map((name) => [name, { dir: oracledb.BIND_OUT, type: oracledb.CURSOR }]),
+    );
+  }
+
+  protected async callDocumentedSubmitProc(
+    object: string,
+    params: readonly string[],
+    values: Record<string, unknown>,
+    outBinds: oracledb.BindParameters,
+  ): Promise<SubmitResult> {
+    const binds: oracledb.BindParameters = {};
+    for (const name of params) {
+      const value = BaseOracleRepository.pick(values, name);
+      (binds as Record<string, unknown>)[name] = /^p_attachment\d+$/.test(name)
+        ? { type: oracledb.DB_TYPE_BLOB, val: toBlobBuffer(value) }
+        : value;
+    }
+    Object.assign(binds, outBinds);
+    const out = await this.call<Record<string, any>>(
+      this.procedureBlock(object, [...params, ...Object.keys(outBinds)]),
+      binds,
+    );
+    return this.toSubmitResult(out);
+  }
+
   /**
    * SELECT from a table function — a `FUNCTION ... RETURN <collection type>`
    * (e.g. `XXHMC_SND_SUPERVISOR_VIEW`, confirmed by Oracle as

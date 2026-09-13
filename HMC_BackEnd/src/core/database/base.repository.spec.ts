@@ -1,9 +1,154 @@
+import * as oracledb from 'oracledb';
 import { BaseOracleRepository } from './base.repository';
 import { OracleService } from './oracle.service';
 import { OracleSchemaService } from './oracle-schema.service';
 import { OracleMetadataService } from './oracle-metadata.service';
 import { SchemaColumnNotFoundException } from './schema-column-not-found.error';
 import { SchoolFeeOracleRepository } from '@modules/school-fees/infrastructure/oracle/school-fees.oracle.repository';
+import { IdCardOracleRepository } from '@modules/identity/infrastructure/oracle/identity.oracle.repository';
+import { PayslipOracleRepository } from '@modules/payslip/infrastructure/oracle/payslip.oracle.repository';
+import { SupervisorOracleRepository } from '@modules/employee/infrastructure/oracle/employee.oracle.repository';
+import { LeaveOracleRepository } from '@modules/leave/infrastructure/oracle/leave.oracle.repository';
+
+describe('Documented Oracle calls without dictionary discovery', () => {
+  function make() {
+    const call = jest.fn().mockResolvedValue({ p_success_flag: 'S', p_error_msg: null });
+    const callCursor = jest.fn().mockResolvedValue([{ PERIOD_NAME: 'September 2026' }]);
+    const callMultiCursor = jest.fn().mockResolvedValue({
+      cursors: { p_get_earnings: [{ AMOUNT: ' 100.00 ' }] },
+      scalars: { p_success_flag: 'S', p_total_earnings: ' 100.00 ' },
+    });
+    const resolveParams = jest.fn().mockRejectedValue(new Error('Dictionary must not be queried'));
+    return {
+      ora: { call, callCursor, callMultiCursor } as unknown as OracleService,
+      schema: { resolveParams } as unknown as OracleSchemaService,
+      call,
+      callCursor,
+      callMultiCursor,
+      resolveParams,
+    };
+  }
+
+  function expectCall(sql: string, binds: Record<string, unknown>, object: string, names: string[]) {
+    expect(sql).toContain(`BEGIN ${object}(`);
+    expect(Object.keys(binds).sort()).toEqual([...names].sort());
+    for (const name of names) expect(sql).toContain(`${name} => :${name}`);
+  }
+
+  it('calls the supplied ID-card contract with BLOB inputs and preserves business rejection', async () => {
+    const { ora, schema, call, resolveParams } = make();
+    const message = 'A Request is pending for approval.';
+    call.mockResolvedValue({ p_success_flag: 'N', p_error_msg: message, p_error_msg_ar: null });
+    const repo = new IdCardOracleRepository(ora, schema);
+    const result = await repo.requestCompanyId({
+      username: 'test.User',
+      lang: 'ar',
+      fields: {
+        p_user_name: 'OTHER_USER',
+        p_reason: 'Damaged',
+        p_charge_for_new_id: 'No',
+        p_delivery_loc: 'Test location',
+        p_working_location: 'Others',
+        p_comments: 'test',
+        p_file_name1: 'proof.txt',
+        p_attachment1: Buffer.from('proof').toString('base64'),
+      },
+    });
+
+    const [sql, binds] = call.mock.calls[0];
+    expectCall(sql, binds, 'XXHMC_SND_COID_REQ_PR', [
+      'p_user_name', 'p_reason', 'p_charge_for_new_id', 'p_delivery_loc',
+      'p_working_location', 'p_comments',
+      ...Array.from({ length: 10 }, (_, i) => [`p_file_name${i + 1}`, `p_attachment${i + 1}`]).flat(),
+      'p_success_flag', 'p_error_msg', 'p_error_msg_ar',
+    ]);
+    expect(binds.p_user_name).toBe('TEST.USER');
+    expect(binds.p_attachment1).toEqual({ type: oracledb.DB_TYPE_BLOB, val: Buffer.from('proof') });
+    for (let i = 2; i <= 10; i++) {
+      expect(binds[`p_file_name${i}`]).toBeNull();
+      expect(binds[`p_attachment${i}`]).toEqual({ type: oracledb.DB_TYPE_BLOB, val: null });
+    }
+    for (const name of ['p_success_flag', 'p_error_msg', 'p_error_msg_ar']) {
+      expect(binds[name]).toMatchObject({ dir: oracledb.BIND_OUT, type: oracledb.STRING });
+    }
+    expect(result).toMatchObject({ status: 'error', successflag: 'N', errormessage: message });
+    expect(call).toHaveBeenCalledTimes(1);
+    expect(resolveParams).not.toHaveBeenCalled();
+  });
+
+  it.each(['supervisor', 'leave-cancel'] as const)('calls the confirmed %s submit directly', async (kind) => {
+    const { ora, schema, call, resolveParams } = make();
+    const cmd = {
+      username: 'test.User',
+      lang: 'en' as const,
+      fields: {
+        p_user_name: 'OTHER_USER',
+        p_new_supervisor: 'SUPERVISOR',
+        p_reason: 'Change',
+        p_leave_type: 'Annual Leave',
+        p_leave_to_cancel: 'leave-reference',
+        p_reason_for_cancel: 'Change',
+        p_attachment1: Buffer.from('proof').toString('base64'),
+      },
+    };
+    const result = kind === 'supervisor'
+      ? await new SupervisorOracleRepository(ora, schema).updateSupervisor(cmd)
+      : await new LeaveOracleRepository(ora, schema).cancel(cmd);
+    const [sql, binds] = call.mock.calls[0];
+    expect(sql).toContain(kind === 'supervisor' ? 'XXHMC_SND_SUPERVISOR_PR(' : 'XXHMC_SND_HR_LEAV_CANCEL_PR(');
+    expect(binds.p_user_name).toBe('TEST.USER');
+    expect(binds.p_attachment1).toEqual({ type: oracledb.DB_TYPE_BLOB, val: Buffer.from('proof') });
+    expect(binds).not.toHaveProperty('p_language');
+    expect(binds).not.toHaveProperty('p_status');
+    expect(binds).toHaveProperty('p_error_msg_ar');
+    expect(result.successflag).toBe('S');
+    expect(resolveParams).not.toHaveBeenCalled();
+  });
+
+  it.each(['periods', 'count'] as const)('calls payroll %s with all required OUT binds', async (kind) => {
+    const { ora, schema, callCursor, resolveParams } = make();
+    const repo = new PayslipOracleRepository(ora, schema);
+    const result = kind === 'periods'
+      ? await repo.getPeriods('test.User', 'ar')
+      : await repo.checkCount('123', 'ar', 'September 2026');
+    const [sql, binds, cursorName] = callCursor.mock.calls[0];
+    const cursor = kind === 'periods' ? 'p_get_periods' : 'p_get_pay_assignment_details';
+    expectCall(sql, binds, kind === 'periods' ? 'XXHMC_SND_GET_PAYSLIP_PERIODS' : 'XXHMC_SND_CHK_PAYROLL_CNT', [
+      ...(kind === 'periods' ? ['p_user_name'] : ['p_person_id', 'p_period', 'p_flag']),
+      cursor, 'p_success_flag', 'p_error_msg',
+    ]);
+    expect(cursorName).toBe(cursor);
+    expect(binds[cursor]).toEqual({ dir: oracledb.BIND_OUT, type: oracledb.CURSOR });
+    expect(binds.p_user_name ?? binds.p_person_id).toBe(kind === 'periods' ? 'TEST.USER' : '123');
+    expect(kind === 'periods' ? result : (result as { rows: unknown[] }).rows).toEqual([
+      { PERIOD_NAME: 'September 2026', used_value: 'September 2026' },
+    ]);
+    expect(resolveParams).not.toHaveBeenCalled();
+  });
+
+  it('calls payroll generation with its three inputs, seven cursors, and five scalar outputs', async () => {
+    const { ora, schema, callMultiCursor, resolveParams } = make();
+    const result = await new PayslipOracleRepository(ora, schema).generate({
+      personId: '123', payPeriod: 'September 2026', assignmentId: '456', lang: 'en',
+    });
+    const cursors = [
+      'p_get_earnings', 'p_get_deductions', 'p_get_totals', 'p_get_balances',
+      'p_get_informations', 'p_get_net_payments', 'p_get_housing',
+    ];
+    const scalars = ['p_success_flag', 'p_error_msg', 'p_profile', 'p_total_earnings', 'p_total_deductions'];
+    const [sql, binds, cursorNames] = callMultiCursor.mock.calls[0];
+    expectCall(sql, binds, 'XXHMC_SND_PAYSLIP_PR', [
+      'p_person_id', 'p_period', 'p_assignment_id', ...cursors, ...scalars,
+    ]);
+    expect(binds).toMatchObject({ p_person_id: '123', p_period: 'September 2026', p_assignment_id: '456' });
+    expect(cursorNames).toEqual(cursors);
+    for (const name of cursors) expect(binds[name]).toEqual({ dir: oracledb.BIND_OUT, type: oracledb.CURSOR });
+    for (const name of scalars) expect(binds[name]).toMatchObject({ dir: oracledb.BIND_OUT, type: oracledb.STRING });
+    expect(result.earnings).toEqual([{ AMOUNT: '100.00' }]);
+    expect(result.totalEarnings).toBe('100.00');
+    expect(resolveParams).not.toHaveBeenCalled();
+  });
+});
 
 /** Minimal concrete subclass so the protected `toSubmitResult` can be tested
  * directly, without going through a real Oracle call. */

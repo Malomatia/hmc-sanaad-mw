@@ -3,7 +3,7 @@ import { OracleService } from '@core/database/oracle.service';
 import { OracleSchemaService } from '@core/database/oracle-schema.service';
 import { BaseOracleRepository } from '@core/database/base.repository';
 import { sanitizeOracleMessage } from '@core/http/error-category';
-import { Lang, toOracleLanguage } from '@shared/domain/lang';
+import { Lang } from '@shared/domain/lang';
 import { ORACLE_OBJECTS } from '@shared/constants/oracle-objects';
 import {
   GeneratePayslipQuery,
@@ -19,10 +19,10 @@ import {
  *    p_success_flag OUT, p_error_msg OUT)
  * It is keyed by the caller's login (`p_user_name`), takes no language, and
  * declares two scalar OUT params besides the cursor — omitting them raised
- * PLS-00306 (see BaseOracleRepository.callRowsProc). The cursor OUT parameter is
- * `p_get_periods` (used only when the data dictionary is unreadable).
+ * PLS-00306. The cursor is always bound under its confirmed parameter name
+ * `p_get_periods`, without a data-dictionary lookup.
  */
-const PERIODS_PARAMS = ['user_name'] as const;
+const PERIODS_PARAMS = ['p_user_name'] as const;
 
 /**
  * CHK_PAYROLL_CNT confirmed signature (client's proc-call sample — no language):
@@ -31,7 +31,7 @@ const PERIODS_PARAMS = ['user_name'] as const;
  *     p_flag OUT, p_success_flag OUT, p_error_msg OUT)
  * Cursor rows: (PERIOD_NAME, PERIOD_NAME_AR, ASSIGNMENT_ACTION_ID).
  */
-const COUNT_PARAMS = ['person_id', 'period'] as const;
+const COUNT_PARAMS = ['p_person_id', 'p_period'] as const;
 
 /**
  * PAYSLIP_PR confirmed signature (there is NO p_language):
@@ -45,9 +45,9 @@ const COUNT_PARAMS = ['person_id', 'period'] as const;
  *     p_total_deductions OUT VARCHAR2)
  * It returns the payslip as 7 separate REF CURSORs, not one row set — binding
  * all of them but reading only one back (the old `callRowsProc` shape) raised
- * `NJS-107: invalid cursor` / `ORA-24338`. See BaseOracleRepository.callMultiCursorProc.
+ * `NJS-107: invalid cursor` / `ORA-24338`. See OracleService.callMultiCursor.
  */
-const GENERATE_PARAMS = ['person_id', 'period', 'assignment_id'] as const;
+const GENERATE_PARAMS = ['p_person_id', 'p_period', 'p_assignment_id'] as const;
 const GENERATE_CURSOR_PARAMS = [
   'p_get_earnings',
   'p_get_deductions',
@@ -98,10 +98,10 @@ function withPeriodValue<T extends Record<string, unknown>>(row: T): T {
  * Payroll is served by Oracle program units (GET_PAYSLIP_PERIODS,
  * CHK_PAYROLL_CNT, PAYSLIP_PR) that return their rows through a REF CURSOR.
  *
- * The mapping documents the inputs of the legacy services but not the formal
- * parameter names, so the calls are built from the declared signature when the
- * data dictionary is readable (see BaseOracleRepository) and fall back to the
- * documented names otherwise; `pick` tolerates the `p_` prefix either way.
+ * These calls use the confirmed named signatures above, including every
+ * cursor and scalar OUT parameter. They do not consult the data dictionary
+ * or try a speculative fallback before executing the payroll procedure.
+ * Client-facing response shapes and canonical period values are unchanged.
  */
 @Injectable()
 export class PayslipOracleRepository extends BaseOracleRepository implements PayslipRepository {
@@ -109,47 +109,53 @@ export class PayslipOracleRepository extends BaseOracleRepository implements Pay
     super(ora, schema);
   }
 
-  async getPeriods(username: string, lang: Lang): Promise<PayslipPeriod[]> {
-    const rows = await this.callRowsProc<PayslipPeriod>(
-      ORACLE_OBJECTS.GET_PAYSLIP_PERIODS,
-      PERIODS_PARAMS,
-      {
-        user_name: username,
-        language: toOracleLanguage(lang),
-      },
-      'p_get_periods',
+  async getPeriods(username: string, _lang: Lang): Promise<PayslipPeriod[]> {
+    void _lang;
+    const cursorName = 'p_get_periods';
+    const outBinds = {
+      ...this.cursorOutBinds([cursorName]),
+      ...this.stringOutBinds(['p_success_flag', 'p_error_msg']),
+    };
+    const rows = await this.callCursor<PayslipPeriod>(
+      this.procedureBlock(ORACLE_OBJECTS.GET_PAYSLIP_PERIODS, [...PERIODS_PARAMS, ...Object.keys(outBinds)]),
+      { p_user_name: username.toUpperCase(), ...outBinds },
+      cursorName,
     );
     return rows.map(withPeriodValue);
   }
 
   async checkCount(
     personId: string,
-    lang: Lang,
+    _lang: Lang,
     payslipPeriod: string,
   ): Promise<PayslipCount> {
-    const rows = await this.callRowsProc<Record<string, unknown>>(
-      ORACLE_OBJECTS.CHK_PAYROLL_CNT,
-      COUNT_PARAMS,
-      {
-        person_id: personId,
-        period: payslipPeriod,
-      },
-      'p_get_pay_assignment_details',
+    const cursorName = 'p_get_pay_assignment_details';
+    const outBinds = {
+      ...this.cursorOutBinds([cursorName]),
+      ...this.stringOutBinds(['p_flag', 'p_success_flag', 'p_error_msg']),
+    };
+    const rows = await this.callCursor<Record<string, unknown>>(
+      this.procedureBlock(ORACLE_OBJECTS.CHK_PAYROLL_CNT, [...COUNT_PARAMS, ...Object.keys(outBinds)]),
+      { p_person_id: personId, p_period: payslipPeriod, ...outBinds },
+      cursorName,
     );
     return { count: rows.length, rows: rows.map(withPeriodValue) };
   }
 
   async generate(query: GeneratePayslipQuery): Promise<PayslipDocument> {
-    const { cursors, scalars } = await this.callMultiCursorProc(
-      ORACLE_OBJECTS.PAYSLIP_PR,
-      GENERATE_PARAMS,
+    const outBinds = {
+      ...this.cursorOutBinds(GENERATE_CURSOR_PARAMS),
+      ...this.stringOutBinds(GENERATE_SCALAR_OUT_PARAMS),
+    };
+    const { cursors, scalars } = await this.ora.callMultiCursor(
+      this.procedureBlock(ORACLE_OBJECTS.PAYSLIP_PR, [...GENERATE_PARAMS, ...Object.keys(outBinds)]),
       {
-        person_id: query.personId,
-        period: query.payPeriod,
-        assignment_id: query.assignmentId,
+        p_person_id: query.personId,
+        p_period: query.payPeriod,
+        p_assignment_id: query.assignmentId,
+        ...outBinds,
       },
       GENERATE_CURSOR_PARAMS,
-      GENERATE_SCALAR_OUT_PARAMS,
     );
     return {
       earnings: trimRows(cursors.p_get_earnings),

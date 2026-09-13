@@ -121,14 +121,14 @@ export class SupervisorOracleRepository
 
   async updateSupervisor(cmd: SupervisorUpdateCommand): Promise<SubmitResult> {
     // SUPERVISOR_PR takes no p_language; its OUT contract is p_success_flag /
-    // p_error_msg / p_error_msg_ar (used for the fallback when the dictionary is
-    // unreadable — the dictionary path derives the OUT binds from the signature).
+    // p_error_msg / p_error_msg_ar, bound directly with the BLOB attachments
+    // so dictionary discovery cannot delay the confirmed submit call.
     const values = { ...cmd.fields, p_user_name: cmd.username };
-    return this.callSubmitProc(
+    return this.callDocumentedSubmitProc(
       ORACLE_OBJECTS.SUPERVISOR_PR,
       SUPERVISOR_PR_PARAMS,
       values,
-      this.successFlagOutBinds(),
+      this.stringOutBinds(['p_success_flag', 'p_error_msg', 'p_error_msg_ar']),
     );
   }
 }

@@ -59,7 +59,7 @@ export class QidOracleRepository extends BaseOracleRepository implements QidRepo
   }
 }
 
-/** op 54 — RequestCompanyID (COID_REQ_PR, stub). */
+/** op 54 — RequestCompanyID (COID_REQ_PR, confirmed 26 IN + 3 OUT). */
 @Injectable()
 export class IdCardOracleRepository extends BaseOracleRepository implements IdCardRepository {
   constructor(ora: OracleService, schema: OracleSchemaService) {
@@ -67,7 +67,11 @@ export class IdCardOracleRepository extends BaseOracleRepository implements IdCa
   }
 
   async requestCompanyId(cmd: CompanyIdCommand): Promise<SubmitResult> {
-    const values = { ...cmd.fields, p_language: toOracleLanguage(cmd.lang), p_user_name: cmd.username };
-    return this.callSubmitProc(ORACLE_OBJECTS.COID_REQ_PR, COID_REQ_PARAMS, values);
+    return this.callDocumentedSubmitProc(
+      ORACLE_OBJECTS.COID_REQ_PR,
+      COID_REQ_PARAMS,
+      { ...cmd.fields, p_user_name: cmd.username },
+      this.stringOutBinds(['p_success_flag', 'p_error_msg', 'p_error_msg_ar']),
+    );
   }
 }

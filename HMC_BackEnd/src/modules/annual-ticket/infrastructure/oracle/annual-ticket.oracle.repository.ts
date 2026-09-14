@@ -3,7 +3,6 @@ import { OracleService } from '@core/database/oracle.service';
 import { OracleSchemaService } from '@core/database/oracle-schema.service';
 import { BaseOracleRepository } from '@core/database/base.repository';
 import { SubmitResult } from '@shared/domain/submit-result';
-import { toOracleLanguage } from '@shared/domain/lang';
 import { ORACLE_OBJECTS } from '@shared/constants/oracle-objects';
 import { PERSON_ID_COLUMN } from '@shared/constants/oracle-columns';
 import {
@@ -12,7 +11,7 @@ import {
   TicketRequestCommand,
 } from '../../domain/annual-ticket.repository';
 
-/** TICKET_REQ_PR input params (Sanaad spec — Submit_Annual_Ticket request template). */
+/** TICKET_REQ_PR — confirmed declaration 2026-09-14: 32 IN + 3 OUT, no p_language. */
 const TICKET_REQ_PARAMS = [
   'p_user_name',
   'p_request_for',
@@ -27,7 +26,6 @@ const TICKET_REQ_PARAMS = [
   'p_travel_class',
   'p_comments',
   ...BaseOracleRepository.attachmentParams(),
-  'p_language',
 ] as const;
 
 /**
@@ -60,7 +58,6 @@ export class TicketOracleRepository extends BaseOracleRepository implements Tick
   async apply(cmd: TicketRequestCommand): Promise<SubmitResult> {
     return this.callSubmitProc(ORACLE_OBJECTS.TICKET_REQ_PR, TICKET_REQ_PARAMS, {
       ...cmd.fields,
-      p_language: toOracleLanguage(cmd.lang),
       p_user_name: cmd.username,
     });
   }

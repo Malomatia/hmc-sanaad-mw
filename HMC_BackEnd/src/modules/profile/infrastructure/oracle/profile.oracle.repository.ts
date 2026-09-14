@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { OracleService } from '@core/database/oracle.service';
 import { OracleSchemaService } from '@core/database/oracle-schema.service';
 import { BaseOracleRepository } from '@core/database/base.repository';
-import { Lang, toOracleLanguage } from '@shared/domain/lang';
+import { Lang } from '@shared/domain/lang';
 import { str } from '@shared/utils/mapper.util';
 import { SubmitResult } from '@shared/domain/submit-result';
 import { ORACLE_OBJECTS } from '@shared/constants/oracle-objects';
@@ -90,11 +90,9 @@ export class ProfileOracleRepository extends BaseOracleRepository implements Pro
   }
 
   async updatePersonal(cmd: UpdatePersonalCommand): Promise<SubmitResult> {
-    const values = {
-      ...cmd.fields,
-      p_language: toOracleLanguage(cmd.lang),
-      p_user_name: cmd.username,
-    };
+    // UPD_PERSONAL_INFO_PR (confirmed 2026-09-14): p_effective_date is a DATE
+    // formal, bound natively by the shared binder; there is no p_language.
+    const values = { ...cmd.fields, p_user_name: cmd.username };
     return this.callSubmitProc(ORACLE_OBJECTS.UPD_PERSONAL_INFO_PR, UPD_PERSONAL_PARAMS, values);
   }
 }

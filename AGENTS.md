@@ -48,19 +48,15 @@ most of the runtime failures seen on staging:
    objects.** View column names and OUT parameter names differ per object, so
    guessing produced `ORA-00904`, `PLS-00306` and `ORA-04044`.
 
-Because of (2), adapters ask the data dictionary rather than hard-coding:
+Because of (2), adapters read compiled contracts rather than hard-coding or
+querying `ALL_ARGUMENTS` at request time:
 
 - `OracleSchemaService.resolveKeyColumn` / `hasColumn` — which key column a view
   actually exposes (`BaseOracleRepository.readByResolvedKey`).
 - `OracleSchemaService.resolveParams` — the declared argument list of a procedure,
   used by `callSubmitProc` and `callRowsProc` so the call matches the database
-  including its OUT contract. It reads `ALL_ARGUMENTS` with
-  `OWNER`/`OVERLOAD`/`SUBPROGRAM_ID`/`DATA_LEVEL`/`TYPE_*`, keeps only
-  `DATA_LEVEL = 0` formals (collection attributes are not procedure arguments),
-  and picks one overload by scoring it against the adapter's documented
-  parameter list; a truly ambiguous overload set throws instead of merging.
-  Composite (`PL/SQL TABLE`/`RECORD`/`OBJECT`) parameters bind by their declared
-  type name.
+  including its OUT contract. It reads `OracleContractCatalog` only. Missing
+  contracts fail with HTTP 503 before any dictionary SQL runs.
 
 Related runtime behaviour:
 
@@ -107,7 +103,6 @@ Diagnostics endpoints for investigating a failure:
 
 | Endpoint | Purpose |
 |---|---|
-| `GET /api/v1/diagnostics/oracle-object?name=XXHMC_SND_...` | Object type, columns and formal parameters of an allow-listed object |
 | `GET /api/v1/diagnostics/oracle-logs` | Every Oracle call made, with SQL, sanitized binds, duration and ORA code |
 | `GET /api/v1/diagnostics/oracle-logs/stats` | Aggregates per object |
 
@@ -968,3 +963,87 @@ Regression coverage from `HMC_BackEnd/`:
 `npm.cmd test -- --runInBand core/http modules/approvals core/database/base.repository.spec.ts core/audit`.
 The focused HTTP tests exercise `/api/v1/letters/apply?lang=ar`, its log summary, and the
 `/api/v1/approvals?enum=037400&lang=en` subject response using mocked data sources.
+
+## Confirmed school-fee procedure contract (2026-09-13)
+
+The client supplied the declaration of `XXHMC_SND_SCHOOL_FEE_PR`: 36 IN and
+3 OUT parameters. There is NO `p_language`; the legacy request template included
+it incorrectly. `P_ACD_ST_DT` and `P_ACD_END_DT` are Oracle DATE inputs, whereas
+`P_Child_Date_Birth` is VARCHAR2 and must remain a date-token string. `P_Amount`
+is NUMBER. The API's date/amount strings are converted at the Oracle boundary.
+All ten filename/BLOB pairs are supported. The VARCHAR2 OUT parameters are
+`p_success_flag`, `p_error_msg`, and `p_error_msg_ar`.
+
+School-fee submission uses `callDocumentedSubmitProc` with this explicit
+contract, not runtime dictionary discovery. Do not restore `p_language` or
+infer the bind types from the legacy request DTO alone.
+
+## Static Oracle contracts for business requests (2026-09-13)
+
+This supersedes the earlier automatic-discovery behavior. `OracleSchemaService`
+is injected with `OracleContractCatalog` from `core/database/oracle-contracts.ts`;
+its lookups read compiled definitions and never query Oracle. The catalog's
+column lists define supported filters, not a complete database-schema export.
+`OracleMetadataService` remains private to `OracleModule` for optional column
+reads (`ALL_TAB_COLUMNS` only). `GET /diagnostics/oracle-object` and
+`GET /dev-console/describe` are removed; no HTTP route may query `ALL_ARGUMENTS`.
+Do not inject the live dictionary reader into business modules.
+
+The generic submit/cursor helpers require a registered contract. They no longer
+append guessed OUT names, assume a cursor name, or guess a view's first key.
+`OracleContractUnavailableException` returns HTTP 503 with a safe configuration
+message, while internal logs retain the object/contract detail. It must not be
+converted into a successful empty dataset. Already-direct handlers remain direct.
+
+`XXHMC_SND_HR_EMPLYMNT_LTR_PR` was supplied by the client on 2026-09-14: 28 IN
+(all VARCHAR2 except the ten BLOB attachments; `p_country` and the attachment
+pairs DEFAULT NULL) + 3 OUT, and NO `p_language` — the legacy request template
+listed one. It is registered in the catalog; do not restore `p_language`.
+
+On 2026-09-14 the client exported ALL_ARGUMENTS for the remaining submit
+procedures (424 rows, screenshots in `orcale/`, transcribed to
+`orcale/transcription.md`). Every submit procedure is now registered. Facts the
+export established, each of which contradicted the legacy request templates:
+
+- **No procedure declares `p_language`.** It has been removed from every
+  adapter; `?lang=` still selects the response language only.
+- **DATE formals** (bound natively by `inBind`): `CREATE/UPD_ADDRESS_PR` and
+  `UPD_PERSONAL_INFO_PR` `p_effective_date`, `HR_LEAV_AMEND_PR.p_new_end_date`,
+  `RET_FRM_LEAV_PR.p_return_date`, `PASS_DTL_PR` issue/expiry,
+  `REMOVE_DEPENDENT_PR.p_relation_ship_end_date`, and every `*_date` of the two
+  dependent procedures. `p_child_date_birth` (school fees) stays VARCHAR2.
+- **NUMBER formals** are bound as NUMBER and non-numeric input is a 400:
+  `APPROVE_REJECT_PR.p_notification_id`, `UPD_ADDRESS_PR.p_address_id`,
+  `UPDATE_DEPENDENT_PR.p_dependent_id` (`REMOVE_DEPENDENT_PR.p_dependent_id` is
+  VARCHAR2).
+- `UPD_ADDRESS_PR` regions are `P_REGION_1/2/3`; `CREATE_ADDRESS_PR` uses
+  `P_REGION1/2/3`. The address adapter mirrors the body's `p_region1..3` onto
+  both spellings so one request shape serves both.
+- `ADD_DEPENDENT_PKG.{ADD,UPDATE}_DEPENDENT_PR` declare `P_EMPLOYMENT_STATUS`
+  and `P_COMMENTS` AFTER the three OUT params; named notation makes the order
+  irrelevant. Their phone params are `MY_TYPE` PL/SQL tables built by the
+  package's `STR_TO_TYPE(VARCHAR2)`, exactly like `PHONE_PKG.ETSND_VARCHAR`;
+  the adapter joins the wire arrays with commas and wraps the bind.
+- `PHONE_PKG.ADD_OR_UPDATE_PHONE` has a single signature (no overloads) and the
+  standard `p_success_flag/p_error_msg/p_error_msg_ar` OUTs — not
+  `p_status/p_message`.
+
+The `DEFAULTED` column was cropped from the screenshots; the catalog marks only
+the attachment pairs and `HR_EMPLYMNT_LTR_PR.p_country` as defaulted (from the
+typed declarations). Every registered parameter is bound (NULL when absent), so
+this only affects the "unmapped parameter" warning, not the call.
+
+Still unregistered (503 until their columns arrive): `QID_DET_V`,
+`LEAVE_BAL_PLAN_LOV`, `ANNUAL_TICKT_LOV`, `LIBR_DFALT_LOV`, `ALSR_DFALT_LOV`.
+Do not treat unit-test fixtures as production Oracle definitions or restore
+runtime discovery to hide these gaps.
+
+Known personal LOVs require caller scope; identifiers that cannot match their
+registered key type cannot cause an unfiltered view read. Global LOVs retain
+unscoped reads. The special `CONTRACT_YEARS_V` public-name rule is unchanged.
+
+Verification uses mocked Oracle calls and the static catalog: run the backend
+build and tests, including `core/database/oracle-schema.service.spec.ts`,
+`core/database/base.repository.spec.ts`, and the lookup repository tests. The
+six pre-existing supervisor-column failures must not be fixed by guessing the
+live column name.

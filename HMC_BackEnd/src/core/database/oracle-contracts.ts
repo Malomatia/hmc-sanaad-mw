@@ -32,6 +32,15 @@ const attachments = (count = 10): ContractParameter[] => Array.from({ length: co
 const status = (): ContractParameter[] => [
   output('p_success_flag'), output('p_error_msg'), output('p_error_msg_ar'),
 ];
+const dates = (...names: string[]): ContractParameter[] => names.map((name) => input(name, 'DATE'));
+/** PL/SQL associative array declared inside a package (bound by qualified type name). */
+const table = (name: string, pkg: string, subname: string): ContractParameter => ({
+  name, direction: 'IN', dataType: 'PL/SQL TABLE', defaulted: false,
+  typeOwner: 'APPS', typeName: pkg, typeSubname: subname,
+});
+const DEP_PKG = ORACLE_OBJECTS.ADD_DEPENDENT_PKG;
+const depTable = (name: string) => table(name, DEP_PKG, 'MY_TYPE');
+const phoneTable = (name: string) => table(name, ORACLE_OBJECTS.PHONE_PKG, 'ETSND_VARCHAR');
 
 const PROGRAMS: Readonly<Record<string, ProgramContract>> = Object.freeze({
   [ORACLE_OBJECTS.COID_REQ_PR]: {
@@ -121,6 +130,142 @@ const PROGRAMS: Readonly<Record<string, ProgramContract>> = Object.freeze({
   [ORACLE_OBJECTS.CHILD_DETS_VIEW]: {
     params: inputs('p_acad_yr_strt_dt', 'p_user_name'),
     returnType: { dataType: 'TABLE', typeOwner: 'APPS', typeName: 'XXHMC_SND_CHILD_DETL_NT' },
+  },
+
+  // ── Declarations transcribed from the client's ALL_ARGUMENTS export
+  //    (424 rows, 2026-09-14; see orcale/transcription.md). None of these
+  //    declares p_language, although the legacy request templates listed one.
+  [ORACLE_OBJECTS.APPROVE_REJECT_PR]: {
+    params: [
+      ...inputs('p_user_name', 'p_itemtype', 'p_item_key', 'p_result'),
+      input('p_notification_id', 'NUMBER'), input('p_user_comment'), ...status(),
+    ],
+  },
+  [ORACLE_OBJECTS.DEL_PHONE_NUMBER_PR]: {
+    params: [...inputs('p_user_name', 'p_phone_id', 'p_phone_type', 'p_phone_number'), ...status()],
+  },
+  [ORACLE_OBJECTS.PHONE_PKG_ADD_OR_UPDATE]: {
+    params: [
+      input('p_user_name'),
+      ...['p_phone_id', 'p_object_version_number', 'p_phone_type', 'p_phone_number'].map(phoneTable),
+      ...status(),
+    ],
+  },
+  [ORACLE_OBJECTS.CREATE_ADDRESS_PR]: {
+    params: [
+      input('p_user_name'), input('p_effective_date', 'DATE'),
+      ...inputs('p_main_address', 'p_primary_flag', 'p_country', 'p_address_type',
+        'p_address_line1', 'p_address_line2', 'p_address_line3', 'p_town_or_city',
+        'p_region1', 'p_region2', 'p_region3', 'p_po_box'),
+      ...status(),
+    ],
+  },
+  [ORACLE_OBJECTS.UPD_ADDRESS_PR]: {
+    params: [
+      input('p_user_name'), input('p_effective_date', 'DATE'), input('p_address_id', 'NUMBER'),
+      ...inputs('p_address_line1', 'p_address_line2', 'p_address_line3', 'p_city',
+        'p_region_1', 'p_region_2', 'p_region_3', 'p_po_box', 'p_address_type', 'p_country'),
+      ...status(),
+    ],
+  },
+  [ORACLE_OBJECTS.UPD_PERSONAL_INFO_PR]: {
+    params: [
+      input('p_user_name'), input('p_effective_date', 'DATE'),
+      ...inputs('p_first_name', 'p_middle_name', 'p_last_name', 'p_marital_status',
+        'p_name_in_arabic', 'p_title', 'p_relationship', 'p_place_of_issue', 'p_country_of_issue',
+        'p_visa_type', 'p_visa_number', 'p_visa_validity', 'p_type_of_sponsership'),
+      ...attachments(), ...status(),
+    ],
+  },
+  [ORACLE_OBJECTS.HR_LEAV_AMEND_PR]: {
+    params: [
+      ...inputs('p_leave_type', 'p_user_name', 'p_leave_to_amend'),
+      input('p_new_end_date', 'DATE'), input('p_comments'),
+      ...attachments(), ...status(),
+    ],
+  },
+  [ORACLE_OBJECTS.RET_FRM_LEAV_PR]: {
+    params: [
+      ...inputs('p_user_name', 'p_leave_details', 'p_related_leave1', 'p_related_leave2'),
+      input('p_return_date', 'DATE'), input('p_comments'),
+      ...attachments(), ...status(),
+    ],
+  },
+  [ORACLE_OBJECTS.PASS_DTL_PR]: {
+    params: [
+      ...inputs('p_user_name', 'p_passport_number'),
+      ...dates('p_date_of_issue', 'p_date_of_expiry'),
+      ...inputs('p_type_of_passport', 'p_place_of_issue', 'p_country_of_issue'),
+      ...attachments(), ...status(),
+    ],
+  },
+  [ORACLE_OBJECTS.REMOVE_DEPENDENT_PR]: {
+    params: [
+      ...inputs('p_user_name', 'p_dependent_id', 'p_contact_type', 'p_relation_ship'),
+      input('p_relation_ship_end_date', 'DATE'),
+      ...attachments(), ...status(),
+    ],
+  },
+  [ORACLE_OBJECTS.TICKET_REQ_PR]: {
+    params: [
+      ...inputs('p_user_name', 'p_request_for', 'p_employee',
+        'p_passenger1', 'p_passenger2', 'p_passenger3', 'p_passenger4',
+        'p_request_type', 'p_contractual_year', 'p_traveling_dest', 'p_travel_class', 'p_comments'),
+      ...attachments(), ...status(),
+    ],
+  },
+  [ORACLE_OBJECTS.CANCEL_TKT_PR]: {
+    params: [
+      ...inputs('p_user_name', 'p_annual_tkt', 'p_contractual_year', 'p_reason',
+        'p_ticket_as', 'p_repayment_method', 'p_comments', 'p_voucher_ref'),
+      ...attachments(), ...status(),
+    ],
+  },
+  // Package members: P_EMPLOYMENT_STATUS / P_COMMENTS are declared AFTER the
+  // OUT parameters (positions 68-69 / 74-75); named notation makes that safe.
+  [ORACLE_OBJECTS.DEPENDENT_PKG_ADD]: {
+    params: [
+      ...inputs('p_user_name', 'p_title', 'p_first_name', 'p_middle_name', 'p_last_name',
+        'p_suffix', 'p_prefix', 'p_email_address', 'p_relationship'),
+      input('p_relationship_start_date', 'DATE'),
+      ...inputs('p_gender', 'p_national_identifier'),
+      input('p_date_of_birth', 'DATE'), input('p_passport_number'),
+      ...dates('p_pp_issue_date', 'p_pp_expiry_date'),
+      ...inputs('p_place_of_issue', 'p_country_of_issue', 'p_visa_type', 'p_visa_number'),
+      ...dates('p_visa_issue_date', 'p_visa_expiry_date'),
+      ...inputs('p_visa_validity', 'p_id_number'),
+      ...dates('p_id_expiry_date', 'p_id_issue_date'),
+      ...inputs('p_job_as_in_qid', 'p_type_of_sponsorship', 'p_sponsor_contact_name', 'p_other_sponsor'),
+      input('p_effective_date', 'DATE'),
+      ...inputs('p_address_line1', 'p_address_line2', 'p_address_line3', 'p_city',
+        'p_region_1', 'p_region_2', 'p_region_3', 'p_po_box', 'p_address_type', 'p_country'),
+      depTable('p_phone_type'), depTable('p_phone_number'), input('p_phone_enabled'),
+      ...attachments(), ...status(),
+      ...inputs('p_employment_status', 'p_comments'),
+    ],
+  },
+  [ORACLE_OBJECTS.DEPENDENT_PKG_UPDATE]: {
+    params: [
+      input('p_user_name'), input('p_dependent_id', 'NUMBER'),
+      ...inputs('p_title', 'p_first_name', 'p_middle_name', 'p_last_name', 'p_suffix', 'p_prefix',
+        'p_email_address', 'p_relation_ship'),
+      input('p_relation_ship_start_date', 'DATE'), input('p_passport_number'),
+      ...dates('p_date_of_issue', 'p_date_of_expire'),
+      ...inputs('p_place_of_issue', 'p_country_of_issue', 'p_visa_type', 'p_visa_number'),
+      ...dates('p_date_of_issue_visa', 'p_date_of_expire_visa'),
+      ...inputs('p_visa_validy', 'p_id_number'),
+      ...dates('p_expiry_date', 'p_date_of_issue_qid'),
+      ...inputs('p_type_of_sponsership', 'p_name_of_contact', 'p_name_of_sponsor'),
+      depTable('p_phone_type'), depTable('p_phone_number'), depTable('p_phone_id'), input('p_phone_enabled'),
+      depTable('p_phone_type1'), depTable('p_phone_number1'), depTable('p_phone_id1'), input('p_phone_enabled1'),
+      ...inputs('p_gendar', 'p_qid_number'),
+      ...dates('p_date_of_birth', 'p_effective_date'),
+      input('p_country'), input('p_address_id', 'NUMBER'),
+      ...inputs('p_address_line1', 'p_address_line2', 'p_address_line3', 'p_city',
+        'p_region_1', 'p_region_2', 'p_region_3', 'p_po_box', 'p_address_type'),
+      ...attachments(), ...status(),
+      ...inputs('p_employment_status', 'p_comments'),
+    ],
   },
 });
 

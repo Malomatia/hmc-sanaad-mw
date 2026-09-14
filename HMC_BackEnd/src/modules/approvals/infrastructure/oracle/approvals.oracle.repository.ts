@@ -4,7 +4,7 @@ import { OracleService } from '@core/database/oracle.service';
 import { OracleSchemaService } from '@core/database/oracle-schema.service';
 import { OracleContractUnavailableException } from '@core/database/oracle.error';
 import { BaseOracleRepository } from '@core/database/base.repository';
-import { Lang, toOracleLanguage } from '@shared/domain/lang';
+import { Lang } from '@shared/domain/lang';
 import { str } from '@shared/utils/mapper.util';
 import { resolveContentType } from '@shared/utils/content-type.util';
 import { SubmitResult } from '@shared/domain/submit-result';
@@ -40,7 +40,11 @@ import {
  */
 const API_PREFIX = (process.env.API_PREFIX ?? 'api/v1').replace(/^\/+|\/+$/g, '');
 
-/** APPROVE_REJECT_PR input params (Sanaad spec — ApproveReject request input). */
+/**
+ * APPROVE_REJECT_PR — confirmed declaration 2026-09-14: 6 IN
+ * (p_notification_id NUMBER) + the p_success_flag/p_error_msg/p_error_msg_ar
+ * OUT trio. There is no p_language.
+ */
 const APPROVE_REJECT_PARAMS = [
   'p_user_name',
   'p_itemtype',
@@ -48,7 +52,6 @@ const APPROVE_REJECT_PARAMS = [
   'p_result',
   'p_notification_id',
   'p_user_comment',
-  'p_language',
 ] as const;
 
 /**
@@ -342,7 +345,6 @@ export class ApprovalsOracleRepository extends BaseOracleRepository implements A
       p_result: cmd.decision === 'APPROVE' ? 'APPROVED' : 'REJECTED',
       p_notification_id: cmd.approvalId,
       p_user_comment: cmd.comment,
-      p_language: toOracleLanguage(cmd.lang),
     });
   }
 

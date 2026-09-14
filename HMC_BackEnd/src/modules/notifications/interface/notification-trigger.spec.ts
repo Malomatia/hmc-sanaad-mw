@@ -17,6 +17,8 @@ describe('NotificationTriggerInterceptor', () => {
     const notifier = {
       onSubmitted: jest.fn().mockResolvedValue(undefined),
       onDecided: jest.fn().mockResolvedValue(undefined),
+      onReassigned: jest.fn().mockResolvedValue(undefined),
+      onRequestInfo: jest.fn().mockResolvedValue(undefined),
     } as unknown as jest.Mocked<RequestNotifier>;
     return { interceptor: new NotificationTriggerInterceptor(notifier), notifier };
   }
@@ -80,7 +82,7 @@ describe('NotificationTriggerInterceptor', () => {
 
     await firstValueFrom(
       interceptor.intercept(
-        context('POST', '/api/v1/approvals/123859449/decision?lang=en', { action: 'APPROVE' }),
+        context('POST', '/api/v1/approvals/123859449/decision?lang=en', { decision: 'APPROVE' }),
         handler({ successflag: 'S' }),
       ),
     );
@@ -90,18 +92,71 @@ describe('NotificationTriggerInterceptor', () => {
     expect(notifier.onSubmitted).not.toHaveBeenCalled();
   });
 
-  it('ignores a decision whose action it does not recognise', async () => {
+  it('routes a rejection decision to the requestor path', async () => {
     const { interceptor, notifier } = make();
 
     await firstValueFrom(
       interceptor.intercept(
-        context('POST', '/api/v1/approvals/1/decision', { action: 'SOMETHING' }),
+        context('POST', '/api/v1/approvals/123859449/decision?lang=en', { decision: 'REJECT' }),
+        handler({ successflag: 'S' }),
+      ),
+    );
+    await settle();
+
+    expect(notifier.onDecided).toHaveBeenCalledWith('123859449', 'REJECT', 'AIBRAHIM39');
+    expect(notifier.onSubmitted).not.toHaveBeenCalled();
+  });
+
+  it('ignores a decision whose outcome it does not recognise', async () => {
+    const { interceptor, notifier } = make();
+
+    await firstValueFrom(
+      interceptor.intercept(
+        context('POST', '/api/v1/approvals/1/decision', { decision: 'SOMETHING' }),
         handler({ successflag: 'S' }),
       ),
     );
     await settle();
 
     expect(notifier.onDecided).not.toHaveBeenCalled();
+  });
+
+  it('routes a reassignment to the new approver path', async () => {
+    const { interceptor, notifier } = make();
+
+    await firstValueFrom(
+      interceptor.intercept(
+        context('POST', '/api/v1/approvals/123/reassign', { assignTo: 'V-NFERNANDO' }),
+        handler({ successflag: 'S' }),
+      ),
+    );
+    await settle();
+
+    expect(notifier.onReassigned).toHaveBeenCalledWith('123', 'V-NFERNANDO', 'AIBRAHIM39');
+    expect(notifier.onSubmitted).not.toHaveBeenCalled();
+  });
+
+  it('routes a request-info action to the target user path', async () => {
+    const { interceptor, notifier } = make();
+
+    await firstValueFrom(
+      interceptor.intercept(
+        context('POST', '/api/v1/approvals/123/request-info', {
+          toUsername: 'V-NFERNANDO',
+          comment: 'Please attach documents.',
+        }),
+        handler({ successflag: 'S' }),
+      ),
+    );
+    await settle();
+
+    expect(notifier.onRequestInfo).toHaveBeenCalledWith(
+      '123',
+      'V-NFERNANDO',
+      'AIBRAHIM39',
+      'Please attach documents.',
+    );
+    expect(notifier.onSubmitted).not.toHaveBeenCalled();
   });
 
   it('does nothing on GET', async () => {

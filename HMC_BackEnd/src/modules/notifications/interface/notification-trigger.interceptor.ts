@@ -6,8 +6,14 @@ import { DecisionOutcome, RequestNotifier } from '../application/request-notifie
 /** `POST /approvals/123859449/decision` → the notification id. */
 const DECISION_ROUTE = /\/approvals\/([^/?]+)\/decision/i;
 
+/** `POST /approvals/123859449/reassign` → the notification id. */
+const REASSIGN_ROUTE = /\/approvals\/([^/?]+)\/reassign/i;
+
+/** `POST /approvals/123859449/request-info` → the notification id. */
+const REQUEST_INFO_ROUTE = /\/approvals\/([^/?]+)\/request-info/i;
+
 /** Routes that submit something for approval but are not themselves approvals. */
-const SUBMIT_ROUTE = /\/(apply|cancel|return|amend|personal|create|update|add|delete|reassign|request-info)\b/i;
+const SUBMIT_ROUTE = /\/(apply|cancel|return|amend|personal|create|update|add|delete)\b/i;
 
 /**
  * Fires a notification after a request succeeds.
@@ -69,10 +75,27 @@ export class NotificationTriggerInterceptor implements NestInterceptor {
 
     const decision = DECISION_ROUTE.exec(url);
     if (decision) {
-      const outcome = String(req.body?.action ?? req.body?.p_result ?? '').toUpperCase();
+      const outcome = String(req.body?.decision ?? req.body?.p_result ?? '').toUpperCase();
       if (outcome === 'APPROVE' || outcome === 'REJECT') {
         await this.notifier.onDecided(decision[1], outcome as DecisionOutcome, username);
       }
+      return;
+    }
+
+    const reassign = REASSIGN_ROUTE.exec(url);
+    if (reassign) {
+      await this.notifier.onReassigned(reassign[1], String(req.body?.assignTo ?? ''), username);
+      return;
+    }
+
+    const requestInfo = REQUEST_INFO_ROUTE.exec(url);
+    if (requestInfo) {
+      await this.notifier.onRequestInfo(
+        requestInfo[1],
+        req.body?.toUsername as string | undefined,
+        username,
+        req.body?.comment as string | undefined,
+      );
       return;
     }
 

@@ -70,6 +70,48 @@ export class RequestNotifier {
     });
   }
 
+  /** A request was reassigned — tell the new approver. */
+  async onReassigned(notificationId: string, assignTo: string, actor: string): Promise<void> {
+    await this.safely('onReassigned', async () => {
+      const target = assignTo?.trim();
+      if (!target) return;
+      if (this.same(target, actor)) return;
+
+      const request = await this.requests.findByNotificationId(notificationId);
+      const subject = request?.requestType ?? 'A request';
+      await this.notifications.notifyUser(target, {
+        title: 'Request reassigned to you',
+        body: `${subject} has been reassigned to you.`,
+        data: this.payload(notificationId, request?.requestType, 'REASSIGNED'),
+      });
+    });
+  }
+
+  /** More information was requested — tell the person it is directed to. */
+  async onRequestInfo(
+    notificationId: string,
+    toUsername: string | undefined,
+    actor: string,
+    comment?: string,
+  ): Promise<void> {
+    await this.safely('onRequestInfo', async () => {
+      const request = await this.requests.findByNotificationId(notificationId);
+      const target = (toUsername?.trim() || request?.requestor)?.trim();
+      if (!target) return;
+      if (this.same(target, actor)) return;
+
+      const subject = request?.requestType ?? 'Your request';
+      const body = comment?.trim()
+        ? `${subject} needs more information: ${comment.trim()}`
+        : `${subject} needs more information.`;
+      await this.notifications.notifyUser(target, {
+        title: 'More information requested',
+        body,
+        data: this.payload(notificationId, request?.requestType, 'INFO_REQUESTED'),
+      });
+    });
+  }
+
   /** FCM data values must be strings, and absent keys must not become "undefined". */
   private payload(
     notificationId?: string,

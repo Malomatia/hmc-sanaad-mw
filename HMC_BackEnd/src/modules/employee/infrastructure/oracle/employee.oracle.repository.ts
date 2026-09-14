@@ -67,8 +67,8 @@ export class EmploymentOracleRepository
   }
 
   async getPerformance(username: string, _lang: Lang): Promise<PerformanceRecord[]> {
-    // PERFORMANCE_V is keyed by the caller's login; resolve the real column name
-    // from the data dictionary (hard-coded `username` raised ORA-00904).
+    // PERFORMANCE_V is keyed by USER_NAME (confirmed view definition, 2026-09-14);
+    // the key is registered in OracleContractCatalog, not discovered at runtime.
     const rows = await this.readByResolvedKey(
       ORACLE_OBJECTS.PERFORMANCE_V,
       username,

@@ -84,6 +84,14 @@ const PROGRAMS: Readonly<Record<string, ProgramContract>> = Object.freeze({
       ...attachments(), ...status(),
     ],
   },
+  [ORACLE_OBJECTS.HR_EMPLYMNT_LTR_PR]: {
+    params: [
+      ...inputs('p_user_name', 'p_letter_language', 'p_letter_name'),
+      input('p_country', 'VARCHAR2', true),
+      ...inputs('p_no_of_copies', 'p_mobile_number', 'p_letter_delivery_loc', 'p_purpose_comments'),
+      ...attachments(), ...status(),
+    ],
+  },
   [ORACLE_OBJECTS.HR_RFMI_PR]: {
     params: [
       ...inputs('p_from_user_name', 'p_to_user_name', 'p_itemtype', 'p_item_key'),
@@ -132,6 +140,29 @@ const COLUMNS: Readonly<Record<string, ColumnContract>> = Object.freeze({
   ...Object.fromEntries(GLOBAL_LOVS.map((object) => [object, {}])),
   [ORACLE_OBJECTS.PERSONAL_DETAILS_V]: { USER_NAME: 'VARCHAR2', EMPLOYEE_NUMBER: 'VARCHAR2' },
   [ORACLE_OBJECTS.EMPLOYMENT_DETAILS_V]: { USER_NAME: 'VARCHAR2', PERSON_ID: 'NUMBER' },
+  // Confirmed from the client's view definition (2026-09-14): REVIEW_DATE,
+  // RELATED_EVENT, RELATED_EVENT_AR, USER_NAME (NOT NULL), LAST_RATING.
+  [ORACLE_OBJECTS.PERFORMANCE_V]: { USER_NAME: 'VARCHAR2' },
+  // Confirmed view definition (2026-09-14): USER_NAME NOT NULL, DEPENDENT_ID,
+  // PHONE_TYPE_AR, EMPLOYEE_NUMBER, PHONE_TYPE, PHONE_NUMBER, PHONE_ID.
+  [ORACLE_OBJECTS.EMP_PHONE_V]: {
+    USER_NAME: 'VARCHAR2', EMPLOYEE_NUMBER: 'VARCHAR2', DEPENDENT_ID: 'NUMBER', PHONE_ID: 'NUMBER',
+  },
+  // Confirmed view definitions (2026-09-14): both address views are keyed by
+  // USER_NAME NOT NULL and expose ADDRESS_TYPE (the outside-address filter);
+  // EMP_OUT_ADDRESS_V additionally has STYLE and COUNTRY_MEANING.
+  [ORACLE_OBJECTS.EMP_IN_ADDRESS_V]: {
+    USER_NAME: 'VARCHAR2', EMPLOYEE_NUMBER: 'VARCHAR2', ADDRESS_ID: 'NUMBER', ADDRESS_TYPE: 'VARCHAR2',
+  },
+  [ORACLE_OBJECTS.EMP_OUT_ADDRESS_V]: {
+    USER_NAME: 'VARCHAR2', EMPLOYEE_NUMBER: 'VARCHAR2', ADDRESS_ID: 'NUMBER', ADDRESS_TYPE: 'VARCHAR2',
+  },
+  // Confirmed column list (2026-09-14): keyed by USER_NAME; DEPENDENT_ID /
+  // ADDRESS_ID are the join keys the profile read uses for DEP_PHONE_V /
+  // DEP_ADDRESS_V. The 54 payload columns are read with SELECT *.
+  [ORACLE_OBJECTS.EMP_CONTACT_V]: {
+    USER_NAME: 'VARCHAR2', EMPLOYEE_NUMBER: 'VARCHAR2', DEPENDENT_ID: 'NUMBER', ADDRESS_ID: 'NUMBER',
+  },
   [ORACLE_OBJECTS.DEP_PHONE_V]: { DEPENDENT_ID: 'NUMBER' },
   [ORACLE_OBJECTS.DEP_ADDRESS_V]: { ADDRESS_ID: 'NUMBER' },
   [ORACLE_OBJECTS.APPROVE_SUMRY_V]: { APPROVER_USER_NAME: 'VARCHAR2', REQUESTOR_USER_NAME: 'VARCHAR2' },

@@ -34,7 +34,7 @@ describe('Business Oracle discovery isolation', () => {
         .resolves.toBe('user_name');
       const params = await schema.resolveParams(ORACLE_OBJECTS.QID_CHG_PR);
       expect(params).toHaveLength(24);
-      await expect(schema.resolveParams(ORACLE_OBJECTS.HR_EMPLYMNT_LTR_PR))
+      await expect(schema.resolveParams(ORACLE_OBJECTS.UPD_PERSONAL_INFO_PR))
         .rejects.toBeInstanceOf(OracleContractUnavailableException);
       for (const method of Object.values(metadata)) expect(method).not.toHaveBeenCalled();
     } finally {
@@ -63,6 +63,7 @@ describe('Static Oracle contracts', () => {
     [ORACLE_OBJECTS.GET_PAYSLIP_PERIODS, 4],
     [ORACLE_OBJECTS.CHK_PAYROLL_CNT, 6],
     [ORACLE_OBJECTS.PAYSLIP_PR, 15],
+    [ORACLE_OBJECTS.HR_EMPLYMNT_LTR_PR, 31],
   ] as const)('keeps the complete registered signature for %s', async (object, count) => {
     const params = await schema.resolveParams(object);
     expect(params).toHaveLength(count);
@@ -77,6 +78,12 @@ describe('Static Oracle contracts', () => {
       p_acd_st_dt: 'DATE', p_acd_end_dt: 'DATE', p_child_date_birth: 'VARCHAR2', p_amount: 'NUMBER',
       p_attachment1: 'BLOB', p_attachment10: 'BLOB', p_error_msg_ar: 'VARCHAR2',
     });
+  });
+
+  it('resolves the performance view by its confirmed USER_NAME key', async () => {
+    await expect(schema.resolveKeyColumn(ORACLE_OBJECTS.PERFORMANCE_V, ['user_name', 'username']))
+      .resolves.toBe('user_name');
+    await expect(schema.hasColumn(ORACLE_OBJECTS.PERFORMANCE_V, 'USERNAME')).resolves.toBe(false);
   });
 
   it('resolves documented numeric and role-keyed views from static columns', async () => {
@@ -102,13 +109,39 @@ describe('Static Oracle contracts', () => {
     ORACLE_OBJECTS.DEPENDENT_PKG_UPDATE,
     ORACLE_OBJECTS.RET_FRM_LEAV_PR,
     ORACLE_OBJECTS.HR_LEAV_AMEND_PR,
-    ORACLE_OBJECTS.HR_EMPLYMNT_LTR_PR,
+    ORACLE_OBJECTS.UPD_PERSONAL_INFO_PR,
   ])('keeps an uncaptured production signature unavailable: %s', async (object) => {
     await expect(schema.resolveParams(object)).rejects.toBeInstanceOf(OracleContractUnavailableException);
   });
 
+  it('resolves the employee phone view by its confirmed USER_NAME key', async () => {
+    await expect(schema.resolveKeyColumn(ORACLE_OBJECTS.EMP_PHONE_V, ['user_name', 'username']))
+      .resolves.toBe('user_name');
+    await expect(schema.isNumericColumn(ORACLE_OBJECTS.EMP_PHONE_V, 'DEPENDENT_ID')).resolves.toBe(true);
+  });
+
+  it.each([ORACLE_OBJECTS.EMP_IN_ADDRESS_V, ORACLE_OBJECTS.EMP_OUT_ADDRESS_V])(
+    'resolves %s by its confirmed USER_NAME key with an ADDRESS_TYPE filter column',
+    async (object) => {
+      await expect(schema.resolveKeyColumn(object, ['user_name', 'username'])).resolves.toBe('user_name');
+      await expect(schema.hasColumn(object, 'ADDRESS_TYPE')).resolves.toBe(true);
+      await expect(schema.isNumericColumn(object, 'ADDRESS_ID')).resolves.toBe(true);
+    },
+  );
+
+  it('resolves every profile view by its confirmed USER_NAME key', async () => {
+    for (const object of [
+      ORACLE_OBJECTS.PERSONAL_DETAILS_V, ORACLE_OBJECTS.EMP_PHONE_V, ORACLE_OBJECTS.EMP_OUT_ADDRESS_V,
+      ORACLE_OBJECTS.EMP_IN_ADDRESS_V, ORACLE_OBJECTS.EMP_CONTACT_V,
+    ]) {
+      await expect(schema.resolveKeyColumn(object, ['user_name', 'username'])).resolves.toBe('user_name');
+    }
+    await expect(schema.resolveKeyColumn(ORACLE_OBJECTS.DEP_PHONE_V, ['dependent_id'])).resolves.toBe('dependent_id');
+    await expect(schema.resolveKeyColumn(ORACLE_OBJECTS.DEP_ADDRESS_V, ['address_id'])).resolves.toBe('address_id');
+  });
+
   it('refuses unavailable view definitions and unsupported keys before any read', async () => {
-    await expect(schema.hasColumn(ORACLE_OBJECTS.EMP_PHONE_V, 'USER_NAME'))
+    await expect(schema.hasColumn(ORACLE_OBJECTS.QID_DET_V, 'USER_NAME'))
       .rejects.toBeInstanceOf(OracleContractUnavailableException);
     await expect(schema.resolveKeyColumn(ORACLE_OBJECTS.LEAVE_CANCEL_V, ['USERNAME']))
       .rejects.toBeInstanceOf(OracleContractUnavailableException);

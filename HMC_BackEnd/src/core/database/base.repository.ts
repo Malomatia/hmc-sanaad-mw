@@ -1,4 +1,4 @@
-import { Logger, NotImplementedException } from '@nestjs/common';
+import { BadRequestException, Logger, NotImplementedException } from '@nestjs/common';
 import * as oracledb from 'oracledb';
 import { OracleService } from './oracle.service';
 import { OracleSchemaService, ProcedureParam } from './oracle-schema.service';
@@ -613,6 +613,18 @@ export abstract class BaseOracleRepository {
     // node-oracledb bind it natively, bypassing NLS parsing entirely.
     if (type === oracledb.DB_TYPE_DATE || type === oracledb.DB_TYPE_TIMESTAMP) {
       return { type, val: parseOracleDate(value) };
+    }
+    // NUMBER formals (ids, notification ids) arrive as request strings; bind
+    // them under the declared type so Oracle receives a number rather than a
+    // VARCHAR2 it has to coerce. Non-numeric text is rejected up front (400)
+    // instead of surfacing as ORA-01722 from inside the procedure.
+    if (type === oracledb.DB_TYPE_NUMBER) {
+      if (value === null || value === undefined || value === '') return { type, val: null };
+      const text = String(value).trim();
+      if (!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(text)) {
+        throw new BadRequestException(`${param.name} must be a number.`);
+      }
+      return { type, val: text };
     }
     return typeof type === 'string' ? { type, val: value } : value;
   }

@@ -54,7 +54,10 @@ const LEAVE_CANCEL_PARAMS = [
   ...BaseOracleRepository.attachmentParams(),
 ] as const;
 
-/** RET_FRM_LEAV_PR input params (Sanaad spec — ReturnFromLeaveSubmit body). */
+/**
+ * RET_FRM_LEAV_PR — confirmed declaration 2026-09-14: 26 IN (p_return_date is
+ * a DATE) + 3 OUT, no p_language.
+ */
 const LEAVE_RETURN_PARAMS = [
   'p_user_name',
   'p_leave_details',
@@ -63,7 +66,6 @@ const LEAVE_RETURN_PARAMS = [
   'p_return_date',
   'p_comments',
   ...BaseOracleRepository.attachmentParams(),
-  'p_language',
 ] as const;
 
 /** LEAVE_BALANCE_PR confirmed parameters — 2 IN + 4 OUT. */

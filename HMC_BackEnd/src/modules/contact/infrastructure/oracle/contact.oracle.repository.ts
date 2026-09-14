@@ -3,7 +3,6 @@ import { OracleService } from '@core/database/oracle.service';
 import { OracleSchemaService } from '@core/database/oracle-schema.service';
 import { BaseOracleRepository } from '@core/database/base.repository';
 import { SubmitResult } from '@shared/domain/submit-result';
-import { toOracleLanguage } from '@shared/domain/lang';
 import { ORACLE_OBJECTS } from '@shared/constants/oracle-objects';
 import {
   AddressCommand,
@@ -41,16 +40,15 @@ const PHONE_ARRAY_PARAMS = [
 ] as const;
 const STR_TO_TYPE = 'XXHMC_SND_PHONE_PKG.str_to_type';
 
-/** DEL_PHONE_NUMBER_PR input params (Sanaad spec — DELETE_PHONE_DETAILS_SUBMIT). */
+/** DEL_PHONE_NUMBER_PR — confirmed declaration 2026-09-14: 4 IN + 3 OUT, no p_language. */
 const DELETE_PHONE_PARAMS = [
   'p_user_name',
   'p_phone_id',
   'p_phone_type',
   'p_phone_number',
-  'p_language',
 ] as const;
 
-/** CREATE_ADDRESS_PR input params (Sanaad spec — CREATE_ADDRESS_PR). */
+/** CREATE_ADDRESS_PR — confirmed 2026-09-14: p_effective_date is DATE, no p_language. */
 const CREATE_ADDRESS_PARAMS = [
   'p_user_name',
   'p_effective_date',
@@ -66,25 +64,28 @@ const CREATE_ADDRESS_PARAMS = [
   'p_region2',
   'p_region3',
   'p_po_box',
-  'p_language',
 ] as const;
 
-/** UPD_ADDRESS_PR input params (Sanaad spec — UPDATE_ADDRESS_SUBMIT). */
+/**
+ * UPD_ADDRESS_PR — confirmed 2026-09-14: the region formals are spelled
+ * P_REGION_1/2/3 (underscored, unlike CREATE_ADDRESS_PR's P_REGION1/2/3),
+ * p_effective_date is DATE and there is no p_language. The request body keeps
+ * accepting `p_region1..3`; `regionAliases` mirrors them onto the formal names.
+ */
 const UPDATE_ADDRESS_PARAMS = [
   'p_user_name',
+  'p_effective_date',
   'p_address_id',
   'p_address_line1',
   'p_address_line2',
   'p_address_line3',
   'p_city',
-  'p_region1',
-  'p_region2',
-  'p_region3',
+  'p_region_1',
+  'p_region_2',
+  'p_region_3',
   'p_po_box',
   'p_address_type',
   'p_country',
-  'p_effective_date',
-  'p_language',
 ] as const;
 
 /**
@@ -152,7 +153,6 @@ export class PhoneOracleRepository extends BaseOracleRepository implements Phone
       p_phone_id: cmd.phoneId,
       p_phone_type: cmd.phoneType,
       p_phone_number: cmd.phoneNumber,
-      p_language: toOracleLanguage(cmd.lang),
     });
   }
 }
@@ -180,8 +180,20 @@ export class AddressOracleRepository extends BaseOracleRepository implements Add
     );
   }
 
-  /** Merge the posted p_* body with the enforced user + resolved language. */
+  /**
+   * Merge the posted p_* body with the enforced user. Neither address procedure
+   * declares p_language. Region values are mirrored under both spellings so the
+   * same request body works for CREATE (p_region1) and UPDATE (p_region_1).
+   */
   private values(cmd: AddressCommand): Record<string, unknown> {
-    return { ...cmd.fields, p_language: toOracleLanguage(cmd.lang), p_user_name: cmd.username };
+    const values: Record<string, unknown> = { ...cmd.fields, p_user_name: cmd.username };
+    for (const n of [1, 2, 3]) {
+      const value = values[`p_region${n}`] ?? values[`p_region_${n}`];
+      if (value !== undefined) {
+        values[`p_region${n}`] = value;
+        values[`p_region_${n}`] = value;
+      }
+    }
+    return values;
   }
 }

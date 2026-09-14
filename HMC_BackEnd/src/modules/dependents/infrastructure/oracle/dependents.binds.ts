@@ -6,8 +6,10 @@ import { BaseOracleRepository } from '@core/database/base.repository';
  *
  * They are kept here rather than inline because each list is long: a dependent
  * carries its identity, passport, visa, QID, sponsorship, phone and address in a
- * single call. `callSubmitProc` binds NULL for anything the caller omits, and
- * prefers the argument list the data dictionary reports when it is readable.
+ * single call. `callSubmitProc` binds NULL for anything the caller omits; the
+ * authoritative argument list (names, DATE/NUMBER/MY_TYPE types, OUTs) is the
+ * static contract in OracleContractCatalog, transcribed from ALL_ARGUMENTS on
+ * 2026-09-14 — none of these procedures declares p_language.
  */
 
 /** ADD_DEPENDENT_PKG.ADD_DEPENDENT_PR (op 65). */
@@ -65,7 +67,6 @@ export const ADD_DEPENDENT_PARAMS = [
   ...BaseOracleRepository.attachmentParams(),
   'p_employment_status',
   'p_comments',
-  'p_language',
 ] as const;
 
 /** ADD_DEPENDENT_PKG.UPDATE_DEPENDENT_PR (op 24). */
@@ -123,10 +124,9 @@ export const UPDATE_DEPENDENT_PARAMS = [
   ...BaseOracleRepository.attachmentParams(),
   'p_employment_status',
   'p_comments',
-  'p_language',
 ] as const;
 
-/** REMOVE_DEPENDENT_PR (op 31). */
+/** REMOVE_DEPENDENT_PR (op 31) — confirmed 2026-09-14, no p_language. */
 export const REMOVE_DEPENDENT_PARAMS = [
   'p_user_name',
   'p_dependent_id',
@@ -134,10 +134,9 @@ export const REMOVE_DEPENDENT_PARAMS = [
   'p_contact_type',
   'p_relation_ship',
   ...BaseOracleRepository.attachmentParams(),
-  'p_language',
 ] as const;
 
-/** PASS_DTL_PR (op 34) — passport detail request. */
+/** PASS_DTL_PR (op 34) — passport detail request; confirmed 2026-09-14, no p_language. */
 export const PASSPORT_DETAIL_PARAMS = [
   'p_user_name',
   'p_passport_number',
@@ -147,5 +146,4 @@ export const PASSPORT_DETAIL_PARAMS = [
   'p_place_of_issue',
   'p_country_of_issue',
   ...BaseOracleRepository.attachmentParams(),
-  'p_language',
 ] as const;

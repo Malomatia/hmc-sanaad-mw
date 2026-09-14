@@ -34,7 +34,7 @@ describe('Business Oracle discovery isolation', () => {
         .resolves.toBe('user_name');
       const params = await schema.resolveParams(ORACLE_OBJECTS.QID_CHG_PR);
       expect(params).toHaveLength(24);
-      await expect(schema.resolveParams(ORACLE_OBJECTS.UPD_PERSONAL_INFO_PR))
+      await expect(schema.resolveParams('XXHMC_SND_NOT_A_REAL_PR'))
         .rejects.toBeInstanceOf(OracleContractUnavailableException);
       for (const method of Object.values(metadata)) expect(method).not.toHaveBeenCalled();
     } finally {
@@ -64,6 +64,20 @@ describe('Static Oracle contracts', () => {
     [ORACLE_OBJECTS.CHK_PAYROLL_CNT, 6],
     [ORACLE_OBJECTS.PAYSLIP_PR, 15],
     [ORACLE_OBJECTS.HR_EMPLYMNT_LTR_PR, 31],
+    [ORACLE_OBJECTS.APPROVE_REJECT_PR, 9],
+    [ORACLE_OBJECTS.DEL_PHONE_NUMBER_PR, 7],
+    [ORACLE_OBJECTS.PHONE_PKG_ADD_OR_UPDATE, 8],
+    [ORACLE_OBJECTS.CREATE_ADDRESS_PR, 17],
+    [ORACLE_OBJECTS.UPD_ADDRESS_PR, 16],
+    [ORACLE_OBJECTS.UPD_PERSONAL_INFO_PR, 38],
+    [ORACLE_OBJECTS.HR_LEAV_AMEND_PR, 28],
+    [ORACLE_OBJECTS.RET_FRM_LEAV_PR, 29],
+    [ORACLE_OBJECTS.PASS_DTL_PR, 30],
+    [ORACLE_OBJECTS.REMOVE_DEPENDENT_PR, 28],
+    [ORACLE_OBJECTS.TICKET_REQ_PR, 35],
+    [ORACLE_OBJECTS.CANCEL_TKT_PR, 31],
+    [ORACLE_OBJECTS.DEPENDENT_PKG_ADD, 69],
+    [ORACLE_OBJECTS.DEPENDENT_PKG_UPDATE, 75],
   ] as const)('keeps the complete registered signature for %s', async (object, count) => {
     const params = await schema.resolveParams(object);
     expect(params).toHaveLength(count);
@@ -109,14 +123,36 @@ describe('Static Oracle contracts', () => {
     expect((await catalog.describeColumns(ORACLE_OBJECTS.LEAVE_CANCEL_V))[0].name).toBe('PERSON_ID');
   });
 
-  it.each([
-    ORACLE_OBJECTS.DEPENDENT_PKG_ADD,
-    ORACLE_OBJECTS.DEPENDENT_PKG_UPDATE,
-    ORACLE_OBJECTS.RET_FRM_LEAV_PR,
-    ORACLE_OBJECTS.HR_LEAV_AMEND_PR,
-    ORACLE_OBJECTS.UPD_PERSONAL_INFO_PR,
-  ])('keeps an uncaptured production signature unavailable: %s', async (object) => {
-    await expect(schema.resolveParams(object)).rejects.toBeInstanceOf(OracleContractUnavailableException);
+  it('keeps the ALL_ARGUMENTS types of the 2026-09-14 export', async () => {
+    const typesOf = async (object: string) =>
+      Object.fromEntries((await schema.resolveParams(object)).map((p) => [p.name, p.dataType]));
+    expect(await typesOf(ORACLE_OBJECTS.UPD_ADDRESS_PR)).toMatchObject({
+      p_effective_date: 'DATE', p_address_id: 'NUMBER', p_region_1: 'VARCHAR2',
+    });
+    expect(await typesOf(ORACLE_OBJECTS.UPD_ADDRESS_PR)).not.toHaveProperty('p_region1');
+    expect(await typesOf(ORACLE_OBJECTS.CREATE_ADDRESS_PR)).toMatchObject({ p_region1: 'VARCHAR2', p_effective_date: 'DATE' });
+    expect(await typesOf(ORACLE_OBJECTS.HR_LEAV_AMEND_PR)).toMatchObject({ p_new_end_date: 'DATE' });
+    expect(await typesOf(ORACLE_OBJECTS.RET_FRM_LEAV_PR)).toMatchObject({ p_return_date: 'DATE' });
+    expect(await typesOf(ORACLE_OBJECTS.APPROVE_REJECT_PR)).toMatchObject({ p_notification_id: 'NUMBER' });
+    expect(await typesOf(ORACLE_OBJECTS.PASS_DTL_PR)).toMatchObject({ p_date_of_issue: 'DATE', p_date_of_expiry: 'DATE' });
+    const update = await schema.resolveParams(ORACLE_OBJECTS.DEPENDENT_PKG_UPDATE);
+    const phoneType = update.find((p) => p.name === 'p_phone_type');
+    expect(phoneType).toMatchObject({
+      dataType: 'PL/SQL TABLE', typeOwner: 'APPS', typeName: ORACLE_OBJECTS.ADD_DEPENDENT_PKG, typeSubname: 'MY_TYPE',
+    });
+    // P_EMPLOYMENT_STATUS / P_COMMENTS are declared after the OUT parameters.
+    expect(update.map((p) => p.name).slice(-5)).toEqual([
+      'p_success_flag', 'p_error_msg', 'p_error_msg_ar', 'p_employment_status', 'p_comments',
+    ]);
+    const phone = await schema.resolveParams(ORACLE_OBJECTS.PHONE_PKG_ADD_OR_UPDATE);
+    expect(phone.filter((p) => p.dataType === 'PL/SQL TABLE').map((p) => p.typeSubname)).toEqual(
+      Array(4).fill('ETSND_VARCHAR'),
+    );
+  });
+
+  it('keeps an unregistered program unavailable', async () => {
+    await expect(schema.resolveParams('XXHMC_SND_NOT_A_REAL_PR'))
+      .rejects.toBeInstanceOf(OracleContractUnavailableException);
   });
 
   it('resolves the employee phone view by its confirmed USER_NAME key', async () => {

@@ -1,3 +1,4 @@
+import * as oracledb from 'oracledb';
 import { ApprovalsOracleRepository } from './approvals.oracle.repository';
 import { OracleService } from '@core/database/oracle.service';
 import { OracleSchemaService } from '@core/database/oracle-schema.service';
@@ -41,7 +42,8 @@ describe('Approvals static contract handling', () => {
       'p_mode', 'p_comments', 'p_success_flag', 'p_error_msg', 'p_error_msg_ar',
     ].sort());
     expect(binds).toMatchObject({
-      p_from_user_name: 'TEST.USER', p_to_user_name: 'ANOTHER.USER', p_notification_id: '123',
+      p_from_user_name: 'TEST.USER', p_to_user_name: 'ANOTHER.USER',
+      p_notification_id: { type: oracledb.DB_TYPE_NUMBER, val: '123' },
       p_mode: 'REQUEST', p_itemtype: 'HRSSA', p_item_key: 'item-key', p_comments: 'More details requested',
     });
     expect(binds).not.toHaveProperty('p_language');

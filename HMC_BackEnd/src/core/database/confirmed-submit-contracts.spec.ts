@@ -93,7 +93,7 @@ describe('Confirmed submit contracts (2026-09-14 export)', () => {
       'p_city', 'p_region_1', 'p_region_2', 'p_region_3', 'p_po_box', 'p_address_type', 'p_country', ...OUT,
     ]);
     expect(binds).toMatchObject({ p_region_1: 'R1', p_region_2: 'R2', p_region_3: null });
-    expect(binds.p_address_id).toEqual({ type: oracledb.DB_TYPE_NUMBER, val: '1720617' });
+    expect(binds.p_address_id).toEqual({ type: oracledb.DB_TYPE_NUMBER, val: 1720617 });
     expect(binds.p_effective_date).toEqual(DATE('2026-09-14'));
   });
 
@@ -215,7 +215,7 @@ describe('Confirmed submit contracts (2026-09-14 export)', () => {
         p_phone_id: '324324', p_phone_type: 'Home', p_phone_number: '44412345', p_phone_type1: null,
         p_relation_ship: 'Child', p_gendar: 'Male', p_visa_validy: 'Yes', p_type_of_sponsership: 'Employee',
       });
-      expect(binds.p_dependent_id).toEqual({ type: oracledb.DB_TYPE_NUMBER, val: '329302' });
+      expect(binds.p_dependent_id).toEqual({ type: oracledb.DB_TYPE_NUMBER, val: 329302 });
       expect(binds.p_date_of_issue_qid).toEqual(DATE('2020-01-01'));
       expect(binds.p_expiry_date).toEqual(DATE('2030-12-31'));
       expect(binds.p_effective_date).toEqual(DATE('2026-09-14'));
@@ -242,6 +242,36 @@ describe('Confirmed submit contracts (2026-09-14 export)', () => {
     expect(apply.p_attachment1).toEqual({ type: oracledb.DB_TYPE_BLOB, val: null });
   });
 
+  describe('NUMBER formals (NJS-011 regression: /approvals/:id/request-info)', () => {
+    const request = (approvalId: string) => ({
+      username: 'AIBRAHIM39', lang: 'en' as const, approvalId, toUsername: 'VPAVITHRAN',
+      itemType: 'HRSSA', itemKey: '18876323', mode: 'QUESTION', comment: 'test',
+    });
+
+    it('binds the notification id as a JS number, never a numeric string', async () => {
+      const { ora, schema, issued } = make();
+      await new ApprovalsOracleRepository(ora, schema).requestInfo(request('123864098'));
+      const { binds } = issued();
+      expect(binds.p_notification_id).toEqual({ type: oracledb.DB_TYPE_NUMBER, val: 123864098 });
+      expect(typeof binds.p_notification_id.val).toBe('number');
+    });
+
+    it('binds an omitted NUMBER as a typed null and rejects non-numeric text before Oracle', async () => {
+      const { ora, schema, call, issued } = make();
+      const repo = new ApprovalsOracleRepository(ora, schema);
+      await expect(repo.requestInfo(request('abc'))).rejects.toMatchObject({ status: 400 });
+      expect(call).not.toHaveBeenCalled();
+      await new AddressOracleRepository(ora, schema).update({ username: 'U', lang: 'en', fields: {} });
+      expect(issued().binds.p_address_id).toEqual({ type: oracledb.DB_TYPE_NUMBER, val: null });
+    });
+
+    it('hands an id beyond double precision to Oracle as text instead of losing digits', async () => {
+      const { ora, schema, issued } = make();
+      await new ApprovalsOracleRepository(ora, schema).requestInfo(request('12345678901234567890'));
+      expect(issued().binds.p_notification_id).toBe('12345678901234567890');
+    });
+  });
+
   it('APPROVE_REJECT_PR: NUMBER notification id, no p_language', async () => {
     const { ora, schema, issued } = make();
     await new ApprovalsOracleRepository(ora, schema).decide({
@@ -252,6 +282,6 @@ describe('Confirmed submit contracts (2026-09-14 export)', () => {
       'p_user_name', 'p_itemtype', 'p_item_key', 'p_result', 'p_notification_id', 'p_user_comment', ...OUT,
     ]);
     expect(binds).toMatchObject({ p_user_name: 'TEST.USER', p_result: 'APPROVED', p_user_comment: 'ok' });
-    expect(binds.p_notification_id).toEqual({ type: oracledb.DB_TYPE_NUMBER, val: '12345' });
+    expect(binds.p_notification_id).toEqual({ type: oracledb.DB_TYPE_NUMBER, val: 12345 });
   });
 });

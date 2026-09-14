@@ -43,7 +43,7 @@ describe('Approvals static contract handling', () => {
     ].sort());
     expect(binds).toMatchObject({
       p_from_user_name: 'TEST.USER', p_to_user_name: 'ANOTHER.USER',
-      p_notification_id: { type: oracledb.DB_TYPE_NUMBER, val: '123' },
+      p_notification_id: { type: oracledb.DB_TYPE_NUMBER, val: 123 },
       p_mode: 'REQUEST', p_itemtype: 'HRSSA', p_item_key: 'item-key', p_comments: 'More details requested',
     });
     expect(binds).not.toHaveProperty('p_language');

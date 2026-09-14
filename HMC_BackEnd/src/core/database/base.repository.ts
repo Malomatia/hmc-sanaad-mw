@@ -624,7 +624,13 @@ export abstract class BaseOracleRepository {
       if (!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(text)) {
         throw new BadRequestException(`${param.name} must be a number.`);
       }
-      return { type, val: text };
+      // node-oracledb requires a JS number for a NUMBER bind (a string raises
+      // NJS-011). Ids beyond the double-precision range would lose digits as a
+      // number, so those are handed to Oracle as text and converted server-side.
+      const numeric = Number(text);
+      return Number.isSafeInteger(numeric) || (!Number.isInteger(numeric) && Number.isFinite(numeric))
+        ? { type, val: numeric }
+        : text;
     }
     return typeof type === 'string' ? { type, val: value } : value;
   }

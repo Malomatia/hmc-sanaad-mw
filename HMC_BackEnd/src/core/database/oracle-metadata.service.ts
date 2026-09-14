@@ -83,11 +83,11 @@ export class OracleMetadataService {
 
   /**
    * Columns of a known object, without the object-kind and argument lookups that
-   * `describe()` also performs. Used by the hot path that only needs to know
-   * whether a view exposes a key column (see OracleSchemaService.hasColumn):
-   * running the full `describe()` there fired the expensive ALL_ARGUMENTS query
-   * (`... OR package_name = :pkg`) on every user-scoped LOV read, which was the
-   * cause of the request timeouts, and held three pool connections instead of one.
+   * `describe()` also performs. This live reader is for explicit diagnostics
+   * only. Business view filters use OracleContractCatalog through
+   * OracleSchemaService; they must not wait for a dictionary query or hold
+   * additional pool connections while deciding which business statement to run.
+   * The column-only diagnostic remains available without argument discovery.
    */
   async describeColumns(name: string): Promise<OracleColumnInfo[]> {
     return this.readColumns(this.normalize(name));
@@ -95,8 +95,8 @@ export class OracleMetadataService {
 
   /**
    * Formal parameters of a known program unit, without the column and
-   * object-kind lookups `describe()` also performs. Used when only the bind
-   * signature is needed (see OracleSchemaService.resolveParams).
+   * object-kind lookups `describe()` also performs. Explicit diagnostics only;
+   * business binding uses the static OracleContractCatalog instead.
    */
   async describeArguments(name: string): Promise<OracleArgumentInfo[]> {
     return this.readArguments(this.normalize(name));

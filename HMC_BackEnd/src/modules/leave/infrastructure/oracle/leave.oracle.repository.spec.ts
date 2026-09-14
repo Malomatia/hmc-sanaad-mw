@@ -18,9 +18,15 @@ describe('LeaveOracleRepository — return-from-leave value compaction', () => {
       p_error_msg_ar: null,
     });
     const ora = { call } as unknown as OracleService;
-    // No dictionary: callSubmitProc falls back to the documented param list,
-    // which is enough to observe the bound values.
-    const schema = { resolveParams: jest.fn().mockResolvedValue([]) } as unknown as OracleSchemaService;
+    // A minimal explicit test contract exposes the values under test without
+    // discovery or a fallback; it is not a production procedure definition.
+    const schema = {
+      resolveParams: jest.fn().mockResolvedValue([
+        { name: 'p_user_name', direction: 'IN', dataType: 'VARCHAR2', defaulted: false },
+        { name: 'p_leave_details', direction: 'IN', dataType: 'VARCHAR2', defaulted: false },
+        { name: 'p_success_flag', direction: 'OUT', dataType: 'VARCHAR2', defaulted: false },
+      ]),
+    } as unknown as OracleSchemaService;
     return { repository: new LeaveOracleRepository(ora, schema), call };
   }
 
@@ -65,7 +71,12 @@ describe('LeaveOracleRepository — the leave procedures take no p_language', ()
   function make() {
     const call = jest.fn().mockResolvedValue({ p_success_flag: 'Y', p_error_msg: null });
     const ora = { call } as unknown as OracleService;
-    const schema = { resolveParams: jest.fn().mockResolvedValue([]) } as unknown as OracleSchemaService;
+    const schema = {
+      resolveParams: jest.fn().mockResolvedValue([
+        { name: 'p_user_name', direction: 'IN', dataType: 'VARCHAR2', defaulted: false },
+        { name: 'p_success_flag', direction: 'OUT', dataType: 'VARCHAR2', defaulted: false },
+      ]),
+    } as unknown as OracleSchemaService;
     return { repository: new LeaveOracleRepository(ora, schema), call };
   }
 

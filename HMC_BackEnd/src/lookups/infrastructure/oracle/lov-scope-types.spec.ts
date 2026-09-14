@@ -79,13 +79,13 @@ describe('LOV scoping against a typed key column', () => {
     expect(Object.values(binds)).toEqual([USERNAME, PERSON, EMPLOYEE]);
   });
 
-  it('reads the whole view when nothing numeric was supplied', async () => {
+  it('does not read the whole view when nothing numeric was supplied', async () => {
     const { repo, query } = make('person_id', true);
 
-    await repo.readLov(CANCEL_V, 'en', USERNAME, {});
+    await expect(repo.readLov(CANCEL_V, 'en', USERNAME, {})).resolves.toEqual([]);
 
-    // no usable identifier => no scope predicate, rather than a query that
-    // Oracle would reject outright
-    expect(issued(query).sql).not.toContain('IN (');
+    // No usable identifier means no matching rows, never an unfiltered view
+    // read or a comparison that Oracle would reject outright.
+    expect(query).not.toHaveBeenCalled();
   });
 });

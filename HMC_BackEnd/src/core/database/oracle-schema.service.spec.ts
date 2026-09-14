@@ -1,12 +1,174 @@
+import { Test } from '@nestjs/testing';
+import { ORACLE_OBJECTS } from '@shared/constants/oracle-objects';
+import { classifyException } from '@core/http/exception-classifier';
 import { OracleSchemaService } from './oracle-schema.service';
 import { OracleMetadataService } from './oracle-metadata.service';
+import { OracleModule } from './oracle.module';
+import { OracleContractCatalog } from './oracle-contracts';
+import { OracleContractUnavailableException } from './oracle.error';
+import { OracleService } from './oracle.service';
+
+describe('Business Oracle discovery isolation', () => {
+  it('does not inject the live dictionary service into the business resolver', () => {
+    const dependencies = Reflect.getMetadata('design:paramtypes', OracleSchemaService) as unknown[];
+    expect(dependencies).not.toContain(OracleMetadataService);
+  });
+
+  it('does not export the live dictionary service to feature modules', () => {
+    const exports = Reflect.getMetadata('exports', OracleModule) as unknown[];
+    expect(exports).not.toContain(OracleMetadataService);
+  });
+
+  it('uses the static catalog through Nest injection, even when live discovery would fail', async () => {
+    const metadata = {
+      describe: jest.fn().mockRejectedValue(new Error('Live discovery is forbidden')),
+      describeColumns: jest.fn().mockRejectedValue(new Error('Live discovery is forbidden')),
+      describeArguments: jest.fn().mockRejectedValue(new Error('Live discovery is forbidden')),
+    };
+    const module = await Test.createTestingModule({
+      providers: [OracleSchemaService, OracleContractCatalog, { provide: OracleMetadataService, useValue: metadata }],
+    }).compile();
+    try {
+      const schema = module.get(OracleSchemaService);
+      await expect(schema.resolveKeyColumn(ORACLE_OBJECTS.PERSONAL_DETAILS_V, ['user_name', 'username']))
+        .resolves.toBe('user_name');
+      const params = await schema.resolveParams(ORACLE_OBJECTS.QID_CHG_PR);
+      expect(params).toHaveLength(24);
+      await expect(schema.resolveParams(ORACLE_OBJECTS.UPD_PERSONAL_INFO_PR))
+        .rejects.toBeInstanceOf(OracleContractUnavailableException);
+      for (const method of Object.values(metadata)) expect(method).not.toHaveBeenCalled();
+    } finally {
+      await module.close();
+    }
+  });
+
+  it('retains live argument inspection as an explicit diagnostic operation', async () => {
+    const query = jest.fn().mockResolvedValue([]);
+    const diagnostics = new OracleMetadataService({ query } as unknown as OracleService);
+    await diagnostics.describeArguments(ORACLE_OBJECTS.QID_CHG_PR);
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(query.mock.calls[0][0]).toContain('FROM all_arguments');
+  });
+});
+
+describe('Static Oracle contracts', () => {
+  const catalog = new OracleContractCatalog();
+  const schema = new OracleSchemaService(catalog);
+
+  it.each([
+    [ORACLE_OBJECTS.COID_REQ_PR, 29],
+    [ORACLE_OBJECTS.QID_CHG_PR, 24],
+    [ORACLE_OBJECTS.SCHOOL_FEE_PR, 39],
+    [ORACLE_OBJECTS.LEAVE_BALANCE_PR, 6],
+    [ORACLE_OBJECTS.GET_PAYSLIP_PERIODS, 4],
+    [ORACLE_OBJECTS.CHK_PAYROLL_CNT, 6],
+    [ORACLE_OBJECTS.PAYSLIP_PR, 15],
+    [ORACLE_OBJECTS.HR_EMPLYMNT_LTR_PR, 31],
+  ] as const)('keeps the complete registered signature for %s', async (object, count) => {
+    const params = await schema.resolveParams(object);
+    expect(params).toHaveLength(count);
+    expect(params.map((param) => param.name)).not.toContain('p_language');
+    expect(new Set(params.map((param) => param.name)).size).toBe(params.length);
+  });
+
+  it('preserves the supplied school-fee date, number, birth-token, and BLOB types', async () => {
+    const params = await schema.resolveParams(ORACLE_OBJECTS.SCHOOL_FEE_PR);
+    const types = Object.fromEntries(params.map((param) => [param.name, param.dataType]));
+    expect(types).toMatchObject({
+      p_acd_st_dt: 'DATE', p_acd_end_dt: 'DATE', p_child_date_birth: 'VARCHAR2', p_amount: 'NUMBER',
+      p_attachment1: 'BLOB', p_attachment10: 'BLOB', p_error_msg_ar: 'VARCHAR2',
+    });
+  });
+
+  it.each([
+    ORACLE_OBJECTS.PERFORMANCE_V, ORACLE_OBJECTS.SALARY_V,
+    ORACLE_OBJECTS.EMPLOYMENT_V, ORACLE_OBJECTS.EMPLOYMENT_DETAILS_V,
+  ])(
+    'resolves %s by its confirmed USER_NAME key',
+    async (object) => {
+      await expect(schema.resolveKeyColumn(object, ['user_name', 'username'])).resolves.toBe('user_name');
+      await expect(schema.hasColumn(object, 'USERNAME')).resolves.toBe(false);
+    },
+  );
+
+  it('resolves documented numeric and role-keyed views from static columns', async () => {
+    await expect(schema.resolveKeyColumn(ORACLE_OBJECTS.LEAVE_CANCEL_V, ['username', 'person_id']))
+      .resolves.toBe('person_id');
+    await expect(schema.isNumericColumn(ORACLE_OBJECTS.LEAVE_CANCEL_V, 'PERSON_ID')).resolves.toBe(true);
+    await expect(schema.resolveKeyColumn(ORACLE_OBJECTS.APPROVE_SUMRY_V, ['approver_user_name']))
+      .resolves.toBe('approver_user_name');
+    await expect(schema.isNumericColumn(ORACLE_OBJECTS.APPROVE_SUMRY_V, 'APPROVER_USER_NAME')).resolves.toBe(false);
+  });
+
+  it('does not mutate catalog definitions when a returned record is changed', async () => {
+    const params = await catalog.describeArguments(ORACLE_OBJECTS.QID_CHG_PR);
+    params[0].name = 'CHANGED';
+    const columns = await catalog.describeColumns(ORACLE_OBJECTS.LEAVE_CANCEL_V);
+    columns[0].name = 'CHANGED';
+    expect((await catalog.describeArguments(ORACLE_OBJECTS.QID_CHG_PR))[0].name).toBe('P_USER_NAME');
+    expect((await catalog.describeColumns(ORACLE_OBJECTS.LEAVE_CANCEL_V))[0].name).toBe('PERSON_ID');
+  });
+
+  it.each([
+    ORACLE_OBJECTS.DEPENDENT_PKG_ADD,
+    ORACLE_OBJECTS.DEPENDENT_PKG_UPDATE,
+    ORACLE_OBJECTS.RET_FRM_LEAV_PR,
+    ORACLE_OBJECTS.HR_LEAV_AMEND_PR,
+    ORACLE_OBJECTS.UPD_PERSONAL_INFO_PR,
+  ])('keeps an uncaptured production signature unavailable: %s', async (object) => {
+    await expect(schema.resolveParams(object)).rejects.toBeInstanceOf(OracleContractUnavailableException);
+  });
+
+  it('resolves the employee phone view by its confirmed USER_NAME key', async () => {
+    await expect(schema.resolveKeyColumn(ORACLE_OBJECTS.EMP_PHONE_V, ['user_name', 'username']))
+      .resolves.toBe('user_name');
+    await expect(schema.isNumericColumn(ORACLE_OBJECTS.EMP_PHONE_V, 'DEPENDENT_ID')).resolves.toBe(true);
+  });
+
+  it.each([ORACLE_OBJECTS.EMP_IN_ADDRESS_V, ORACLE_OBJECTS.EMP_OUT_ADDRESS_V])(
+    'resolves %s by its confirmed USER_NAME key with an ADDRESS_TYPE filter column',
+    async (object) => {
+      await expect(schema.resolveKeyColumn(object, ['user_name', 'username'])).resolves.toBe('user_name');
+      await expect(schema.hasColumn(object, 'ADDRESS_TYPE')).resolves.toBe(true);
+      await expect(schema.isNumericColumn(object, 'ADDRESS_ID')).resolves.toBe(true);
+    },
+  );
+
+  it('resolves every profile view by its confirmed USER_NAME key', async () => {
+    for (const object of [
+      ORACLE_OBJECTS.PERSONAL_DETAILS_V, ORACLE_OBJECTS.EMP_PHONE_V, ORACLE_OBJECTS.EMP_OUT_ADDRESS_V,
+      ORACLE_OBJECTS.EMP_IN_ADDRESS_V, ORACLE_OBJECTS.EMP_CONTACT_V,
+    ]) {
+      await expect(schema.resolveKeyColumn(object, ['user_name', 'username'])).resolves.toBe('user_name');
+    }
+    await expect(schema.resolveKeyColumn(ORACLE_OBJECTS.DEP_PHONE_V, ['dependent_id'])).resolves.toBe('dependent_id');
+    await expect(schema.resolveKeyColumn(ORACLE_OBJECTS.DEP_ADDRESS_V, ['address_id'])).resolves.toBe('address_id');
+  });
+
+  it('refuses unavailable view definitions and unsupported keys before any read', async () => {
+    await expect(schema.hasColumn(ORACLE_OBJECTS.QID_DET_V, 'USER_NAME'))
+      .rejects.toBeInstanceOf(OracleContractUnavailableException);
+    await expect(schema.resolveKeyColumn(ORACLE_OBJECTS.LEAVE_CANCEL_V, ['USERNAME']))
+      .rejects.toBeInstanceOf(OracleContractUnavailableException);
+  });
+
+  it('returns an explicit 503 configuration message without exposing object names', () => {
+    const error = new OracleContractUnavailableException(ORACLE_OBJECTS.HR_EMPLYMNT_LTR_PR, 'program parameters');
+    const classified = classifyException(error);
+    expect(classified).toMatchObject({
+      httpStatus: 503, serverSide: true, message: OracleContractUnavailableException.publicMessage,
+    });
+    expect(classified.message).not.toContain('XXHMC');
+    expect(error.message).toContain(ORACLE_OBJECTS.HR_EMPLYMNT_LTR_PR);
+  });
+});
 
 /**
- * User-scoped LOV reads (leave/lov/amend, letters/lov, ...) call hasColumn to
- * find the key column. Routing that through the full describe() fired the
- * expensive ALL_ARGUMENTS query and held three pool connections per check,
- * which timed the requests out. These cases pin the split: column checks read
- * only columns, signature reads only arguments — describe() is never used here.
+ * User-scoped LOV reads resolve their keys from the injected static catalog.
+ * A live dictionary dependency previously fired expensive ALL_ARGUMENTS reads
+ * and held several pool connections per check. These fixtures exercise the
+ * contract resolver independently of Oracle; production injection and exports
+ * must keep the live dictionary service confined to explicit diagnostics.
  */
 describe('OracleSchemaService', () => {
   const object = 'XXHMC_SND_LEAVE_AMEND_V';
@@ -138,12 +300,18 @@ describe('OracleSchemaService', () => {
     expect(describeColumns).toHaveBeenCalledTimes(2);
   });
 
-  it('returns null when an object has no formal parameters', async () => {
+  it('rejects an empty program contract instead of enabling guessed arguments', async () => {
     const describeArguments = jest.fn().mockResolvedValue([]);
     const { service } = make({ describeArguments } as Partial<jest.Mocked<OracleMetadataService>>);
-    await expect(service.resolveParams('XXHMC_SND_CHILD_DETS_VIEW')).resolves.toBeNull();
-    await expect(service.resolveParams('XXHMC_SND_CHILD_DETS_VIEW')).resolves.toBeNull();
-    expect(describeArguments).toHaveBeenCalledTimes(1);
+    await expect(service.resolveParams('XXHMC_SND_CHILD_DETS_VIEW')).rejects.toMatchObject({ status: 503 });
+    await expect(service.resolveParams('XXHMC_SND_CHILD_DETS_VIEW')).rejects.toMatchObject({ status: 503 });
+    expect(describeArguments).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects an empty view contract instead of choosing the first candidate', async () => {
+    const { service } = make({ describeColumns: jest.fn().mockResolvedValue([]) });
+    await expect(service.resolveKeyColumn(object, ['username', 'person_id']))
+      .rejects.toMatchObject({ status: 503 });
   });
 
   it('reports a returnType for a table function, distinguishing it from a procedure', async () => {

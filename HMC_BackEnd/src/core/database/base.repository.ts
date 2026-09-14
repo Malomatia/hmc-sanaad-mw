@@ -2,6 +2,7 @@ import { Logger, NotImplementedException } from '@nestjs/common';
 import * as oracledb from 'oracledb';
 import { OracleService } from './oracle.service';
 import { OracleSchemaService, ProcedureParam } from './oracle-schema.service';
+import { OracleContractUnavailableException } from './oracle.error';
 import { SubmitResult } from '@shared/domain/submit-result';
 import { safeDecodeUri } from '@shared/utils/url-decode.util';
 import { parseOracleDate } from '@shared/utils/date.util';
@@ -341,71 +342,60 @@ export abstract class BaseOracleRepository {
    * Call a submit-style `_PR`/`_PKG` procedure and map its OUT binds to a
    * SubmitResult.
    *
-   * The argument list is taken from the data dictionary when it is readable, so
-   * the call always matches what the database declares — both the IN parameters
-   * and the OUT contract, which the Sanaad request-input tables do not list. That
-   * matters because the OUT names are not uniform (`p_status` / `p_message` for
+   * The argument list comes only from the registered static contract, covering
+   * both the IN parameters and the OUT contract that the legacy request-input
+   * tables do not list. OUT names are not uniform (`p_status` / `p_message` for
    * the phone package, `p_success_flag` / `p_error_msg` / `p_error_msg_ar` for
    * REASSIGN_PR), and a named argument the procedure does not declare raises
    * `PLS-00306: wrong number or types of arguments`.
    *
-   * When the dictionary is unavailable it falls back to the documented `params`
-   * plus `outBinds`. Every parameter is always bound (NULL when absent from
-   * `values`) so the full argument list is satisfied.
+   * Missing contracts fail before execution. The old outBinds argument remains
+   * accepted for source compatibility but never enables a guessed fallback.
+   * Registered parameters are bound as NULL when absent from `values`.
    */
   protected async callSubmitProc(
     object: string,
     params: readonly string[],
     values: Record<string, unknown>,
-    outBinds: oracledb.BindParameters = this.statusOutBinds(),
+    _outBinds?: oracledb.BindParameters,
     options: SubmitProcOptions = {},
   ): Promise<SubmitResult> {
     const declared = await this.schema?.resolveParams(object, params);
+    if (!declared?.length) throw new OracleContractUnavailableException(object, 'program parameters');
     const wrap = options.wrap ?? {};
     const binds: oracledb.BindParameters = {};
     const names: string[] = [];
 
-    if (declared?.length) {
-      for (const param of declared) {
-        names.push(param.name);
-        if (param.direction.includes('OUT')) {
-          (binds as Record<string, unknown>)[param.name] = BaseOracleRepository.outBind(
-            param,
-            BaseOracleRepository.pick(values, param.name),
-          );
-          continue;
-        }
-        if (
-          !param.defaulted &&
-          !BaseOracleRepository.hasValue(values, param.name) &&
-          !BaseOracleRepository.isExpected(params, param.name)
-        ) {
-          // The dictionary declares a parameter the mapping does not know. Keep
-          // the call alive (NULL bind, the legacy services do the same) but
-          // surface the drift so the documented param list gets updated.
-          this.logger.warn(`Unmapped Oracle parameter ${object}.${param.name} bound as NULL`);
-        }
-        if (wrap[param.name]) {
-          // Rendered as `p_x => PKG.fn(:p_x)`: the value is bound as a plain
-          // string and the PL/SQL function builds the composite the formal
-          // actually declares (see SubmitProcOptions.wrap).
-          (binds as Record<string, unknown>)[param.name] = BaseOracleRepository.pick(
-            values,
-            param.name,
-          );
-          continue;
-        }
-        (binds as Record<string, unknown>)[param.name] = BaseOracleRepository.inBind(
+    for (const param of declared) {
+      names.push(param.name);
+      if (param.direction.includes('OUT')) {
+        (binds as Record<string, unknown>)[param.name] = BaseOracleRepository.outBind(
           param,
           BaseOracleRepository.pick(values, param.name),
         );
+        continue;
       }
-    } else {
-      Object.assign(binds, outBinds);
-      names.push(...params, ...Object.keys(outBinds));
-      for (const p of params) {
-        (binds as Record<string, unknown>)[p] = BaseOracleRepository.pick(values, p);
+      if (
+        !param.defaulted &&
+        !BaseOracleRepository.hasValue(values, param.name) &&
+        !BaseOracleRepository.isExpected(params, param.name)
+      ) {
+        // The static contract includes a parameter the adapter does not supply.
+        // Preserve the existing NULL binding for optional business values, but
+        // report the mismatch so the adapter can be brought into agreement.
+        this.logger.warn(`Unmapped Oracle parameter ${object}.${param.name} bound as NULL`);
       }
+      if (wrap[param.name]) {
+        // Rendered as `p_x => PKG.fn(:p_x)`: the value is bound as a plain
+        // string and the PL/SQL function builds the composite the formal
+        // actually declares (see SubmitProcOptions.wrap).
+        (binds as Record<string, unknown>)[param.name] = BaseOracleRepository.pick(values, param.name);
+        continue;
+      }
+      (binds as Record<string, unknown>)[param.name] = BaseOracleRepository.inBind(
+        param,
+        BaseOracleRepository.pick(values, param.name),
+      );
     }
 
     const namedArgs = names
@@ -419,11 +409,11 @@ export abstract class BaseOracleRepository {
   }
 
   /**
-   * Call a procedure that returns its rows through a REF CURSOR (leave balance,
-   * child details). Like `callSubmitProc` the argument list comes from the data
-   * dictionary when it is readable — including the real name of the cursor
-   * parameter, which differs between procedures — and falls back to the
-   * documented `params` plus `cursorParam` otherwise.
+   * Call a procedure that returns its rows through exactly one REF CURSOR.
+   * Like `callSubmitProc`, the argument list comes from the static contract,
+   * including the real name of the cursor parameter. Missing parameters or
+   * cursor declarations fail before execution rather than selecting a guessed
+   * cursor name or dropping additional result sets.
    */
   protected async callRowsProc<T = Record<string, any>>(
     object: string,
@@ -432,53 +422,42 @@ export abstract class BaseOracleRepository {
     cursorParam = 'p_cursor',
   ): Promise<T[]> {
     const declared = await this.schema?.resolveParams(object, params);
-
-    if (declared?.length) {
-      const binds: oracledb.BindParameters = {};
-      const names: string[] = [];
-      let cursorName = cursorParam;
-      for (const param of declared) {
-        names.push(param.name);
-        const isCursor =
-          param.direction.includes('OUT') && param.dataType.toUpperCase() === 'REF CURSOR';
-        if (isCursor) {
-          // The row set. Bind it under its real formal name and tell callCursor
-          // which OUT bind to read.
-          cursorName = param.name;
-          (binds as Record<string, unknown>)[param.name] = {
-            dir: oracledb.BIND_OUT,
-            type: oracledb.CURSOR,
-          };
-          continue;
-        }
-        if (param.direction.includes('OUT')) {
-          // A scalar OUT the procedure also declares (e.g. GET_PAYSLIP_PERIODS'
-          // p_success_flag / p_error_msg). It must be bound or the call is short
-          // an argument — PLS-00306. Its value is unused here.
-          (binds as Record<string, unknown>)[param.name] = BaseOracleRepository.outBind(
-            param,
-            BaseOracleRepository.pick(values, param.name),
-          );
-          continue;
-        }
-        (binds as Record<string, unknown>)[param.name] = BaseOracleRepository.inBind(
+    const cursors = declared?.filter((param) =>
+      param.direction.includes('OUT') && param.dataType.toUpperCase() === 'REF CURSOR',
+    ) ?? [];
+    if (!declared?.length || cursors.length !== 1) {
+      throw new OracleContractUnavailableException(object, `single REF CURSOR (${cursorParam})`);
+    }
+    const binds: oracledb.BindParameters = {};
+    const names: string[] = [];
+    const cursorName = cursors[0].name;
+    for (const param of declared) {
+      names.push(param.name);
+      if (param.name === cursorName) {
+        // The row set. Bind it under its real formal name and tell callCursor
+        // which OUT bind to read.
+        (binds as Record<string, unknown>)[param.name] = {
+          dir: oracledb.BIND_OUT,
+          type: oracledb.CURSOR,
+        };
+        continue;
+      }
+      if (param.direction.includes('OUT')) {
+        // A scalar OUT the procedure also declares (e.g. GET_PAYSLIP_PERIODS'
+        // p_success_flag / p_error_msg). It must be bound or the call is short
+        // an argument — PLS-00306. Its value is unused here.
+        (binds as Record<string, unknown>)[param.name] = BaseOracleRepository.outBind(
           param,
           BaseOracleRepository.pick(values, param.name),
         );
+        continue;
       }
-      const namedArgs = names.map((n) => `${n} => :${n}`).join(',\n          ');
-      return this.callCursor<T>(`BEGIN ${object}(\n          ${namedArgs}); END;`, binds, cursorName);
+      (binds as Record<string, unknown>)[param.name] = BaseOracleRepository.inBind(
+        param,
+        BaseOracleRepository.pick(values, param.name),
+      );
     }
-
-    const inParams = [...params];
-    const binds: oracledb.BindParameters = { ...this.cursorOutBind() };
-    for (const p of inParams) {
-      (binds as Record<string, unknown>)[p] = BaseOracleRepository.pick(values, p);
-    }
-    const namedArgs = [...inParams.map((p) => `${p} => :${p}`), `${cursorParam} => :cursor`].join(
-      ',\n          ',
-    );
-    return this.callCursor<T>(`BEGIN ${object}(\n          ${namedArgs}); END;`, binds);
+    return this.callCursor<T>(this.procedureBlock(object, names), binds, cursorName);
   }
 
   /**
@@ -490,12 +469,12 @@ export abstract class BaseOracleRepository {
    * Calling a function with `BEGIN object(...); END;` raises
    * `PLS-00221: is not a procedure or is undefined`; it must be queried with
    * `SELECT * FROM TABLE(fn(...))` instead (see `queryTableFunction`), and
-   * that call syntax is positional only, so the resolved formal parameters —
+   * that call syntax is positional only, so the registered formal parameters —
    * in their declared order — decide the argument order, not `params`.
    *
-   * The data dictionary is consulted first so the two shapes are told apart
-   * automatically; when it can't be read, this falls back to the
-   * REF-CURSOR-procedure assumption via `callRowsProc`.
+   * The static contract distinguishes the two calling conventions. Missing
+   * contracts or unsupported return types fail without a speculative
+   * REF-CURSOR-procedure call.
    */
   protected async callRowsOrTableFunction<T = Record<string, any>>(
     object: string,
@@ -504,9 +483,14 @@ export abstract class BaseOracleRepository {
     cursorParam = 'p_cursor',
   ): Promise<T[]> {
     const signature = this.schema ? await this.schema.resolveSignature(object, params) : undefined;
-    if (signature?.returnType) {
+    if (!signature) throw new OracleContractUnavailableException(object, 'program parameters');
+    if (signature.returnType) {
+      if (!['TABLE', 'VARRAY', 'PL/SQL TABLE'].includes(signature.returnType.dataType.toUpperCase()) ||
+        signature.params.some((param) => param.direction !== 'IN')) {
+        throw new OracleContractUnavailableException(object, 'SQL table-function return type');
+      }
       const args = signature.params.map((param) =>
-        BaseOracleRepository.pick(values, param.name),
+        BaseOracleRepository.inBind(param, BaseOracleRepository.pick(values, param.name)),
       );
       return this.queryTableFunction<T>(object, args);
     }
@@ -518,16 +502,16 @@ export abstract class BaseOracleRepository {
    * (e.g. PAYSLIP_PR: 7 separate cursors — earnings/deductions/totals/
    * balances/informations/net payments/housing — plus scalar OUT params).
    *
-   * `callRowsProc` only tracks the *last* REF CURSOR it sees (one row set per
-   * call); binding every cursor that way but reading only one back with
-   * `callCursor` leaves the others open and can surface as
-   * `NJS-107: invalid cursor` / `ORA-24338: statement handle not executed`.
-   * This reads every declared REF CURSOR OUT bind into its own array, keyed by
-   * its formal parameter name, plus every scalar OUT bind's raw value.
+   * `callRowsProc` accepts exactly one REF CURSOR. Binding every cursor but
+   * reading only one back with `callCursor` would leave the others open and
+   * can surface as `NJS-107: invalid cursor` / `ORA-24338: statement handle
+   * not executed`. This reads every registered REF CURSOR OUT bind into its
+   * own array, keyed by its formal parameter name, plus every scalar OUT
+   * bind's raw value.
    *
-   * Like `callRowsProc`/`callSubmitProc`, the argument list comes from the data
-   * dictionary when readable and falls back to the documented `params` /
-   * `cursorParams` / `scalarOutParams` otherwise.
+   * Like `callRowsProc`/`callSubmitProc`, the argument list comes only from
+   * the static contract. The documented cursor/scalar names are selection
+   * hints, never a fallback signature.
    */
   protected async callMultiCursorProc(
     object: string,
@@ -541,51 +525,33 @@ export abstract class BaseOracleRepository {
       ...cursorParams,
       ...scalarOutParams,
     ]);
+    if (!declared?.length) throw new OracleContractUnavailableException(object, 'program parameters');
     const binds: oracledb.BindParameters = {};
     const names: string[] = [];
     const cursorNames: string[] = [];
 
-    if (declared?.length) {
-      for (const param of declared) {
-        names.push(param.name);
-        const isCursor =
-          param.direction.includes('OUT') && param.dataType.toUpperCase() === 'REF CURSOR';
-        if (isCursor) {
-          cursorNames.push(param.name);
-          (binds as Record<string, unknown>)[param.name] = { dir: oracledb.BIND_OUT, type: oracledb.CURSOR };
-          continue;
-        }
-        if (param.direction.includes('OUT')) {
-          (binds as Record<string, unknown>)[param.name] = BaseOracleRepository.outBind(
-            param,
-            BaseOracleRepository.pick(values, param.name),
-          );
-          continue;
-        }
-        (binds as Record<string, unknown>)[param.name] = BaseOracleRepository.inBind(
+    for (const param of declared) {
+      names.push(param.name);
+      const isCursor =
+        param.direction.includes('OUT') && param.dataType.toUpperCase() === 'REF CURSOR';
+      if (isCursor) {
+        cursorNames.push(param.name);
+        (binds as Record<string, unknown>)[param.name] = { dir: oracledb.BIND_OUT, type: oracledb.CURSOR };
+        continue;
+      }
+      if (param.direction.includes('OUT')) {
+        (binds as Record<string, unknown>)[param.name] = BaseOracleRepository.outBind(
           param,
           BaseOracleRepository.pick(values, param.name),
         );
+        continue;
       }
-    } else {
-      for (const p of params) {
-        (binds as Record<string, unknown>)[p] = BaseOracleRepository.pick(values, p);
-        names.push(p);
-      }
-      for (const c of cursorParams) {
-        (binds as Record<string, unknown>)[c] = { dir: oracledb.BIND_OUT, type: oracledb.CURSOR };
-        names.push(c);
-        cursorNames.push(c);
-      }
-      for (const s of scalarOutParams) {
-        (binds as Record<string, unknown>)[s] = {
-          dir: oracledb.BIND_OUT,
-          type: oracledb.STRING,
-          maxSize: 4000,
-        };
-        names.push(s);
-      }
+      (binds as Record<string, unknown>)[param.name] = BaseOracleRepository.inBind(
+        param,
+        BaseOracleRepository.pick(values, param.name),
+      );
     }
+    if (!cursorNames.length) throw new OracleContractUnavailableException(object, 'REF CURSOR outputs');
 
     const namedArgs = names.map((n) => `${n} => :${n}`).join(',\n          ');
     // Not this.call(): a REF CURSOR ResultSet is tied to its connection, and

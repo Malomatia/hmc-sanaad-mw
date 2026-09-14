@@ -6,8 +6,16 @@ import { DependentOracleRepository } from './dependents.oracle.repository';
 function make() {
   const call = jest.fn().mockResolvedValue({ p_success_flag: 'Y', p_error_msg: null });
   const ora = { call } as unknown as OracleService;
+  const fixtureParams = [
+    ...['p_user_name', 'p_first_name', 'p_effective_date'].map((name) => ({
+      name, direction: 'IN', dataType: 'VARCHAR2', defaulted: false,
+    })),
+    ...['p_success_flag', 'p_error_msg', 'p_error_msg_ar'].map((name) => ({
+      name, direction: 'OUT', dataType: 'VARCHAR2', defaulted: false,
+    })),
+  ];
   const schema = {
-    resolveParams: jest.fn().mockResolvedValue([]),
+    resolveParams: jest.fn().mockResolvedValue(fixtureParams),
   } as unknown as OracleSchemaService;
   return { repository: new DependentOracleRepository(ora, schema), call };
 }

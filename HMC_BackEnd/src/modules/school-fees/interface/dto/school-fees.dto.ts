@@ -55,17 +55,17 @@ export class SchoolFeeApplyRequestDto {
   @RequiredString('2025-2026')
   p_academic_year!: string;
 
-  @RequiredString('20250901')
+  @RequiredString('20250901', 'Academic-year start date; bound as Oracle DATE.')
   p_acd_st_dt!: string;
 
-  @RequiredString('20260630')
+  @RequiredString('20260630', 'Academic-year end date; bound as Oracle DATE.')
   p_acd_end_dt!: string;
 
   /** Composite `Name||Gender||DD-MON-YY` from GET /school-fees/children (`DOB` column). */
   @RequiredString('Jerome Amir Sami Samir Ibrahim||Male||23-SEP-10')
   p_child_name!: string;
 
-  @RequiredString('20100923')
+  @RequiredString('20100923', 'Birth-date token (yyyymmdd); remains Oracle VARCHAR2.')
   p_child_date_birth!: string;
 
   @RequiredString('Al Arqam Academy')
@@ -80,7 +80,7 @@ export class SchoolFeeApplyRequestDto {
   @RequiredString('Term1')
   p_term!: string;
 
-  @RequiredString('1000')
+  @RequiredString('1000', 'Numeric amount; converted to a native Oracle NUMBER bind.')
   p_amount!: string;
 
   [key: string]: unknown;

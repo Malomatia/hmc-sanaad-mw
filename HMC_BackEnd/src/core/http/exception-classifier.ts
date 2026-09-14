@@ -1,5 +1,5 @@
 import { HttpException, HttpStatus } from '@nestjs/common';
-import { OracleQueryError, OracleUnavailableException } from '../database/oracle.error';
+import { OracleContractUnavailableException, OracleQueryError, OracleUnavailableException } from '../database/oracle.error';
 import { MssqlQueryError, MssqlUnavailableException } from '../database/mssql.error';
 import { SchemaColumnNotFoundException } from '../database/schema-column-not-found.error';
 import { ORA_NO_DATA_FOUND } from '@shared/constants/error-codes';
@@ -51,6 +51,12 @@ function of(category: ErrorCategory, overrides: Partial<ClassifiedError> = {}): 
  * ordinary exceptions and never need to sanitize messages themselves.
  */
 export function classifyException(exception: unknown): ClassifiedError {
+  if (exception instanceof OracleContractUnavailableException) {
+    return of(ErrorCategory.APPLICATION_ERROR, {
+      httpStatus: exception.getStatus(),
+      message: OracleContractUnavailableException.publicMessage,
+    });
+  }
   // Safety net: a resolvable Oracle schema mismatch should never have escaped
   // uncaught this far (readByResolvedKey is meant to catch it locally and
   // degrade gracefully) — but if some future call site forgets to, still

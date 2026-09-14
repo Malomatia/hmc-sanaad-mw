@@ -12,6 +12,53 @@ import { LookupsService } from '../../application/lookups.service';
 import { LOV_REPOSITORY } from '../../domain/lov.repository';
 import { LookupsController } from '../../interface/lookups.controller';
 import { LovOracleRepository } from './lov.oracle.repository';
+import { OracleContractCatalog } from '@core/database/oracle-contracts';
+import { OracleContractUnavailableException } from '@core/database/oracle.error';
+import { ORACLE_OBJECTS } from '@shared/constants/oracle-objects';
+
+describe('Static LOV contracts', () => {
+  function make() {
+    const query = jest.fn().mockResolvedValue([]);
+    const schema = new OracleSchemaService(new OracleContractCatalog());
+    const config = { get: jest.fn().mockReturnValue(0) } as unknown as ConfigService;
+    return { query, repo: new LovOracleRepository({ query } as unknown as OracleService, schema, config) };
+  }
+
+  it('uses a registered person-id filter without any dictionary query', async () => {
+    const { repo, query } = make();
+    await repo.readLov(ORACLE_OBJECTS.LEAVE_CANCEL_V, 'en', 'TESTUSER', { personId: '123' });
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(query).toHaveBeenCalledWith(
+      'SELECT * FROM XXHMC_SND_LEAVE_CANCEL_V WHERE person_id = :personId',
+      { personId: '123' },
+    );
+  });
+
+  it('does not widen a personal read when no identifier can match its key type', async () => {
+    const { repo, query } = make();
+    await expect(repo.readLov(ORACLE_OBJECTS.LEAVE_CANCEL_V, 'en', 'TESTUSER')).resolves.toEqual([]);
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it('requires a caller identifier for known personal LOVs', async () => {
+    const { repo, query } = make();
+    await expect(repo.readLov(ORACLE_OBJECTS.LEAVE_CANCEL_V, 'en')).rejects.toMatchObject({ status: 400 });
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it('does not query an unfiltered view when its static scope contract is missing', async () => {
+    const { repo, query } = make();
+    await expect(repo.readLov(ORACLE_OBJECTS.ANNUAL_TICKT_LOV, 'en', 'TESTUSER'))
+      .rejects.toBeInstanceOf(OracleContractUnavailableException);
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it('keeps a global country lookup as a direct view query', async () => {
+    const { repo, query } = make();
+    await repo.readLov(ORACLE_OBJECTS.COUNTRY_LOV, 'en');
+    expect(query).toHaveBeenCalledWith('SELECT * FROM XXHMC_SND_COUNTRY_LOV', {});
+  });
+});
 
 const object = 'XXHMC_SND_SCHOOL_NAME_LOV';
 
@@ -88,7 +135,7 @@ describe('LovOracleRepository', () => {
       { NAME: 'Doha School', ACAD_YEAR: '2025-2026', ACD_STARD_DT: '01-SEP-2025' },
     ]);
 
-    const [item] = await repository.readLov(object, 'en');
+    const [item] = await repository.readLov(object, 'en', 'V-TEST');
 
     expect(item.code).toBe('Doha School');
     expect(item).not.toHaveProperty('ACCAD_YEAR');
@@ -224,12 +271,12 @@ describe('LovOracleRepository', () => {
     const ora = { query } as unknown as OracleService;
     const hasColumn = jest
       .fn()
-      .mockImplementation((_o: string, c: string) => Promise.resolve(c.toUpperCase() === 'NAME'));
-    const schema = { hasColumn, isNumericColumn: jest.fn().mockResolvedValue(false) } as unknown as OracleSchemaService;
+      .mockImplementation((_o: string, c: string) => Promise.resolve(['NAME', 'PERSON_ID'].includes(c.toUpperCase())));
+    const schema = { hasColumn, isNumericColumn: jest.fn().mockResolvedValue(true) } as unknown as OracleSchemaService;
     const config = { get: jest.fn().mockReturnValue(300000) } as unknown as ConfigService;
     const repository = new LovOracleRepository(ora, schema, config);
 
-    await repository.readLov('XXHMC_SND_LEAVE_CANCEL_V', 'en', undefined, {
+    await repository.readLov('XXHMC_SND_LEAVE_CANCEL_V', 'en', '123', {
       leaveType: '  casual leave ',
     });
 
@@ -237,7 +284,7 @@ describe('LovOracleRepository', () => {
     // so the match is case-insensitive on both sides.
     expect(query).toHaveBeenCalledWith(
       expect.stringContaining('UPPER(NAME) LIKE :leaveType'),
-      { leaveType: '%CASUAL LEAVE%' },
+      { u0: '123', leaveType: '%CASUAL LEAVE%' },
     );
   });
 

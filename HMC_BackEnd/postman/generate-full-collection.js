@@ -374,7 +374,6 @@ const MODULES = [
       { name: 'Oracle logs dashboard', method: 'GET', p: 'diagnostics/oracle-logs/view', auth: 'bearer', kind: 'raw', success: '<html>...</html>', errors: [401, 500] },
       { name: 'Oracle logs (JSON)', method: 'GET', p: 'diagnostics/oracle-logs', auth: 'bearer', kind: 'read', query: { limit: '100' }, success: { items: [], total: 0 }, errors: [401, 500] },
       { name: 'Oracle logs stats', method: 'GET', p: 'diagnostics/oracle-logs/stats', auth: 'bearer', kind: 'read', success: {}, errors: [401, 500] },
-      { name: 'Oracle object metadata', method: 'GET', p: 'diagnostics/oracle-object', auth: 'bearer', kind: 'read', query: { name: 'XXHMC_SND_PAYSLIP_PR' }, success: {}, errors: [401, 404, 500] },
       { name: 'Clear Oracle log buffer', method: 'DELETE', p: 'diagnostics/oracle-logs', auth: 'bearer', kind: 'action', success: { cleared: true }, errors: [401, 500] },
       { name: 'API logs dashboard', method: 'GET', p: 'api-logs/view', auth: 'bearer', kind: 'raw', success: '<html>...</html>', errors: [401, 500] },
       { name: 'API logs (JSON)', method: 'GET', p: 'api-logs', auth: 'bearer', kind: 'read', query: { limit: '100' }, success: { items: [], total: 0 }, errors: [401, 500] },

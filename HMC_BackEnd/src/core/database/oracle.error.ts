@@ -33,3 +33,14 @@ export class OracleQueryError extends Error {
  * services (Cerner, LDAP).
  */
 export class OracleUnavailableException extends ServiceUnavailableException {}
+
+export class OracleContractUnavailableException extends ServiceUnavailableException {
+  static readonly publicMessage =
+    'This API operation is not configured: its Oracle contract is missing or incomplete.';
+
+  constructor(readonly object: string, readonly contractPart: string) {
+    super(OracleContractUnavailableException.publicMessage);
+    this.name = 'OracleContractUnavailableException';
+    this.message = `Missing static Oracle ${contractPart} contract for ${object}.`;
+  }
+}

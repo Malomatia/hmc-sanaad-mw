@@ -2,6 +2,52 @@ import { ApprovalsOracleRepository } from './approvals.oracle.repository';
 import { OracleService } from '@core/database/oracle.service';
 import { OracleSchemaService } from '@core/database/oracle-schema.service';
 import { ORACLE_OBJECTS } from '@shared/constants/oracle-objects';
+import { OracleContractCatalog } from '@core/database/oracle-contracts';
+import { OracleContractUnavailableException } from '@core/database/oracle.error';
+
+describe('Approvals static contract handling', () => {
+  it('does not cache a missing identity contract as an empty employee mapping', async () => {
+    const error = new OracleContractUnavailableException(ORACLE_OBJECTS.PERSONAL_DETAILS_V, 'view columns');
+    const query = jest.fn().mockResolvedValue([]);
+    const resolveKeyColumn = jest.fn(async (object: string, candidates: readonly string[]) => {
+      if (object === ORACLE_OBJECTS.PERSONAL_DETAILS_V) throw error;
+      return candidates[0];
+    });
+    const repo = new ApprovalsOracleRepository(
+      { query } as unknown as OracleService,
+      { resolveKeyColumn } as unknown as OracleSchemaService,
+    );
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await expect(repo.getMyRequests(['MISSING-CONTRACT-TESTUSER'], 'en')).rejects.toBe(error);
+    }
+    expect(query).not.toHaveBeenCalled();
+    expect(resolveKeyColumn).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(['en', 'ar'] as const)('binds the DB-team RFMI contract without discovery for %s', async (lang) => {
+    const call = jest.fn().mockResolvedValue({ p_success_flag: 'S', p_error_msg: null });
+    const repo = new ApprovalsOracleRepository(
+      { call } as unknown as OracleService,
+      new OracleSchemaService(new OracleContractCatalog()),
+    );
+    await repo.requestInfo({
+      username: 'test.User', lang, approvalId: '123', toUsername: 'another.User',
+      itemType: 'HRSSA', itemKey: 'item-key', mode: 'REQUEST', comment: 'More details requested',
+    });
+    const [sql, binds] = call.mock.calls[0];
+    expect(sql).toContain('BEGIN XXHMC_SND_HR_RFMI_PR(');
+    expect(Object.keys(binds).sort()).toEqual([
+      'p_from_user_name', 'p_to_user_name', 'p_itemtype', 'p_item_key', 'p_notification_id',
+      'p_mode', 'p_comments', 'p_success_flag', 'p_error_msg', 'p_error_msg_ar',
+    ].sort());
+    expect(binds).toMatchObject({
+      p_from_user_name: 'TEST.USER', p_to_user_name: 'ANOTHER.USER', p_notification_id: '123',
+      p_mode: 'REQUEST', p_itemtype: 'HRSSA', p_item_key: 'item-key', p_comments: 'More details requested',
+    });
+    expect(binds).not.toHaveProperty('p_language');
+    expect(call).toHaveBeenCalledTimes(1);
+  });
+});
 
 /**
  * MY_REQEST_SUMMARY_V and APPROVE_SUMRY_V store the employee NUMBER, while

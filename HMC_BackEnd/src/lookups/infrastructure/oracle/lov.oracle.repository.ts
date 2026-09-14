@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import * as oracledb from 'oracledb';
 import { OracleService } from '@core/database/oracle.service';
 import { OracleSchemaService } from '@core/database/oracle-schema.service';
+import { SCOPED_ORACLE_LOVS } from '@core/database/oracle-contracts';
 import { normalizeOracleUsername } from '@core/database/oracle-username.util';
 import { Lang } from '@shared/domain/lang';
 import { LovItem } from '@shared/domain/lov-item';
@@ -24,7 +25,7 @@ import { LovMapper } from './lov.mapper';
  * a matching scoping column: the user-scoped LOVs (SCHOOL_NAME_LOV,
  * REQUEST_TYPE_LOV) are documented with a `USER_NAME` request parameter, and
  * filtering on a hard-coded `username` raised `ORA-00904: "USERNAME": invalid
- * identifier`. The column is therefore resolved from the data dictionary, and
+ * identifier`. The column is therefore resolved from the static read contract, and
  * a filter value passed for a LOV that is not scoped is ignored instead of
  * failing the request.
  *
@@ -95,12 +96,21 @@ export class LovOracleRepository implements LovRepository {
         ),
       ),
     ];
+    const requiresScope = SCOPED_ORACLE_LOVS.has(object);
+    if (requiresScope && !supplied.length && !options.personId?.trim() && !options.userName?.trim()) {
+      throw new BadRequestException('A caller identifier is required for this lookup.');
+    }
     const keyColumn = supplied.length ? await this.userColumnOf(object) : undefined;
     const scopeValues = keyColumn ? await this.matchable(object, keyColumn, supplied) : supplied;
     const personIdColumn =
       options.personId && (await this.schema.hasColumn(object, PERSON_ID_COLUMN))
         ? PERSON_ID_COLUMN
         : undefined;
+    if ((requiresScope || keyColumn) && !scopeValues.length && !personIdColumn && options.userName === undefined) {
+      return [];
+    }
+    if (requiresScope && !keyColumn && !personIdColumn && options.userName === undefined) return [];
+    if (personIdColumn && !(await this.matchable(object, personIdColumn, [options.personId!])).length) return [];
     const searchColumn = options.search ? await this.searchColumnOf(object) : undefined;
     const typeColumn = options.dataType ? await this.typeColumnOf(object) : undefined;
     const leaveTypeColumn = options.leaveType ? await this.leaveTypeColumnOf(object) : undefined;
@@ -213,7 +223,7 @@ export class LovOracleRepository implements LovRepository {
 
   /**
    * The grouping column of a multi-type LOV (DEP_LOOKUP_LOV exposes
-   * `D_DATA_TYPE`), resolved from the data dictionary like the other filters
+   * `D_DATA_TYPE`), resolved from the static read contract like the other filters
    * so a dataType passed for a single-type LOV is ignored instead of failing.
    */
   private async typeColumnOf(object: string): Promise<string | undefined> {
@@ -226,7 +236,7 @@ export class LovOracleRepository implements LovRepository {
   /**
    * The leave-type column of a type-scoped LOV (ABSENCE_REASON_V exposes
    * `LEAVE_TYPE`; LEAVE_CANCEL_V / LEAVE_AMEND_V carry the type in `NAME` —
-   * ops 61/62 `?leave_type=`), resolved from the data dictionary like the
+   * ops 61/62 `?leave_type=`), resolved from the static read contract like the
    * other filters so a leaveType passed for an unscoped LOV is ignored
    * instead of failing. `NAME` is last on purpose: it only applies when the
    * view has no dedicated leave-type column.

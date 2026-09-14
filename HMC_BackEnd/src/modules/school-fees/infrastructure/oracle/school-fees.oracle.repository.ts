@@ -1,9 +1,10 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
+import * as oracledb from 'oracledb';
 import { OracleService } from '@core/database/oracle.service';
 import { OracleSchemaService } from '@core/database/oracle-schema.service';
 import { BaseOracleRepository } from '@core/database/base.repository';
 import { SubmitResult } from '@shared/domain/submit-result';
-import { toOracleLanguage } from '@shared/domain/lang';
+import { parseOracleDate } from '@shared/utils/date.util';
 import { ORACLE_OBJECTS } from '@shared/constants/oracle-objects';
 import {
   ChildDetail,
@@ -12,7 +13,7 @@ import {
   SchoolFeeRepository,
 } from '../../domain/school-fees.repository';
 
-/** SCHOOL_FEE_PR input params (Sanaad spec — SCHOOL_FEE_REQ_PR request template). */
+/** SCHOOL_FEE_PR — confirmed 36 IN + 3 OUT, with no language parameter. */
 const SCHOOL_FEE_PARAMS = [
   'p_user_name',
   'p_academic_year',
@@ -31,7 +32,6 @@ const SCHOOL_FEE_PARAMS = [
   'p_spouse_working',
   'p_comments',
   ...BaseOracleRepository.attachmentParams(),
-  'p_language',
 ] as const;
 
 /**
@@ -64,11 +64,37 @@ export class SchoolFeeOracleRepository extends BaseOracleRepository implements S
   }
 
   async apply(cmd: SchoolFeeApplyCommand): Promise<SubmitResult> {
-    return this.callSubmitProc(ORACLE_OBJECTS.SCHOOL_FEE_PR, SCHOOL_FEE_PARAMS, {
-      ...cmd.fields,
-      p_language: toOracleLanguage(cmd.lang),
-      p_user_name: cmd.username,
-    });
+    const rawAmount = cmd.fields.p_amount;
+    const amountText = typeof rawAmount === 'string' || typeof rawAmount === 'number'
+      ? String(rawAmount).trim()
+      : '';
+    const amount = Number(amountText);
+    if (
+      !/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(amountText) ||
+      !Number.isFinite(amount) ||
+      (Number.isInteger(amount) && !Number.isSafeInteger(amount))
+    ) {
+      throw new BadRequestException('p_amount must be a valid finite number within the supported range.');
+    }
+
+    return this.callDocumentedSubmitProc(
+      ORACLE_OBJECTS.SCHOOL_FEE_PR,
+      SCHOOL_FEE_PARAMS,
+      {
+        ...cmd.fields,
+        p_user_name: cmd.username,
+        p_acd_st_dt: {
+          type: oracledb.DB_TYPE_DATE,
+          val: parseOracleDate(cmd.fields.p_acd_st_dt),
+        },
+        p_acd_end_dt: {
+          type: oracledb.DB_TYPE_DATE,
+          val: parseOracleDate(cmd.fields.p_acd_end_dt),
+        },
+        p_amount: { type: oracledb.DB_TYPE_NUMBER, val: amount },
+      },
+      this.stringOutBinds(['p_success_flag', 'p_error_msg', 'p_error_msg_ar']),
+    );
   }
 
   async getChildren(query: ChildrenQuery): Promise<ChildDetail[]> {

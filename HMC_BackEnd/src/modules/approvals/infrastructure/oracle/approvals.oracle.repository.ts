@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import * as oracledb from 'oracledb';
 import { OracleService } from '@core/database/oracle.service';
 import { OracleSchemaService } from '@core/database/oracle-schema.service';
+import { OracleContractUnavailableException } from '@core/database/oracle.error';
 import { BaseOracleRepository } from '@core/database/base.repository';
 import { Lang, toOracleLanguage } from '@shared/domain/lang';
 import { str } from '@shared/utils/mapper.util';
@@ -53,7 +54,7 @@ const APPROVE_REJECT_PARAMS = [
 /**
  * HR_RFMI_PR input params (request-more-information; signature provided by the
  * DB team — no p_language parameter, OUT contract is the usual
- * p_success_flag/p_error_msg/p_error_msg_ar resolved from the dictionary).
+ * p_success_flag/p_error_msg/p_error_msg_ar registered in the static catalog).
  */
 const RFMI_PARAMS = [
   'p_from_user_name',
@@ -116,7 +117,10 @@ export class ApprovalsOracleRepository extends BaseOracleRepository implements A
         ORACLE_OBJECTS.PERSONAL_DETAILS_V,
         username,
         USERNAME_KEY_CANDIDATES,
-      ).catch(() => []);
+      ).catch((error: unknown) => {
+        if (error instanceof OracleContractUnavailableException) throw error;
+        return [];
+      });
       cache.set(username, str(rows[0] ?? {}, 'EMPLOYEE_NUMBER'));
     }
     const employeeNumber = cache.get(username);

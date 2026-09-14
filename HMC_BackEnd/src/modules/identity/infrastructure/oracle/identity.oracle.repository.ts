@@ -1,9 +1,11 @@
 import { Injectable } from '@nestjs/common';
+import * as oracledb from 'oracledb';
 import { OracleService } from '@core/database/oracle.service';
 import { OracleSchemaService } from '@core/database/oracle-schema.service';
 import { BaseOracleRepository } from '@core/database/base.repository';
-import { Lang, toOracleLanguage } from '@shared/domain/lang';
+import { Lang } from '@shared/domain/lang';
 import { SubmitResult } from '@shared/domain/submit-result';
+import { parseOracleDate } from '@shared/utils/date.util';
 import { ORACLE_OBJECTS } from '@shared/constants/oracle-objects';
 import { USERNAME_KEY_CANDIDATES } from '@shared/constants/oracle-columns';
 import {
@@ -14,14 +16,14 @@ import {
   QidUpdateCommand,
 } from '../../domain/identity.repository';
 
-/** QID_CHG_PR input params (Sanaad spec — QID_UPD_PR body). */
+/** QID_CHG_PR — 21 IN (two DATEs, eight BLOB slots) + 3 OUT. */
 const QID_CHG_PARAMS = [
   'p_user_name',
   'p_qid_number',
   'p_iss_date',
   'p_exp_date',
   'p_qid_job',
-  ...BaseOracleRepository.attachmentParams(),
+  ...BaseOracleRepository.attachmentParams(8),
 ] as const;
 
 /** COID_REQ_PR input params (Sanaad spec — RequestCompanyID body). */
@@ -35,7 +37,7 @@ const COID_REQ_PARAMS = [
   ...BaseOracleRepository.attachmentParams(),
 ] as const;
 
-/** op 18 — QID details (QID_DET_V read). op 19 — QID_CHG_PR (stub). */
+/** op 18 — QID details (QID_DET_V read). op 19 — QID_CHG_PR confirmed update. */
 @Injectable()
 export class QidOracleRepository extends BaseOracleRepository implements QidRepository {
   constructor(ora: OracleService, schema: OracleSchemaService) {
@@ -54,8 +56,23 @@ export class QidOracleRepository extends BaseOracleRepository implements QidRepo
   }
 
   async updateQid(cmd: QidUpdateCommand): Promise<SubmitResult> {
-    const values = { ...cmd.fields, p_language: toOracleLanguage(cmd.lang), p_user_name: cmd.username };
-    return this.callSubmitProc(ORACLE_OBJECTS.QID_CHG_PR, QID_CHG_PARAMS, values);
+    return this.callDocumentedSubmitProc(
+      ORACLE_OBJECTS.QID_CHG_PR,
+      QID_CHG_PARAMS,
+      {
+        ...cmd.fields,
+        p_user_name: cmd.username,
+        p_iss_date: {
+          type: oracledb.DB_TYPE_DATE,
+          val: parseOracleDate(cmd.fields.p_iss_date),
+        },
+        p_exp_date: {
+          type: oracledb.DB_TYPE_DATE,
+          val: parseOracleDate(cmd.fields.p_exp_date),
+        },
+      },
+      this.stringOutBinds(['p_success_flag', 'p_error_msg', 'p_error_msg_ar']),
+    );
   }
 }
 

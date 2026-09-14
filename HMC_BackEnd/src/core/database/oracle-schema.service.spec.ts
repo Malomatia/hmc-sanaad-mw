@@ -80,11 +80,16 @@ describe('Static Oracle contracts', () => {
     });
   });
 
-  it('resolves the performance view by its confirmed USER_NAME key', async () => {
-    await expect(schema.resolveKeyColumn(ORACLE_OBJECTS.PERFORMANCE_V, ['user_name', 'username']))
-      .resolves.toBe('user_name');
-    await expect(schema.hasColumn(ORACLE_OBJECTS.PERFORMANCE_V, 'USERNAME')).resolves.toBe(false);
-  });
+  it.each([
+    ORACLE_OBJECTS.PERFORMANCE_V, ORACLE_OBJECTS.SALARY_V,
+    ORACLE_OBJECTS.EMPLOYMENT_V, ORACLE_OBJECTS.EMPLOYMENT_DETAILS_V,
+  ])(
+    'resolves %s by its confirmed USER_NAME key',
+    async (object) => {
+      await expect(schema.resolveKeyColumn(object, ['user_name', 'username'])).resolves.toBe('user_name');
+      await expect(schema.hasColumn(object, 'USERNAME')).resolves.toBe(false);
+    },
+  );
 
   it('resolves documented numeric and role-keyed views from static columns', async () => {
     await expect(schema.resolveKeyColumn(ORACLE_OBJECTS.LEAVE_CANCEL_V, ['username', 'person_id']))

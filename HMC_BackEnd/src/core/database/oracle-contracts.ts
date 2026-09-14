@@ -143,6 +143,12 @@ const COLUMNS: Readonly<Record<string, ColumnContract>> = Object.freeze({
   // Confirmed from the client's view definition (2026-09-14): REVIEW_DATE,
   // RELATED_EVENT, RELATED_EVENT_AR, USER_NAME (NOT NULL), LAST_RATING.
   [ORACLE_OBJECTS.PERFORMANCE_V]: { USER_NAME: 'VARCHAR2' },
+  // Confirmed view definition (2026-09-14): USER_NAME NOT NULL, CHANGE_DATE,
+  // MONTHLY_BASIC_SALARY, GRADE.
+  [ORACLE_OBJECTS.SALARY_V]: { USER_NAME: 'VARCHAR2' },
+  // Confirmed view definition (2026-09-14): USER_NAME NOT NULL plus the
+  // assignment status/dates, department, job, grade and their _AR twins.
+  [ORACLE_OBJECTS.EMPLOYMENT_V]: { USER_NAME: 'VARCHAR2' },
   // Confirmed view definition (2026-09-14): USER_NAME NOT NULL, DEPENDENT_ID,
   // PHONE_TYPE_AR, EMPLOYEE_NUMBER, PHONE_TYPE, PHONE_NUMBER, PHONE_ID.
   [ORACLE_OBJECTS.EMP_PHONE_V]: {

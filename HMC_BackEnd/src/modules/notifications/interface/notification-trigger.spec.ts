@@ -2,6 +2,11 @@ import { CallHandler, ExecutionContext } from '@nestjs/common';
 import { firstValueFrom, of, throwError } from 'rxjs';
 import { NotificationTriggerInterceptor } from './notification-trigger.interceptor';
 import { RequestNotifier } from '../application/request-notifier.service';
+import { NotificationsService } from '../application/notifications.service';
+import { MssqlService } from '@core/database/mssql.service';
+import { MssqlDeviceTokenRepository } from '../infrastructure/adapters/mssql-device-token.repository';
+import { PushSenderPort } from '../domain/ports/push-sender.port';
+import { RequestLookupPort } from '../domain/ports/request-lookup.port';
 
 /**
  * This interceptor sits on EVERY POST in the API, so its failure mode matters
@@ -15,6 +20,7 @@ import { RequestNotifier } from '../application/request-notifier.service';
 describe('NotificationTriggerInterceptor', () => {
   function make() {
     const notifier = {
+      captureRequest: jest.fn().mockResolvedValue({}),
       onSubmitted: jest.fn().mockResolvedValue(undefined),
       onDecided: jest.fn().mockResolvedValue(undefined),
       onReassigned: jest.fn().mockResolvedValue(undefined),
@@ -70,7 +76,10 @@ describe('NotificationTriggerInterceptor', () => {
     const { interceptor, notifier } = make();
 
     await firstValueFrom(
-      interceptor.intercept(context('POST', '/api/v1/diagnostics/oracle/sql'), handler({ rows: [] })),
+      interceptor.intercept(
+        context('POST', '/api/v1/diagnostics/oracle/sql'),
+        handler({ rows: [] }),
+      ),
     );
     await settle();
 
@@ -88,7 +97,7 @@ describe('NotificationTriggerInterceptor', () => {
     );
     await settle();
 
-    expect(notifier.onDecided).toHaveBeenCalledWith('123859449', 'APPROVE', 'AIBRAHIM39');
+    expect(notifier.onDecided).toHaveBeenCalledWith('123859449', 'APPROVE', 'AIBRAHIM39', {});
     expect(notifier.onSubmitted).not.toHaveBeenCalled();
   });
 
@@ -103,7 +112,7 @@ describe('NotificationTriggerInterceptor', () => {
     );
     await settle();
 
-    expect(notifier.onDecided).toHaveBeenCalledWith('123859449', 'REJECT', 'AIBRAHIM39');
+    expect(notifier.onDecided).toHaveBeenCalledWith('123859449', 'REJECT', 'AIBRAHIM39', {});
     expect(notifier.onSubmitted).not.toHaveBeenCalled();
   });
 
@@ -132,7 +141,7 @@ describe('NotificationTriggerInterceptor', () => {
     );
     await settle();
 
-    expect(notifier.onReassigned).toHaveBeenCalledWith('123', 'V-NFERNANDO', 'AIBRAHIM39');
+    expect(notifier.onReassigned).toHaveBeenCalledWith('123', 'V-NFERNANDO', 'AIBRAHIM39', {});
     expect(notifier.onSubmitted).not.toHaveBeenCalled();
   });
 
@@ -155,6 +164,7 @@ describe('NotificationTriggerInterceptor', () => {
       'V-NFERNANDO',
       'AIBRAHIM39',
       'Please attach documents.',
+      {},
     );
     expect(notifier.onSubmitted).not.toHaveBeenCalled();
   });
@@ -182,6 +192,244 @@ describe('NotificationTriggerInterceptor', () => {
     await settle();
 
     expect(notifier.onSubmitted).not.toHaveBeenCalled();
+  });
+
+  describe('workflow actions to all recipient devices', () => {
+    const actions = [
+      { route: 'decision', body: { decision: 'APPROVE' }, recipients: ['OWNER'], event: 'APPROVE' },
+      { route: 'decision', body: { decision: 'REJECT' }, recipients: ['OWNER'], event: 'REJECT' },
+      {
+        route: 'reassign',
+        body: { assignTo: 'TARGET' },
+        recipients: ['TARGET', 'OWNER'],
+        event: 'REASSIGNED',
+      },
+      {
+        route: 'request-info',
+        body: { toUsername: 'TARGET', comment: 'Please attach documents.' },
+        recipients: ['TARGET', 'OWNER'],
+        event: 'INFO_REQUESTED',
+      },
+    ];
+
+    function makeWorkflow() {
+      const findByNotificationId = jest
+        .fn()
+        .mockResolvedValue({ requestor: 'OWNER', requestType: 'Leave Request' });
+      const lookup = { findByNotificationId } as unknown as RequestLookupPort;
+      const query = jest
+        .fn()
+        .mockImplementation(async (_sql: string, binds: { username: string }) =>
+          ['phone', 'tablet'].map((imei) => ({
+            LoginID: binds.username,
+            IMEINumber: imei,
+            DeviceTokenValue: `${binds.username}-${imei}`,
+            Platform: 'android',
+          })),
+        );
+      const send = jest.fn().mockResolvedValue({ sent: 2, failed: 0, invalidTokens: [] });
+      const notifications = new NotificationsService(
+        new MssqlDeviceTokenRepository({ query } as unknown as MssqlService),
+        { send, enabled: true } as unknown as PushSenderPort,
+      );
+      const notifier = new RequestNotifier(notifications, lookup);
+      return {
+        interceptor: new NotificationTriggerInterceptor(notifier),
+        findByNotificationId,
+        query,
+        send,
+      };
+    }
+
+    it.each(actions)(
+      'captures the original owner before $event and sends to all devices',
+      async ({ route, body, recipients, event }) => {
+        const { interceptor, findByNotificationId, query, send } = makeWorkflow();
+        let open = true;
+        findByNotificationId.mockImplementation(async () =>
+          open ? { requestor: 'OWNER', requestType: 'Leave Request' } : undefined,
+        );
+        const response = { successflag: 'S', status: 'success' };
+        const action = jest.fn(() => {
+          open = false;
+          return of(response);
+        });
+
+        await expect(
+          firstValueFrom(
+            interceptor.intercept(
+              context('POST', `/api/v1/approvals/123/${route}`, body, 'ACTOR'),
+              { handle: action },
+            ),
+          ),
+        ).resolves.toBe(response);
+        await settle();
+
+        expect(findByNotificationId).toHaveBeenCalledTimes(1);
+        expect(findByNotificationId).toHaveBeenCalledWith('123');
+        expect(findByNotificationId.mock.invocationCallOrder[0]).toBeLessThan(
+          action.mock.invocationCallOrder[0],
+        );
+        expect(query).toHaveBeenCalledTimes(recipients.length);
+        expect(send).toHaveBeenCalledTimes(recipients.length);
+        for (const username of recipients) {
+          expect(query).toHaveBeenCalledWith(
+            expect.stringMatching(/FROM HMC_Sanad_DeviceToken_tbl\s+WHERE LoginID = @username/),
+            { username },
+          );
+          expect(send).toHaveBeenCalledWith(
+            [`${username}-phone`, `${username}-tablet`],
+            expect.objectContaining({
+              data: { notificationId: '123', requestType: 'Leave Request', event },
+            }),
+          );
+        }
+      },
+    );
+
+    it.each(actions)('does not notify after a failed $event action', async ({ route, body }) => {
+      const { interceptor, query, send } = makeWorkflow();
+      const response = { successflag: 'N', status: 'error' };
+
+      await expect(
+        firstValueFrom(
+          interceptor.intercept(
+            context('POST', `/api/v1/approvals/123/${route}`, body, 'ACTOR'),
+            handler(response),
+          ),
+        ),
+      ).resolves.toBe(response);
+      await settle();
+
+      expect(query).not.toHaveBeenCalled();
+      expect(send).not.toHaveBeenCalled();
+    });
+
+    it('does not fail the action when the pre-action lookup rejects', async () => {
+      const { interceptor, findByNotificationId, query, send } = makeWorkflow();
+      findByNotificationId.mockRejectedValue(new Error('Oracle lookup unavailable'));
+
+      await expect(
+        firstValueFrom(
+          interceptor.intercept(
+            context('POST', '/api/v1/approvals/123/reassign', { assignTo: 'TARGET' }, 'ACTOR'),
+            handler({ successflag: 'S' }),
+          ),
+        ),
+      ).resolves.toEqual({ successflag: 'S' });
+      await settle();
+
+      expect(query).toHaveBeenCalledTimes(1);
+      expect(query).toHaveBeenCalledWith(expect.any(String), { username: 'TARGET' });
+      expect(send).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not notify when the action throws after the owner was captured', async () => {
+      const { interceptor, findByNotificationId, query, send } = makeWorkflow();
+
+      await expect(
+        firstValueFrom(
+          interceptor.intercept(
+            context('POST', '/api/v1/approvals/123/decision', { decision: 'APPROVE' }, 'ACTOR'),
+            { handle: () => throwError(() => new Error('Action failed')) },
+          ),
+        ),
+      ).rejects.toThrow('Action failed');
+      await settle();
+
+      expect(findByNotificationId).toHaveBeenCalledTimes(1);
+      expect(query).not.toHaveBeenCalled();
+      expect(send).not.toHaveBeenCalled();
+    });
+
+    it('does not replace a missing pre-action owner with a later workflow participant', async () => {
+      const { interceptor, findByNotificationId, send } = makeWorkflow();
+      findByNotificationId
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValue({ requestor: 'LATER_USER' });
+
+      await firstValueFrom(
+        interceptor.intercept(
+          context('POST', '/api/v1/approvals/123/decision', { decision: 'APPROVE' }, 'ACTOR'),
+          handler({ successflag: 'S' }),
+        ),
+      );
+      await settle();
+
+      expect(findByNotificationId).toHaveBeenCalledTimes(1);
+      expect(send).not.toHaveBeenCalled();
+    });
+
+    it('keeps captured owners separate across concurrent actions', async () => {
+      const { interceptor, findByNotificationId, query } = makeWorkflow();
+      findByNotificationId.mockImplementation(async (id: string) => ({ requestor: `OWNER_${id}` }));
+
+      await Promise.all(
+        ['123', '456'].map((id) =>
+          firstValueFrom(
+            interceptor.intercept(
+              context('POST', `/api/v1/approvals/${id}/decision`, { decision: 'APPROVE' }, 'ACTOR'),
+              handler({ successflag: 'S' }),
+            ),
+          ),
+        ),
+      );
+      await settle();
+
+      expect(query).toHaveBeenCalledTimes(2);
+      expect(query).toHaveBeenCalledWith(expect.any(String), { username: 'OWNER_123' });
+      expect(query).toHaveBeenCalledWith(expect.any(String), { username: 'OWNER_456' });
+    });
+
+    it('does not make a successful action wait for push delivery', async () => {
+      const { interceptor, send } = makeWorkflow();
+      send.mockImplementation(() => new Promise(() => undefined));
+
+      await expect(
+        firstValueFrom(
+          interceptor.intercept(
+            context('POST', '/api/v1/approvals/123/decision', { decision: 'APPROVE' }, 'ACTOR'),
+            handler({ successflag: 'S' }),
+          ),
+        ),
+      ).resolves.toEqual({ successflag: 'S' });
+      await settle();
+
+      expect(send).toHaveBeenCalled();
+    });
+
+    it('bounds the pre-action lookup wait and still performs the action', async () => {
+      jest.useFakeTimers();
+      try {
+        const { interceptor, findByNotificationId, send } = makeWorkflow();
+        let resolveLookup!: (value: { requestor: string }) => void;
+        findByNotificationId.mockImplementation(
+          () =>
+            new Promise((resolve) => {
+              resolveLookup = resolve;
+            }),
+        );
+        const action = jest.fn(() => of({ successflag: 'S' }));
+        const result = firstValueFrom(
+          interceptor.intercept(
+            context('POST', '/api/v1/approvals/123/decision', { decision: 'APPROVE' }, 'ACTOR'),
+            { handle: action },
+          ),
+        );
+        const assertion = expect(result).resolves.toEqual({ successflag: 'S' });
+
+        expect(action).not.toHaveBeenCalled();
+        await jest.advanceTimersByTimeAsync(2000);
+        await assertion;
+        resolveLookup({ requestor: 'OWNER' });
+        await jest.advanceTimersByTimeAsync(0);
+
+        expect(action).toHaveBeenCalledTimes(1);
+        expect(send).not.toHaveBeenCalled();
+      } finally {
+        jest.useRealTimers();
+      }
+    });
   });
 
   describe('never affects the API', () => {

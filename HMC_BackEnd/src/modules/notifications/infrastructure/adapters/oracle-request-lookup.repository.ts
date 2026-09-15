@@ -4,10 +4,7 @@ import { OracleSchemaService } from '@core/database/oracle-schema.service';
 import { BaseOracleRepository } from '@core/database/base.repository';
 import { ORACLE_OBJECTS } from '@shared/constants/oracle-objects';
 import { str } from '@shared/utils/mapper.util';
-import {
-  RequestLookupPort,
-  RequestParticipants,
-} from '../../domain/ports/request-lookup.port';
+import { RequestLookupPort, RequestParticipants } from '../../domain/ports/request-lookup.port';
 
 type Row = Record<string, unknown>;
 
@@ -32,7 +29,7 @@ export class OracleRequestLookupRepository
 {
   private static readonly log = new Logger(OracleRequestLookupRepository.name);
   /** employee number → login, resolved once per process. */
-  private static readonly logins = new Map<string, string | undefined>();
+  private static readonly logins = new Map<string, string>();
 
   constructor(ora: OracleService, schema: OracleSchemaService) {
     super(ora, schema);
@@ -63,10 +60,9 @@ export class OracleRequestLookupRepository
         ORACLE_OBJECTS.APPROVE_SUMRY_V,
         ORACLE_OBJECTS.NOTYFY_APPR_V,
       ]) {
-        const rows = await this.query<Row>(
-          `SELECT * FROM ${object} WHERE notification_id = :id`,
-          { id: notificationId },
-        );
+        const rows = await this.query<Row>(`SELECT * FROM ${object} WHERE notification_id = :id`, {
+          id: notificationId,
+        });
         if (rows[0]) return this.toParticipants(rows[0]);
       }
       return undefined;
@@ -104,9 +100,10 @@ export class OracleRequestLookupRepository
           WHERE employee_number = :n AND ROWNUM = 1`,
         { n: trimmed },
       ).catch(() => []);
-      cache.set(trimmed, str(rows[0] ?? {}, 'USER_NAME'));
+      const login = str(rows[0] ?? {}, 'USER_NAME')?.trim();
+      if (login) cache.set(trimmed, login);
     }
-    return cache.get(trimmed) ?? trimmed;
+    return cache.get(trimmed);
   }
 
   private async employeeNumberOf(username: string): Promise<string | undefined> {

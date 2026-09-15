@@ -1,6 +1,9 @@
 import { RequestNotifier } from './request-notifier.service';
 import { NotificationsService } from './notifications.service';
 import { RequestLookupPort } from '../domain/ports/request-lookup.port';
+import { OracleService } from '@core/database/oracle.service';
+import { OracleSchemaService } from '@core/database/oracle-schema.service';
+import { OracleRequestLookupRepository } from '../infrastructure/adapters/oracle-request-lookup.repository';
 
 /**
  * Every entry point here runs AFTER a business action has already succeeded.
@@ -120,6 +123,177 @@ describe('RequestNotifier', () => {
 
       await expect(notifier.onDecided('999', 'APPROVE', 'X')).resolves.toBeUndefined();
       expect(notifyUser).not.toHaveBeenCalled();
+    });
+  });
+
+  describe.each(['reassign', 'request-info'] as const)('%s recipients', (action) => {
+    const trigger = (notifier: RequestNotifier, target?: string, actor = 'ACTOR') =>
+      action === 'reassign'
+        ? notifier.onReassigned('123', target ?? '', actor)
+        : notifier.onRequestInfo('123', target, actor, 'Please attach documents.');
+
+    it('notifies the original requestor as well as the named target', async () => {
+      const { notifier, notifyUser } = make({
+        findByNotificationId: jest.fn().mockResolvedValue({
+          requestor: 'OWNER',
+          requestType: 'Leave Request',
+        }),
+      });
+
+      await trigger(notifier, 'TARGET');
+
+      expect(notifyUser).toHaveBeenCalledTimes(2);
+      expect(notifyUser).toHaveBeenCalledWith(
+        'OWNER',
+        expect.objectContaining({
+          title: action === 'reassign' ? 'Request reassigned' : 'More information requested',
+          data: {
+            notificationId: '123',
+            requestType: 'Leave Request',
+            event: action === 'reassign' ? 'REASSIGNED' : 'INFO_REQUESTED',
+          },
+        }),
+      );
+      expect(notifyUser).toHaveBeenCalledWith(
+        'TARGET',
+        expect.objectContaining({
+          title: action === 'reassign' ? 'Request reassigned to you' : 'More information requested',
+        }),
+      );
+    });
+
+    it('notifies a person only once when the owner and target match ignoring case and whitespace', async () => {
+      const { notifier, notifyUser } = make({
+        findByNotificationId: jest.fn().mockResolvedValue({ requestor: ' OWNER ' }),
+      });
+
+      await trigger(notifier, 'owner');
+
+      expect(notifyUser).toHaveBeenCalledTimes(1);
+      expect(notifyUser).toHaveBeenCalledWith('owner', expect.any(Object));
+    });
+
+    it('still notifies the owner when the actor is the named target', async () => {
+      const { notifier, notifyUser } = make({
+        findByNotificationId: jest.fn().mockResolvedValue({ requestor: 'OWNER' }),
+      });
+
+      await trigger(notifier, ' actor ');
+
+      expect(notifyUser).toHaveBeenCalledTimes(1);
+      expect(notifyUser).toHaveBeenCalledWith('OWNER', expect.any(Object));
+    });
+
+    it('still notifies the target when the owner took the action', async () => {
+      const { notifier, notifyUser } = make({
+        findByNotificationId: jest.fn().mockResolvedValue({ requestor: 'OWNER' }),
+      });
+
+      await trigger(notifier, 'TARGET', ' owner ');
+
+      expect(notifyUser).toHaveBeenCalledTimes(1);
+      expect(notifyUser).toHaveBeenCalledWith('TARGET', expect.any(Object));
+    });
+
+    it('notifies nobody when owner and target are both the actor', async () => {
+      const { notifier, notifyUser } = make({
+        findByNotificationId: jest.fn().mockResolvedValue({ requestor: 'ACTOR' }),
+      });
+
+      await trigger(notifier, ' actor ');
+
+      expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    it('notifies the owner when no target is supplied', async () => {
+      const { notifier, notifyUser } = make({
+        findByNotificationId: jest.fn().mockResolvedValue({ requestor: 'OWNER' }),
+      });
+
+      await trigger(notifier);
+
+      expect(notifyUser).toHaveBeenCalledTimes(1);
+      expect(notifyUser).toHaveBeenCalledWith('OWNER', expect.any(Object));
+    });
+
+    it('keeps target delivery when the original requestor cannot be resolved', async () => {
+      const { notifier, notifyUser } = make({
+        findByNotificationId: jest.fn().mockRejectedValue(new Error('Oracle unavailable')),
+      });
+
+      await expect(trigger(notifier, 'TARGET')).resolves.toBeUndefined();
+
+      expect(notifyUser).toHaveBeenCalledWith('TARGET', expect.any(Object));
+    });
+
+    it('attempts both recipients even when one delivery rejects', async () => {
+      const { notifier, notifyUser } = make({
+        findByNotificationId: jest.fn().mockResolvedValue({ requestor: 'OWNER' }),
+      });
+      notifyUser.mockRejectedValueOnce(new Error('Push unavailable'));
+
+      await expect(trigger(notifier, 'TARGET')).resolves.toBeUndefined();
+
+      expect(notifyUser).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('Oracle requestor identity', () => {
+    function makeOracle(employeeNumber: string) {
+      const query = jest
+        .fn()
+        .mockImplementation(async (sql: string) =>
+          sql.includes('PERSONAL_DETAILS_V') ? [] : [{ REQUESTOR_USER_NAME: employeeNumber }],
+        );
+      const lookup = new OracleRequestLookupRepository(
+        { query } as unknown as OracleService,
+        {} as OracleSchemaService,
+      );
+      const notifyUser = jest.fn().mockResolvedValue(undefined);
+      const notifier = new RequestNotifier(
+        { notifyUser } as unknown as NotificationsService,
+        lookup,
+      );
+      return { query, notifier, notifyUser };
+    }
+
+    it('translates an employee number to the login used for device registrations', async () => {
+      const { query, notifier, notifyUser } = makeOracle('900001');
+      query.mockImplementation(async (sql: string) =>
+        sql.includes('PERSONAL_DETAILS_V')
+          ? [{ USER_NAME: 'OWNER' }]
+          : [{ REQUESTOR_USER_NAME: '900001' }],
+      );
+
+      await notifier.onDecided('123', 'APPROVE', 'ACTOR');
+
+      expect(query).toHaveBeenCalledWith(expect.stringContaining('employee_number = :n'), {
+        n: '900001',
+      });
+      expect(notifyUser).toHaveBeenCalledWith('OWNER', expect.any(Object));
+    });
+
+    it('never treats an unresolved employee number as a login', async () => {
+      const { notifier, notifyUser } = makeOracle('900002');
+
+      await notifier.onDecided('123', 'APPROVE', 'ACTOR');
+
+      expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    it('retries a failed employee-to-login lookup on a later action', async () => {
+      const { query, notifier, notifyUser } = makeOracle('900003');
+      await notifier.onDecided('123', 'APPROVE', 'ACTOR');
+      query.mockImplementation(async (sql: string) =>
+        sql.includes('PERSONAL_DETAILS_V')
+          ? [{ USER_NAME: 'OWNER' }]
+          : [{ REQUESTOR_USER_NAME: '900003' }],
+      );
+
+      await notifier.onDecided('456', 'REJECT', 'ACTOR');
+
+      expect(notifyUser).toHaveBeenCalledTimes(1);
+      expect(notifyUser).toHaveBeenCalledWith('OWNER', expect.any(Object));
     });
   });
 

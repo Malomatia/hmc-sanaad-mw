@@ -28,17 +28,19 @@ export class LettersService {
    */
   async getLetterLovs(lang: Lang, ...identifiers: (string | undefined)[]): Promise<Record<string, LovItem[]>> {
     const [primary, ...alternatives] = identifiers.filter((v): v is string => !!v && v.trim() !== '');
+    const options = { skipCache: true };
     const [mobileNo, defaultCopy, country, name, language, exitCopies, deliveryLoc] =
       await Promise.all([
         this.lookups.getByObject(ORACLE_OBJECTS.LETTER_MOBILE_NO_LOV, lang, primary, {
+          ...options,
           scopeAlternatives: alternatives,
         }),
-        this.lookups.getByObject(ORACLE_OBJECTS.EMP_LTR_DEFAULT_COPY, lang),
-        this.lookups.getByObject(ORACLE_OBJECTS.LETTER_COUNTRY_LOV, lang),
-        this.lookups.getByObject(ORACLE_OBJECTS.LETTER_NAME_LOV, lang),
-        this.lookups.getByObject(ORACLE_OBJECTS.LETTER_LANGUAGE_LOV, lang),
-        this.lookups.getByObject(ORACLE_OBJECTS.EXIT_COPIES_LOV, lang),
-        this.lookups.getByObject(ORACLE_OBJECTS.DELIVERY_LOC_V, lang),
+        this.lookups.getByObject(ORACLE_OBJECTS.EMP_LTR_DEFAULT_COPY, lang, undefined, options),
+        this.lookups.getByObject(ORACLE_OBJECTS.LETTER_COUNTRY_LOV, lang, undefined, options),
+        this.lookups.getByObject(ORACLE_OBJECTS.LETTER_NAME_LOV, lang, undefined, options),
+        this.lookups.getByObject(ORACLE_OBJECTS.LETTER_LANGUAGE_LOV, lang, undefined, options),
+        this.lookups.getByObject(ORACLE_OBJECTS.EXIT_COPIES_LOV, lang, undefined, options),
+        this.lookups.getByObject(ORACLE_OBJECTS.DELIVERY_LOC_V, lang, undefined, options),
       ]);
     return { mobileNo, defaultCopy, country, name, language, exitCopies, deliveryLoc };
   }

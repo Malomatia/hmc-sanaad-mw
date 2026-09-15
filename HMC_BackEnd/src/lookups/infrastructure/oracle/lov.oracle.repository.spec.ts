@@ -15,6 +15,7 @@ import { LovOracleRepository } from './lov.oracle.repository';
 import { OracleContractCatalog } from '@core/database/oracle-contracts';
 import { OracleContractUnavailableException } from '@core/database/oracle.error';
 import { ORACLE_OBJECTS } from '@shared/constants/oracle-objects';
+import { LettersService } from '@modules/letters/application/letters.service';
 
 describe('Static LOV contracts', () => {
   function make() {
@@ -129,6 +130,55 @@ describe('LovOracleRepository', () => {
     },
   );
 
+  it.each(['en', 'ar'] as const)(
+    'uses the record id only for RFL_LEAVE_DET_LOV with lang=%s, including cached reads',
+    async (lang) => {
+      const { repository, query } = make();
+      const service = new LookupsService(repository);
+      const label =
+        'Annual Leave|Leave Start Date : 04-SEP-2026 and Leave End Date : 18-SEP-2026';
+      query.mockResolvedValue([
+        { USER_NAME: 'V-TEST', LEAVE: label, ABSENCE_ATTENDANCE_ID: 56990954 },
+        { USER_NAME: 'V-TEST', LEAVE: label, ABSENCE_ATTENDANCE_ID: '56990955' },
+      ]);
+      const expected = ['56990954', '56990955'].map((id) => ({
+        code: label,
+        meaning: label,
+        used_value: id,
+        id,
+      }));
+
+      await expect(service.getLov('RFL_LEAVE_DET_LOV', lang, 'V-TEST')).resolves.toEqual(
+        expected,
+      );
+      await expect(service.getLov('RFL_LEAVE_DET_LOV', lang, 'V-TEST')).resolves.toEqual(
+        expected,
+      );
+      expect(query).toHaveBeenCalledTimes(1);
+      expect(query).toHaveBeenCalledWith(
+        'SELECT * FROM XXHMC_SND_RFL_LEAVE_DET_V WHERE user_name IN (:u0)',
+        { u0: 'V-TEST' },
+      );
+
+      for (const lovname of ['RFL_REL_LEAVE1_LOV', 'RFL_REL_LEAVE2_LOV']) {
+        await expect(service.getLov(lovname, lang, 'V-TEST')).resolves.toEqual(
+          expected.map((item) => ({ ...item, used_value: label })),
+        );
+      }
+    },
+  );
+
+  it('preserves the existing value when a return-from-leave detail has no id', async () => {
+    const { repository, query } = make();
+    query.mockResolvedValue([{ LEAVE: 'Annual Leave', ABSENCE_ATTENDANCE_ID: null }]);
+
+    await expect(
+      repository.readLov(ORACLE_OBJECTS.RFL_LEAVE_DET_V, 'en', 'V-TEST'),
+    ).resolves.toEqual([
+      { code: 'Annual Leave', meaning: 'Annual Leave', used_value: 'Annual Leave' },
+    ]);
+  });
+
   it('does not add academic-year fields to a different LOV', async () => {
     const { repository, query } = make();
     query.mockResolvedValue([
@@ -163,6 +213,77 @@ describe('LovOracleRepository', () => {
     ]);
     await repository.readLov(object, 'en', 'V-TEST');
     expect(query).toHaveBeenCalledTimes(1);
+  });
+
+  describe('letters LOV cache bypass', () => {
+    const objects = [
+      ORACLE_OBJECTS.LETTER_MOBILE_NO_LOV,
+      ORACLE_OBJECTS.EMP_LTR_DEFAULT_COPY,
+      ORACLE_OBJECTS.LETTER_COUNTRY_LOV,
+      ORACLE_OBJECTS.LETTER_NAME_LOV,
+      ORACLE_OBJECTS.LETTER_LANGUAGE_LOV,
+      ORACLE_OBJECTS.EXIT_COPIES_LOV,
+      ORACLE_OBJECTS.DELIVERY_LOC_V,
+    ];
+    const keys = [
+      'mobileNo', 'defaultCopy', 'country', 'name', 'language', 'exitCopies', 'deliveryLoc',
+    ];
+
+    it.each(['en', 'ar'] as const)(
+      'refreshes all seven lists for lang=%s without reading or replacing shared caches',
+      async (lang) => {
+        const { repository, query } = make();
+        const lookups = new LookupsService(repository);
+        const letters = new LettersService({ submit: jest.fn() }, lookups);
+        const readShared = () =>
+          Promise.all(objects.map((lov, index) =>
+            index === 0
+              ? lookups.getByObject(lov, lang, '037400', { scopeAlternatives: ['V-TEST'] })
+              : lookups.getByObject(lov, lang),
+          ));
+        query.mockResolvedValue([{ NAME: 'Cached value' }]);
+        const cached = await readShared();
+
+        for (const value of ['First fresh value', 'Second fresh value']) {
+          query.mockResolvedValue([{ NAME: value }]);
+          const result = await letters.getLetterLovs(lang, '037400', 'V-TEST');
+          expect(Object.keys(result)).toEqual(keys);
+          for (const key of keys) {
+            expect(result[key]).toEqual([
+              { code: value, meaning: value, used_value: value },
+            ]);
+          }
+        }
+
+        expect(query).toHaveBeenCalledTimes(21);
+        expect(query).toHaveBeenCalledWith(
+          `SELECT * FROM ${ORACLE_OBJECTS.LETTER_MOBILE_NO_LOV} WHERE user_name IN (:u0, :u1)`,
+          { u0: '037400', u1: 'V-TEST' },
+        );
+        for (const lov of objects) {
+          expect(query.mock.calls.filter(([sql]) => sql.startsWith(`SELECT * FROM ${lov}`))).toHaveLength(3);
+        }
+        await expect(readShared()).resolves.toEqual(cached);
+        expect(query).toHaveBeenCalledTimes(21);
+      },
+    );
+
+    it('does not coalesce letters requests or populate shared lookup caches', async () => {
+      const { repository, query } = make();
+      const lookups = new LookupsService(repository);
+      const letters = new LettersService({ submit: jest.fn() }, lookups);
+      await Promise.all([
+        letters.getLetterLovs('en', '037400', 'V-TEST'),
+        letters.getLetterLovs('en', '037400', 'V-TEST'),
+      ]);
+      expect(query).toHaveBeenCalledTimes(14);
+
+      for (const lov of objects.slice(1)) {
+        await lookups.getByObject(lov, 'en');
+        await lookups.getByObject(lov, 'en');
+      }
+      expect(query).toHaveBeenCalledTimes(20);
+    });
   });
 
   it('filters the multi-type LOV by its grouping column when dataType is passed (DEP_LOOKUP_LOV)', async () => {

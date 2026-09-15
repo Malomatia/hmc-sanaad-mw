@@ -7,6 +7,7 @@ import { LovItem } from '@shared/domain/lov-item';
  * adapter and bound via the LOV_REPOSITORY token.
  */
 export interface LovReadOptions {
+  skipCache?: boolean;
   userName?: string;
   search?: string;
   offset?: number;

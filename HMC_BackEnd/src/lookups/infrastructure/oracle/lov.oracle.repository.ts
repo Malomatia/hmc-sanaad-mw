@@ -61,6 +61,7 @@ export class LovOracleRepository implements LovRepository {
     if (!isKnownOracleObject(object)) {
       throw new BadRequestException(`Unknown Oracle object: ${object}`);
     }
+    if (options.skipCache) return this.queryLov(object, lang, username, options);
     const cacheKey = JSON.stringify([object, lang, username ?? '', options]);
     const cached = this.cache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) return cached.items;
@@ -178,9 +179,13 @@ export class LovOracleRepository implements LovRepository {
         }
         throw err;
       });
-    return object === ORACLE_OBJECTS.ACAD_YR_STRT_END_LOV
-      ? rows.map((row) => LovMapper.toAcademicYearItem(row))
-      : LovMapper.toItems(rows, lang);
+    const items =
+      object === ORACLE_OBJECTS.ACAD_YR_STRT_END_LOV
+        ? rows.map((row) => LovMapper.toAcademicYearItem(row))
+        : LovMapper.toItems(rows, lang);
+    return object === ORACLE_OBJECTS.RFL_LEAVE_DET_V
+      ? items.map((item) => ({ ...item, used_value: item.id ?? item.used_value }))
+      : items;
   }
 
   /**

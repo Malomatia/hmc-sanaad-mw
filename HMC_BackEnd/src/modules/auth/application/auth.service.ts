@@ -7,10 +7,16 @@ import { AuthenticatedUser, Role } from '@core/auth/auth-user.interface';
 import { TokenRevocationService } from '@core/auth/token-revocation.service';
 import { AuditService } from '@core/audit/audit.service';
 import { AuthLifecycleEvent } from '@core/audit/audit-event';
+import { DEFAULT_LANG, Lang } from '@shared/domain/lang';
 import { MPIN_STORE_PORT, MpinStorePort } from '../domain/ports/mpin-store.port';
 import { LDAP_USER_PORT, LdapUserPort } from '../domain/ports/ldap-user.port';
 import { FUNCTION_ACCESS_PORT, FunctionAccessPort } from '../domain/ports/function-access.port';
 import { DEVICE_REGISTRY_PORT, DeviceRegistryPort } from '../domain/ports/device-registry.port';
+import {
+  LOGIN_EMPLOYMENT_PORT,
+  LoginEmploymentDetails,
+  LoginEmploymentPort,
+} from '../domain/ports/login-employment.port';
 import { EmployeeIdentity, FunctionAccess, FunctionStatus } from '../domain/auth-identity';
 import {
   LoginRequestDto,
@@ -53,6 +59,7 @@ export class AuthService {
     @Inject(LDAP_USER_PORT) private readonly ldap: LdapUserPort,
     @Inject(FUNCTION_ACCESS_PORT) private readonly functionAccess: FunctionAccessPort,
     @Inject(DEVICE_REGISTRY_PORT) private readonly devices: DeviceRegistryPort,
+    @Inject(LOGIN_EMPLOYMENT_PORT) private readonly employment: LoginEmploymentPort,
     private readonly audit: AuditService,
     private readonly revocation: TokenRevocationService,
     config: ConfigService,
@@ -64,7 +71,7 @@ export class AuthService {
     this.refreshExpiresIn = auth.jwtRefreshExpiresIn;
   }
 
-  async login(dto: LoginRequestDto): Promise<LoginResponseDto> {
+  async login(dto: LoginRequestDto, lang: Lang = DEFAULT_LANG): Promise<LoginResponseDto> {
     const ctx = {
       username: dto.username,
       deviceImei: dto.imeinumber,
@@ -74,6 +81,7 @@ export class AuthService {
 
     let identity: EmployeeIdentity;
     let functionList: FunctionAccess[];
+    let employment: LoginEmploymentDetails = {};
 
     if (this.staticLogin) {
       this.logger.warn(
@@ -93,7 +101,10 @@ export class AuthService {
       });
       if (!ok) {
         this.audit.lifecycle(AuthLifecycleEvent.LOGIN_FAILURE, { ...ctx, status: 'error' });
-        return { status: 'error', message: 'Invalid credentials.' };
+        return {
+          status: 'error',
+          message: lang === 'ar' ? 'البيانات المدخله غير صحيحه.' : 'Invalid credentials.',
+        };
       }
       identity = await this.ldap.validate({
         username: dto.username,
@@ -101,6 +112,7 @@ export class AuthService {
         platform: dto.platform,
       });
       functionList = await this.functionAccess.list(identity.employeeNumber ?? dto.username);
+      employment = await this.employment.resolve(identity);
 
       // Stamp the device registration's LastActive. A side effect of an
       // already-successful login: best-effort, never fails the request.
@@ -155,6 +167,10 @@ export class AuthService {
       employeenumber: identity.employeeNumber,
       employeename: identity.employeeName,
       employeenamear: identity.employeeNameAr,
+      job_title: employment.jobTitle,
+      job_title_ar: employment.jobTitleAr,
+      organization_name: employment.organizationName,
+      organization_name_ar: employment.organizationNameAr,
       employeedepartment: identity.department,
       employeecompany: identity.company,
       functionaccesslist: functionList,

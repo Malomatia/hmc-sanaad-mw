@@ -1,4 +1,12 @@
+import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Reflector } from '@nestjs/core';
+import { Test } from '@nestjs/testing';
+import request from 'supertest';
+import { ResponseInterceptor } from '@core/http/response.interceptor';
+import { AuthController } from '../interface/auth.controller';
+import { OnboardingService } from './onboarding.service';
+import { MpinService } from './mpin.service';
 import { JwtService, JwtSignOptions } from '@nestjs/jwt';
 import { Role } from '@core/auth/auth-user.interface';
 import { AuthenticatedUser } from '@core/auth/auth-user.interface';
@@ -9,6 +17,9 @@ import { MpinStorePort } from '../domain/ports/mpin-store.port';
 import { LdapUserPort } from '../domain/ports/ldap-user.port';
 import { FunctionAccessPort } from '../domain/ports/function-access.port';
 import { DeviceRegistryPort } from '../domain/ports/device-registry.port';
+import { LoginEmploymentPort } from '../domain/ports/login-employment.port';
+import { OracleService } from '@core/database/oracle.service';
+import { OracleLoginEmploymentRepository } from '../infrastructure/adapters/oracle-login-employment.repository';
 
 const AUTH_CFG = {
   jwtSecret: 'test_secret_test_secret_test_secret_12',
@@ -46,6 +57,9 @@ function makeService(overrides: Partial<typeof AUTH_CFG> = {}, identityUsername 
     find: jest.fn(),
     touch: jest.fn().mockResolvedValue(undefined),
   } as unknown as DeviceRegistryPort;
+  const employment: jest.Mocked<LoginEmploymentPort> = {
+    resolve: jest.fn().mockResolvedValue({}),
+  };
   const audit = { lifecycle: jest.fn() } as unknown as AuditService;
   const revocation = new TokenRevocationService();
   const config = {
@@ -60,11 +74,12 @@ function makeService(overrides: Partial<typeof AUTH_CFG> = {}, identityUsername 
     ldap,
     functionAccess,
     devices,
+    employment,
     audit,
     revocation,
     config,
   );
-  return { service, jwt, revocation, devices, ldap, mpinStore };
+  return { service, jwt, revocation, devices, ldap, mpinStore, employment };
 }
 
 const LOGIN = {
@@ -75,6 +90,57 @@ const LOGIN = {
   appname: 'Sanaad',
   version: '1.0.0',
 };
+
+describe('Login invalid-credentials language over HTTP', () => {
+  let app: INestApplication;
+  const arabic = 'البيانات المدخله غير صحيحه.';
+  const english = 'Invalid credentials.';
+
+  beforeAll(async () => {
+    const { service, mpinStore } = makeService();
+    jest.mocked(mpinStore.verify).mockResolvedValue(false);
+    const moduleRef = await Test.createTestingModule({
+      controllers: [AuthController],
+      providers: [
+        { provide: AuthService, useValue: service },
+        { provide: OnboardingService, useValue: {} },
+        { provide: MpinService, useValue: {} },
+      ],
+    }).compile();
+    app = moduleRef.createNestApplication();
+    app.setGlobalPrefix('api/v1');
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }),
+    );
+    app.useGlobalInterceptors(new ResponseInterceptor(new Reflector()));
+    await app.init();
+  });
+
+  afterAll(async () => {
+    await app?.close();
+  });
+
+  it.each([
+    ['ar', undefined, arabic],
+    ['en', undefined, english],
+    [undefined, 'ar', arabic],
+    [undefined, 'en', english],
+    ['ar', 'en', arabic],
+    ['en', 'ar', english],
+    [undefined, undefined, english],
+    ['unsupported', 'ar', english],
+    [undefined, 'unsupported', english],
+  ] as const)(
+    'localizes invalid credentials (query=%s, header=%s)',
+    async (queryLang, headerLang, message) => {
+      const req = request(app.getHttpServer()).post('/api/v1/auth/login');
+      if (queryLang !== undefined) req.query({ lang: queryLang });
+      if (headerLang !== undefined) req.set('lang', headerLang);
+
+      await req.send(LOGIN).expect(200).expect({ status: 'error', message });
+    },
+  );
+});
 
 describe('AuthService login employeeusername casing', () => {
   it.each(['aibrahim39', 'AiBrAhIm39', 'AIBRAHIM39'])(
@@ -118,6 +184,98 @@ describe('AuthService login employeeusername casing', () => {
       expect(jwt.decode(token)).toMatchObject({ userdata: { employeeusername: 'AIBRAHIM39' } });
     }
   });
+});
+
+describe('AuthService bilingual login details', () => {
+  const identity = {
+    username: 'hmc1',
+    employeeNumber: '037400',
+    employeeName: 'Test Employee',
+    employeeNameAr: 'موظف تجريبي',
+    facilityId: '456',
+    facility: 'SQL facility name',
+    jobId: '123',
+    jobName: 'SQL job name',
+    isEmployee: true,
+    isNewUser: false,
+  };
+
+  it('returns both employee names and lowercase bilingual job/organization fields', async () => {
+    const { service, ldap, employment, jwt } = makeService();
+    jest.mocked(ldap.validate).mockResolvedValueOnce(identity);
+    employment.resolve.mockResolvedValueOnce({
+      jobTitle: 'Oracle job',
+      jobTitleAr: 'المسمى الوظيفي',
+      organizationName: 'Oracle organization',
+      organizationNameAr: 'المؤسسة',
+    });
+
+    const response = await service.login(LOGIN);
+
+    expect(response).toMatchObject({
+      status: 'success',
+      employeeusername: 'HMC1',
+      employeenumber: '037400',
+      employeename: 'Test Employee',
+      employeenamear: 'موظف تجريبي',
+      job_title: 'Oracle job',
+      job_title_ar: 'المسمى الوظيفي',
+      organization_name: 'Oracle organization',
+      organization_name_ar: 'المؤسسة',
+    });
+    expect(employment.resolve).toHaveBeenCalledWith(identity);
+    expect(jwt.decode(response.token!)).toMatchObject({ username: 'hmc1', name: 'Test Employee' });
+    expect(response).not.toHaveProperty('JOB_TITLE');
+    expect(response).not.toHaveProperty('ORGANIZATION_NAME');
+  });
+
+  it('still issues tokens with SQL Server names when both Oracle lookups fail', async () => {
+    const { service, ldap, employment, jwt } = makeService();
+    const ora = {
+      isConfigured: jest.fn().mockReturnValue(true),
+      query: jest.fn().mockRejectedValue(new Error('Oracle unavailable')),
+    };
+    const repository = new OracleLoginEmploymentRepository(ora as unknown as OracleService);
+    jest.mocked(ldap.validate).mockResolvedValueOnce(identity);
+    employment.resolve.mockImplementation((employee) => repository.resolve(employee));
+
+    const response = await service.login(LOGIN);
+
+    expect(response).toMatchObject({
+      status: 'success',
+      employeename: identity.employeeName,
+      employeenamear: identity.employeeNameAr,
+      job_title: identity.jobName,
+      job_title_ar: identity.jobName,
+      organization_name: identity.facility,
+      organization_name_ar: identity.facility,
+    });
+    expect(ora.query).toHaveBeenCalledTimes(2);
+    expect(jwt.verify(response.token!)).toMatchObject({ username: 'hmc1' });
+    expect(jwt.verify(response.refreshtoken!)).toMatchObject({ username: 'hmc1', typ: 'refresh' });
+  });
+
+  it('does not look up employment details when MPIN verification fails', async () => {
+    const { service, mpinStore, ldap, employment } = makeService();
+    jest.mocked(mpinStore.verify).mockResolvedValueOnce(false);
+
+    await expect(service.login(LOGIN)).resolves.toEqual({
+      status: 'error',
+      message: 'Invalid credentials.',
+    });
+    expect(ldap.validate).not.toHaveBeenCalled();
+    expect(employment.resolve).not.toHaveBeenCalled();
+  });
+
+  it.each([{ disabled: true }, { staticLogin: true }])(
+    'does not query Oracle in bypass mode %j',
+    async (overrides) => {
+      const { service, employment } = makeService(overrides);
+
+      await expect(service.login(LOGIN)).resolves.toMatchObject({ status: 'success' });
+      expect(employment.resolve).not.toHaveBeenCalled();
+    },
+  );
 });
 
 describe('AuthService refresh + logout', () => {

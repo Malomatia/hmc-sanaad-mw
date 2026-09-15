@@ -1,5 +1,7 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { Reflector } from '@nestjs/core';
+import { ResponseInterceptor } from '@core/http/response.interceptor';
 import request from 'supertest';
 import { AuthService } from '../application/auth.service';
 import { OnboardingService } from '../application/onboarding.service';
@@ -8,6 +10,7 @@ import { AuthController } from './auth.controller';
 
 describe('AuthController', () => {
   let app: INestApplication;
+  const auth = { login: jest.fn() };
   const onboarding = {
     validateUser: jest.fn().mockResolvedValue({ status: 'success' }),
     sendOtp: jest.fn().mockResolvedValue({ status: 'success' }),
@@ -24,7 +27,7 @@ describe('AuthController', () => {
     const moduleRef = await Test.createTestingModule({
       controllers: [AuthController],
       providers: [
-        { provide: AuthService, useValue: {} },
+        { provide: AuthService, useValue: auth },
         { provide: OnboardingService, useValue: onboarding },
         { provide: MpinService, useValue: mpin },
       ],
@@ -32,6 +35,7 @@ describe('AuthController', () => {
 
     app = moduleRef.createNestApplication();
     app.setGlobalPrefix('api/v1');
+    app.useGlobalInterceptors(new ResponseInterceptor(new Reflector()));
     app.useGlobalPipes(
       new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }),
     );
@@ -42,6 +46,36 @@ describe('AuthController', () => {
 
   afterAll(async () => {
     await app?.close();
+  });
+
+  describe('POST /auth/login', () => {
+    it.each(['en', 'ar'])(
+      'preserves both languages with lang=%s instead of collapsing Arabic twins',
+      async (lang) => {
+        const response = {
+          status: 'success',
+          employeeusername: 'HMC1',
+          employeenumber: '037400',
+          employeename: 'Test Employee',
+          employeenamear: 'موظف تجريبي',
+          job_title: 'Oracle job',
+          job_title_ar: 'المسمى الوظيفي',
+          organization_name: 'Oracle organization',
+          organization_name_ar: 'المؤسسة',
+        };
+        auth.login.mockResolvedValueOnce(response);
+        const loginBody = { ...body, mpin: 'client-hashed-test-value' };
+
+        await request(app.getHttpServer())
+          .post(`/api/v1/auth/login?lang=${lang}`)
+          .set('lang', lang)
+          .send(loginBody)
+          .expect(200)
+          .expect(response);
+
+        expect(auth.login).toHaveBeenCalledWith(expect.objectContaining(loginBody), lang);
+      },
+    );
   });
 
   describe('POST /auth/mpin/update', () => {

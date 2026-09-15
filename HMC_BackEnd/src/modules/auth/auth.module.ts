@@ -14,6 +14,7 @@ import { OTP_EMAIL_DELIVERY_PORT } from './domain/ports/otp-email-delivery.port'
 import { MPIN_STORE_PORT } from './domain/ports/mpin-store.port';
 import { DEVICE_REGISTRY_PORT } from './domain/ports/device-registry.port';
 import { FUNCTION_ACCESS_PORT } from './domain/ports/function-access.port';
+import { LOGIN_EMPLOYMENT_PORT } from './domain/ports/login-employment.port';
 import { LdapUserRepository } from './infrastructure/adapters/ldap-user.repository';
 import { EntraGraphUserRepository } from './infrastructure/adapters/entra-graph-user.repository';
 import { MssqlOtpRepository } from './infrastructure/adapters/mssql-otp.repository';
@@ -25,6 +26,7 @@ import { EmailOtpDeliveryAdapter } from './infrastructure/adapters/email-otp-del
 import { MotcPushOtpDeliveryAdapter } from './infrastructure/adapters/motc-push-otp-delivery.adapter';
 import { MssqlFunctionAccessRepository } from './infrastructure/adapters/mssql-function-access.repository';
 import { MssqlUserRepository } from './infrastructure/adapters/mssql-user.repository';
+import { OracleLoginEmploymentRepository } from './infrastructure/adapters/oracle-login-employment.repository';
 
 /**
  * Auth feature module — Sanaad User Authentication & Access Control framework
@@ -102,6 +104,7 @@ import { MssqlUserRepository } from './infrastructure/adapters/mssql-user.reposi
     { provide: MPIN_STORE_PORT, useClass: MssqlMpinStoreRepository },
     { provide: DEVICE_REGISTRY_PORT, useClass: MssqlDeviceRegistryRepository },
     { provide: FUNCTION_ACCESS_PORT, useClass: MssqlFunctionAccessRepository },
+    { provide: LOGIN_EMPLOYMENT_PORT, useClass: OracleLoginEmploymentRepository },
   ],
 })
 export class AuthModule {}

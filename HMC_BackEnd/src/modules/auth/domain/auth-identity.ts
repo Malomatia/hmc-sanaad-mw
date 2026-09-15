@@ -37,7 +37,9 @@ export interface EmployeeIdentity {
   department?: string;
   /** FACILITY_NAME from the live-employee view — written to the device registration's Department. */
   facility?: string;
+  facilityId?: string;
   company?: string;
+  jobId?: string;
   jobName?: string;
   /** Corporate email — the OTP fallback channel when there is no mobile. */
   email?: string;

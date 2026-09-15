@@ -47,6 +47,39 @@ describe('MssqlUserRepository (AUTH_DIRECTORY=usersdb)', () => {
     });
   });
 
+  it('preserves bilingual employee names and the job/facility IDs for login enrichment', async () => {
+    const db = makeDb();
+    db.query.mockResolvedValueOnce([
+      {
+        EMPLOYEE_NUMBER: '037400',
+        EMPLOYEE_NAME: 'Test Employee',
+        employee_aname: 'موظف تجريبي',
+        JOB_ID: 123,
+        JOB_NAME: 'SQL job name',
+        FACILITY_ID: 456,
+        FACILITY_NAME: 'SQL facility name',
+        UserName: 'hmc1',
+      },
+    ]);
+
+    const identity = await new MssqlUserRepository(db, makeConfig()).validate({
+      ...QUERY,
+      username: 'hmc1',
+    });
+
+    expect(identity).toMatchObject({
+      username: 'hmc1',
+      employeeNumber: '037400',
+      employeeName: 'Test Employee',
+      employeeNameAr: 'موظف تجريبي',
+      jobId: '123',
+      jobName: 'SQL job name',
+      facilityId: '456',
+      facility: 'SQL facility name',
+    });
+    expect(db.query).toHaveBeenCalledTimes(1);
+  });
+
   it('refuses a username absent from the view (isEmployee: false)', async () => {
     const db = makeDb();
     db.query.mockResolvedValue([]);

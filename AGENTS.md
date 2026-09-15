@@ -1047,3 +1047,40 @@ build and tests, including `core/database/oracle-schema.service.spec.ts`,
 `core/database/base.repository.spec.ts`, and the lookup repository tests. The
 six pre-existing supervisor-column failures must not be fixed by guessing the
 live column name.
+
+## Login bilingual employment labels
+
+Normal `AUTH_DIRECTORY=usersdb` login retains `employeeusername` as the uppercase
+login ID. `employeename` comes from `EMPLOYEE_NAME` and `employeenamear` from
+`employee_aname` in `HMC_SND_LIV_EMP_MASTER_VW`; employee names do not require an
+Oracle lookup.
+
+The client confirmed corresponding IDs (not the crossed IDs in the initial
+request): SQL Server `FACILITY_ID` binds to `XXHMC_SND_ORG_DETAILS_V.ORGANIZATION_ID`,
+and SQL Server `JOB_ID` binds to `XXHMC_SND_JOB_DETAILS_V.JOB_ID`. Login adds the
+lowercase keys `organization_name`, `organization_name_ar`, `job_title`, and
+`job_title_ar`. Both languages remain present regardless of `lang`; login's
+existing `SkipEnvelope` prevents global Arabic-twin collapsing.
+
+`LoginEmploymentPort` is backed by `OracleLoginEmploymentRepository`. The two
+lookups run concurrently through the existing Oracle pool with bound numeric
+IDs, explicit projections, and no dictionary discovery. Each failed lookup,
+missing row/ID, or blank label independently falls back to the employee-master
+`FACILITY_NAME` (organization) or `JOB_NAME` (job), using that value for either
+missing language. An Oracle failure does not fail login or discard the other
+lookup's successful values. Static/dev-bypass logins and JWT claims are unchanged;
+onboarding and OTP endpoints do not perform these Oracle lookups.
+
+Regression checks: from `HMC_BackEnd/`, run
+`npm.cmd test -- --runInBand modules/auth core/audit` and `npm.cmd run build`.
+
+## Login invalid-credentials language
+
+`POST /auth/login` resolves language through the existing `Lang` decorator:
+query `lang` wins over the `lang` header; absent or unsupported values default
+to English. Failed MPIN verification keeps HTTP 200 and `{status: 'error', message}`,
+with `Invalid credentials.` for English and the client's exact text
+`البيانات المدخله غير صحيحه.` for Arabic. This change is limited to the login
+invalid-credentials message; bilingual success fields and other auth endpoints
+are unchanged. HTTP regressions use the real controller/service with mocked
+MPIN verification in `auth.service.spec.ts`.

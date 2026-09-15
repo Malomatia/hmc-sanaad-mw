@@ -103,8 +103,8 @@ export class AuthController {
   @Post('login')
   @ApiOperation({ summary: 'API-5 — Login (MPIN → JWT + functionAccessList)', operationId: 'auth_login' })
   @ApiOkResponse({ type: LoginResponseDto })
-  login(@Body() dto: LoginRequestDto): Promise<LoginResponseDto> {
-    return this.auth.login(dto);
+  login(@Body() dto: LoginRequestDto, @Lang() lang: LangCode): Promise<LoginResponseDto> {
+    return this.auth.login(dto, lang);
   }
 
   @Public()

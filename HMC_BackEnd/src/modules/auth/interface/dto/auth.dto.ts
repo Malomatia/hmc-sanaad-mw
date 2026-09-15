@@ -57,6 +57,18 @@ export class LoginResponseDto {
   @ApiPropertyOptional({ example: 'name of employee arabic' })
   employeenamear?: string;
 
+  @ApiPropertyOptional({ description: 'English job title; falls back to JOB_NAME.' })
+  job_title?: string;
+
+  @ApiPropertyOptional({ description: 'Arabic job title; falls back to JOB_NAME.' })
+  job_title_ar?: string;
+
+  @ApiPropertyOptional({ description: 'English organization name; falls back to FACILITY_NAME.' })
+  organization_name?: string;
+
+  @ApiPropertyOptional({ description: 'Arabic organization name; falls back to FACILITY_NAME.' })
+  organization_name_ar?: string;
+
   @ApiPropertyOptional({ example: 'Information Communication and Technology' })
   employeedepartment?: string;
 

@@ -16,26 +16,31 @@ const IDENTITY: EmployeeIdentity = {
   isNewUser: false,
 };
 
-const ORGANIZATION = {
-  ORGANIZATION_NAME: 'Oracle organization',
-  ORGANIZATION_NAME_AR: 'المؤسسة',
+const EMPLOYMENT = {
+  JOB: 'Oracle job',
+  JOB_AR: 'المسمى الوظيفي',
+  DEPARTMENT: 'Oracle organization',
+  DEPARTMENT_AR: 'المؤسسة',
 };
-const JOB = { JOB_TITLE: 'Oracle job', JOB_TITLE_AR: 'المسمى الوظيفي' };
+const DETAILS = {
+  organizationName: EMPLOYMENT.DEPARTMENT,
+  organizationNameAr: EMPLOYMENT.DEPARTMENT_AR,
+  jobTitle: EMPLOYMENT.JOB,
+  jobTitleAr: EMPLOYMENT.JOB_AR,
+};
 const FALLBACK = {
   organizationName: IDENTITY.facility,
   organizationNameAr: IDENTITY.facility,
   jobTitle: IDENTITY.jobName,
   jobTitleAr: IDENTITY.jobName,
 };
+const SQL =
+  'SELECT JOB, JOB_AR, DEPARTMENT, DEPARTMENT_AR FROM XXHMC_SND_EMPLOYMENT_DETAILS_V WHERE USER_NAME = :username AND ROWNUM <= 1';
 
 function makeRepository() {
   const ora = {
     isConfigured: jest.fn().mockReturnValue(true),
-    query: jest
-      .fn()
-      .mockImplementation(async (sql: string) =>
-        sql.includes('XXHMC_SND_ORG_DETAILS_V') ? [ORGANIZATION] : [JOB],
-      ),
+    query: jest.fn().mockResolvedValue([EMPLOYMENT]),
   };
   const repository = new OracleLoginEmploymentRepository(ora as unknown as OracleService);
   return { ora, repository };
@@ -45,64 +50,48 @@ describe('OracleLoginEmploymentRepository', () => {
   beforeEach(() => jest.spyOn(Logger.prototype, 'warn').mockImplementation());
   afterEach(() => jest.restoreAllMocks());
 
-  it('uses HMCERP views with corresponding facility/job IDs and returns both languages', async () => {
+  it('reads all four labels from one employment-details query scoped by username', async () => {
     const { ora, repository } = makeRepository();
 
-    await expect(repository.resolve(IDENTITY)).resolves.toEqual({
-      organizationName: ORGANIZATION.ORGANIZATION_NAME,
-      organizationNameAr: ORGANIZATION.ORGANIZATION_NAME_AR,
-      jobTitle: JOB.JOB_TITLE,
-      jobTitleAr: JOB.JOB_TITLE_AR,
-    });
-    expect(ora.query).toHaveBeenCalledTimes(2);
-    expect(ora.query).toHaveBeenCalledWith(
-      'SELECT ORGANIZATION_NAME, ORGANIZATION_NAME_AR FROM HMCERP.XXHMC_SND_ORG_DETAILS_V WHERE ORGANIZATION_ID = :id AND ROWNUM <= 1',
-      { id: 456 },
-    );
-    expect(ora.query).toHaveBeenCalledWith(
-      'SELECT JOB_TITLE, JOB_TITLE_AR FROM HMCERP.XXHMC_SND_JOB_DETAILS_V WHERE JOB_ID = :id AND ROWNUM <= 1',
-      { id: 123 },
-    );
+    await expect(repository.resolve(IDENTITY)).resolves.toEqual(DETAILS);
+    expect(ora.query).toHaveBeenCalledTimes(1);
+    expect(ora.query).toHaveBeenCalledWith(SQL, { username: 'HMC1' });
   });
 
-  it.each(['XXHMC_SND_ORG_DETAILS_V', 'XXHMC_SND_JOB_DETAILS_V'])(
-    'falls back independently when %s fails',
-    async (failedView) => {
+  it.each(['aibrahim39', 'AiBrAhIm39', 'AIBRAHIM39'])(
+    'uppercases the Oracle username %s without changing the identity',
+    async (username) => {
       const { ora, repository } = makeRepository();
-      ora.query.mockImplementation(async (sql: string) => {
-        if (sql.includes(failedView)) throw new Error('ORA-00942: table or view does not exist');
-        return sql.includes('XXHMC_SND_ORG_DETAILS_V') ? [ORGANIZATION] : [JOB];
-      });
+      const identity = Object.freeze({ ...IDENTITY, username });
 
-      await expect(repository.resolve(IDENTITY)).resolves.toEqual({
-        organizationName:
-          failedView === 'XXHMC_SND_ORG_DETAILS_V'
-            ? IDENTITY.facility
-            : ORGANIZATION.ORGANIZATION_NAME,
-        organizationNameAr:
-          failedView === 'XXHMC_SND_ORG_DETAILS_V'
-            ? IDENTITY.facility
-            : ORGANIZATION.ORGANIZATION_NAME_AR,
-        jobTitle: failedView === 'XXHMC_SND_JOB_DETAILS_V' ? IDENTITY.jobName : JOB.JOB_TITLE,
-        jobTitleAr: failedView === 'XXHMC_SND_JOB_DETAILS_V' ? IDENTITY.jobName : JOB.JOB_TITLE_AR,
-      });
-      expect(ora.query).toHaveBeenCalledTimes(2);
+      await expect(repository.resolve(identity)).resolves.toEqual(DETAILS);
+      expect(ora.query).toHaveBeenCalledWith(SQL, { username: 'AIBRAHIM39' });
+      expect(identity.username).toBe(username);
     },
   );
 
+  it('does not require job or facility IDs for the username lookup', async () => {
+    const { ora, repository } = makeRepository();
+
+    await expect(
+      repository.resolve({ ...IDENTITY, jobId: undefined, facilityId: undefined }),
+    ).resolves.toEqual(DETAILS);
+    expect(ora.query).toHaveBeenCalledTimes(1);
+    expect(ora.query).toHaveBeenCalledWith(SQL, { username: 'HMC1' });
+  });
+
   it.each([
+    'ORA-00942: table or view does not exist',
     'ORA-01013: operation cancelled',
     'ORA-01031: insufficient privileges',
     'Oracle pool is unavailable',
-  ])(
-    'returns both SQL fallback pairs on %s',
-    async (message) => {
-      const { ora, repository } = makeRepository();
-      ora.query.mockRejectedValue(new Error(message));
+  ])('returns both SQL fallback pairs on %s', async (message) => {
+    const { ora, repository } = makeRepository();
+    ora.query.mockRejectedValue(new Error(message));
 
-      await expect(repository.resolve(IDENTITY)).resolves.toEqual(FALLBACK);
-    },
-  );
+    await expect(repository.resolve(IDENTITY)).resolves.toEqual(FALLBACK);
+    expect(ora.query).toHaveBeenCalledTimes(1);
+  });
 
   it('returns SQL fallbacks without querying when Oracle is disabled or unconfigured', async () => {
     const { ora, repository } = makeRepository();
@@ -112,20 +101,35 @@ describe('OracleLoginEmploymentRepository', () => {
     expect(ora.query).not.toHaveBeenCalled();
   });
 
-  it('uses SQL fallbacks when the Oracle views have no matching rows', async () => {
+  it('uses SQL fallbacks when the employment view has no matching row', async () => {
     const { ora, repository } = makeRepository();
     ora.query.mockResolvedValue([]);
 
     await expect(repository.resolve(IDENTITY)).resolves.toEqual(FALLBACK);
   });
 
-  it('falls back per language for null, empty, or whitespace-only labels', async () => {
+  it.each([null, undefined, '', '   '])(
+    'falls back for missing or blank labels: %s',
+    async (value) => {
+      const { ora, repository } = makeRepository();
+      ora.query.mockResolvedValue([
+        { JOB: value, JOB_AR: value, DEPARTMENT: value, DEPARTMENT_AR: value },
+      ]);
+
+      await expect(repository.resolve(IDENTITY)).resolves.toEqual(FALLBACK);
+    },
+  );
+
+  it('preserves populated Oracle labels and falls back independently for the others', async () => {
     const { ora, repository } = makeRepository();
-    ora.query
-      .mockResolvedValueOnce([
-        { ORGANIZATION_NAME: ' Oracle organization ', ORGANIZATION_NAME_AR: null },
-      ])
-      .mockResolvedValueOnce([{ JOB_TITLE: '   ', JOB_TITLE_AR: ' المسمى الوظيفي ' }]);
+    ora.query.mockResolvedValue([
+      {
+        JOB: '   ',
+        JOB_AR: ' المسمى الوظيفي ',
+        DEPARTMENT: ' Oracle organization ',
+        DEPARTMENT_AR: null,
+      },
+    ]);
 
     await expect(repository.resolve(IDENTITY)).resolves.toEqual({
       organizationName: 'Oracle organization',
@@ -133,68 +137,39 @@ describe('OracleLoginEmploymentRepository', () => {
       jobTitle: IDENTITY.jobName,
       jobTitleAr: 'المسمى الوظيفي',
     });
-
-    ora.query.mockResolvedValue([{}]);
-    await expect(repository.resolve(IDENTITY)).resolves.toEqual(FALLBACK);
   });
 
-  it.each([undefined, '', ' ', 'invalid', '1 OR 1=1', '1.5', '-1', '9007199254740992'])(
-    'never queries an unscoped view when IDs are %s',
-    async (id) => {
+  it.each(['', ' ', '\t'])(
+    'never queries an unscoped view for a blank username: %s',
+    async (username) => {
       const { ora, repository } = makeRepository();
 
-      await expect(repository.resolve({ ...IDENTITY, facilityId: id, jobId: id })).resolves.toEqual(
-        FALLBACK,
-      );
+      await expect(repository.resolve({ ...IDENTITY, username })).resolves.toEqual(FALLBACK);
       expect(ora.query).not.toHaveBeenCalled();
     },
   );
 
-  it('still resolves the job when the facility ID is missing', async () => {
+  it('keeps username content in a bind rather than interpolating it into SQL', async () => {
     const { ora, repository } = makeRepository();
+    const username = "hmc1' OR '1'='1";
 
-    await expect(repository.resolve({ ...IDENTITY, facilityId: undefined })).resolves.toEqual({
-      organizationName: IDENTITY.facility,
-      organizationNameAr: IDENTITY.facility,
-      jobTitle: JOB.JOB_TITLE,
-      jobTitleAr: JOB.JOB_TITLE_AR,
-    });
-    expect(ora.query).toHaveBeenCalledTimes(1);
+    await repository.resolve({ ...IDENTITY, username });
+
+    expect(ora.query).toHaveBeenCalledWith(SQL, { username: username.toUpperCase() });
+    expect(ora.query.mock.calls[0][0]).not.toContain(username);
   });
 
-  it('does not substitute a username or employee number for absent IDs', async () => {
+  it('does not invent labels when neither database supplies them', async () => {
     const { ora, repository } = makeRepository();
+    ora.query.mockResolvedValue([]);
 
     await expect(
-      repository.resolve({
-        username: 'hmc1',
-        employeeNumber: '037400',
-        isEmployee: true,
-        isNewUser: false,
-      }),
+      repository.resolve({ ...IDENTITY, jobName: undefined, facility: undefined }),
     ).resolves.toEqual({
       organizationName: undefined,
       organizationNameAr: undefined,
       jobTitle: undefined,
       jobTitleAr: undefined,
     });
-    expect(ora.query).not.toHaveBeenCalled();
-  });
-
-  it('starts both independent lookups without awaiting the first result', async () => {
-    const { ora, repository } = makeRepository();
-    let finishOrganization!: (rows: (typeof ORGANIZATION)[]) => void;
-    ora.query.mockImplementation((sql: string) =>
-      sql.includes('XXHMC_SND_ORG_DETAILS_V')
-        ? new Promise((resolve) => {
-            finishOrganization = resolve;
-          })
-        : Promise.resolve([JOB]),
-    );
-
-    const pending = repository.resolve(IDENTITY);
-    expect(ora.query).toHaveBeenCalledTimes(2);
-    finishOrganization([ORGANIZATION]);
-    await expect(pending).resolves.toMatchObject({ jobTitle: JOB.JOB_TITLE });
   });
 });

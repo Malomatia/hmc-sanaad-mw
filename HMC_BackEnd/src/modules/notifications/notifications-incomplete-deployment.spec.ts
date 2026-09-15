@@ -15,6 +15,9 @@ import { MssqlDeviceTokenRepository } from './infrastructure/adapters/mssql-devi
 import { NoopPushSender } from './infrastructure/adapters/firebase-push-sender.adapter';
 import { NotificationsController } from './interface/notifications.controller';
 import { NotificationTriggerInterceptor } from './interface/notification-trigger.interceptor';
+import { ResponseInterceptor } from '@core/http/response.interceptor';
+import { EmployeeController } from '@modules/employee/interface/employee.controller';
+import { EmployeeService, SupervisorService } from '@modules/employee/application/employee.service';
 
 /**
  * The state this actually ships in: server deployed, `FIREBASE_SERVICE_ACCOUNT`
@@ -36,6 +39,7 @@ describe('notifications on an incomplete deployment', () => {
   const query = jest.fn();
   const execute = jest.fn();
   const lookup: RequestLookupPort = {
+    findWorklistNotifications: jest.fn().mockResolvedValue([]),
     findLatestSubmission: jest.fn(),
     findByNotificationId: jest.fn(),
   };
@@ -136,5 +140,160 @@ describe('notifications on an incomplete deployment', () => {
     // Every code path above went through a failing statement.
     expect(execute).toHaveBeenCalled();
     expect(query).toHaveBeenCalled();
+  });
+});
+
+describe('worklist submission HTTP and device delivery', () => {
+  let app: INestApplication;
+  let query: jest.Mock;
+  let send: jest.Mock;
+  let lookup: jest.Mock;
+  let update: jest.Mock;
+  let sender: { enabled: boolean; send: jest.Mock };
+  const body = { p_new_supervisor: '112', p_reason: 'Team restructure' };
+
+  beforeEach(async () => {
+    query = jest.fn().mockResolvedValue([
+      { LoginID: 'APPROVER', IMEINumber: 'phone', DeviceTokenValue: 'test-phone' },
+      { LoginID: 'APPROVER', IMEINumber: 'tablet', DeviceTokenValue: 'test-tablet' },
+    ]);
+    send = jest.fn().mockResolvedValue({ sent: 2, failed: 0, invalidTokens: [] });
+    sender = { enabled: true, send };
+    lookup = jest.fn().mockResolvedValue([
+      {
+        notificationId: '123',
+        recipient: 'APPROVER',
+        subject: 'Supervisor change request',
+        itemKey: '456',
+        itemType: 'HRSSA',
+      },
+    ]);
+    update = jest
+      .fn()
+      .mockResolvedValue({ successflag: 'S', status: 'success', errormessage: 'Submitted' });
+    const moduleRef = await Test.createTestingModule({
+      controllers: [EmployeeController],
+      providers: [
+        { provide: EmployeeService, useValue: {} },
+        { provide: SupervisorService, useValue: { update } },
+        NotificationsService,
+        RequestNotifier,
+        MssqlDeviceTokenRepository,
+        { provide: MssqlService, useValue: { query, execute: jest.fn() } },
+        { provide: DEVICE_TOKEN_STORE_PORT, useExisting: MssqlDeviceTokenRepository },
+        { provide: PUSH_SENDER_PORT, useValue: sender },
+        { provide: REQUEST_LOOKUP_PORT, useValue: { findWorklistNotifications: lookup } },
+        { provide: APP_INTERCEPTOR, useClass: ResponseInterceptor },
+        { provide: APP_INTERCEPTOR, useClass: NotificationTriggerInterceptor },
+      ],
+    }).compile();
+    app = moduleRef.createNestApplication();
+    app.setGlobalPrefix('api/v1');
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }),
+    );
+    app.use((req: { user?: unknown }, _res: unknown, next: () => void) => {
+      req.user = { username: 'SUBMITTER', roles: ['EMPLOYEE'] };
+      next();
+    });
+    await app.init();
+  });
+
+  afterEach(async () => {
+    await app?.close();
+  });
+
+  async function submit() {
+    const response = await request(app.getHttpServer())
+      .post('/api/v1/employee/supervisor')
+      .send(body)
+      .timeout(2000)
+      .expect(200);
+    expect(response.body).toEqual({
+      status: 'success',
+      successflag: 'S',
+      message: 'Success',
+      httpStatusCode: 200,
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+
+  it('queries every device by the worklist recipient login and sends the subject to all tokens', async () => {
+    await submit();
+    expect(lookup).toHaveBeenCalledWith('SUBMITTER', expect.any(Date), expect.any(Date));
+    expect(query).toHaveBeenCalledWith(
+      expect.stringMatching(/FROM HMC_Sanad_DeviceToken_tbl\s+WHERE LoginID = @username/),
+      { username: 'APPROVER' },
+    );
+    expect(send).toHaveBeenCalledWith(['test-phone', 'test-tablet'], {
+      title: 'New request awaiting your approval',
+      body: 'Supervisor change request',
+      data: {
+        event: 'APPROVAL_REQUIRED',
+        notificationId: '123',
+        itemKey: '456',
+        itemType: 'HRSSA',
+      },
+    });
+  });
+
+  it('keeps successful submits working with push disabled', async () => {
+    sender.enabled = false;
+    await submit();
+    expect(lookup).not.toHaveBeenCalled();
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it('keeps successful submits working with no registered devices', async () => {
+    query.mockResolvedValue([]);
+    await submit();
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('keeps successful submits working with a missing token table', async () => {
+    query.mockRejectedValue(
+      MssqlQueryError.from(Object.assign(new Error('Invalid object name'), { number: 208 })),
+    );
+    await submit();
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('keeps successful submits working when SQL Server or FCM fails', async () => {
+    query.mockRejectedValueOnce(new Error('SQL Server unavailable'));
+    await submit();
+    expect(send).not.toHaveBeenCalled();
+    lookup.mockResolvedValue([{ notificationId: '124', recipient: 'APPROVER' }]);
+    send.mockRejectedValue(new Error('FCM unavailable'));
+    await submit();
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not hold the HTTP response open for an unresolved lookup', async () => {
+    lookup.mockImplementation(() => new Promise(() => undefined));
+    await submit();
+    expect(lookup).toHaveBeenCalledTimes(1);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('does not fail the HTTP response when the worklist lookup rejects', async () => {
+    lookup.mockRejectedValue(new Error('Oracle unavailable'));
+    await submit();
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it('preserves business failure and validation without creating a notification job', async () => {
+    update.mockResolvedValue({ successflag: 'N', status: 'error', errormessage: 'Rejected' });
+    const response = await request(app.getHttpServer())
+      .post('/api/v1/employee/supervisor')
+      .send(body)
+      .expect(200);
+    expect(response.body.successflag).toBe('N');
+    expect(response.body.status).toBe('error');
+    await request(app.getHttpServer())
+      .post('/api/v1/employee/supervisor')
+      .send({ ...body, username: 'SPOOF' })
+      .expect(400);
+    expect(lookup).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
   });
 });

@@ -21,6 +21,12 @@ export interface RequestParticipants {
  * means no notification — never a failed API call.
  */
 export interface RequestLookupPort {
+  findWorklistNotifications(
+    username: string,
+    windowStart: Date,
+    windowEnd: Date,
+  ): Promise<WorklistNotification[] | undefined>;
+
   /**
    * The caller's most recently submitted request.
    *
@@ -34,6 +40,14 @@ export interface RequestLookupPort {
 
   /** Participants of a known notification — used when a decision is taken. */
   findByNotificationId(notificationId: string): Promise<RequestParticipants | undefined>;
+}
+
+export interface WorklistNotification {
+  notificationId: string;
+  recipient: string;
+  subject?: string;
+  itemKey?: string;
+  itemType?: string;
 }
 
 export const REQUEST_LOOKUP_PORT = Symbol('REQUEST_LOOKUP_PORT');

@@ -3,6 +3,23 @@ import { catchError, defer, Observable, of, switchMap, tap, timeout } from 'rxjs
 import { AuthenticatedUser } from '@core/auth/auth-user.interface';
 import { DecisionOutcome, RequestNotifier } from '../application/request-notifier.service';
 import { RequestParticipants } from '../domain/ports/request-lookup.port';
+import { DECORATORS } from '@nestjs/swagger';
+
+const WORKLIST_SUBMIT_OPERATIONS = new Set([
+  'profile_updatePersonal',
+  'employee_supervisorUpdate',
+  'leave_apply',
+  'leave_amend',
+  'leave_cancel',
+  'leave_return',
+  'identity_qidUpdate',
+  'identity_idCardApply',
+  'dependents_add',
+  'dependents_update',
+  'dependents_delete',
+  'dependents_passportApply',
+  'schoolFees_apply',
+]);
 
 /** `POST /approvals/123859449/decision` → the notification id. */
 const DECISION_ROUTE = /\/approvals\/([^/?]+)\/decision/i;
@@ -52,6 +69,21 @@ export class NotificationTriggerInterceptor implements NestInterceptor {
     }>();
 
     if (req.method !== 'POST') return next.handle();
+
+    const operation = Reflect.getMetadata(DECORATORS.API_OPERATION, context.getHandler()) as
+      { operationId?: string } | undefined;
+    if (WORKLIST_SUBMIT_OPERATIONS.has(operation?.operationId ?? '')) {
+      const startedAt = Date.now();
+      const username = req.user?.username;
+      return next.handle().pipe(
+        tap((body) => {
+          if (!username || !this.succeeded(body)) return;
+          void this.notifier
+            .onWorklistSubmitted({ username, startedAt, succeededAt: Date.now() })
+            .catch(() => undefined);
+        }),
+      );
+    }
 
     const proceed = (snapshot?: RequestParticipants) =>
       next.handle().pipe(

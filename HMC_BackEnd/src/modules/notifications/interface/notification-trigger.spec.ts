@@ -7,6 +7,13 @@ import { MssqlService } from '@core/database/mssql.service';
 import { MssqlDeviceTokenRepository } from '../infrastructure/adapters/mssql-device-token.repository';
 import { PushSenderPort } from '../domain/ports/push-sender.port';
 import { RequestLookupPort } from '../domain/ports/request-lookup.port';
+import { DECORATORS } from '@nestjs/swagger';
+import { ProfileController } from '@modules/profile/interface/profile.controller';
+import { EmployeeController } from '@modules/employee/interface/employee.controller';
+import { LeaveController } from '@modules/leave/interface/leave.controller';
+import { IdentityController } from '@modules/identity/interface/identity.controller';
+import { DependentsController } from '@modules/dependents/interface/dependents.controller';
+import { SchoolFeesController } from '@modules/school-fees/interface/school-fees.controller';
 
 /**
  * This interceptor sits on EVERY POST in the API, so its failure mode matters
@@ -19,14 +26,16 @@ import { RequestLookupPort } from '../domain/ports/request-lookup.port';
  */
 describe('NotificationTriggerInterceptor', () => {
   function make() {
+    const worklist = jest.fn().mockResolvedValue(undefined);
     const notifier = {
+      onWorklistSubmitted: worklist,
       captureRequest: jest.fn().mockResolvedValue({}),
       onSubmitted: jest.fn().mockResolvedValue(undefined),
       onDecided: jest.fn().mockResolvedValue(undefined),
       onReassigned: jest.fn().mockResolvedValue(undefined),
       onRequestInfo: jest.fn().mockResolvedValue(undefined),
     } as unknown as jest.Mocked<RequestNotifier>;
-    return { interceptor: new NotificationTriggerInterceptor(notifier), notifier };
+    return { interceptor: new NotificationTriggerInterceptor(notifier), notifier, worklist };
   }
 
   function context(
@@ -34,8 +43,10 @@ describe('NotificationTriggerInterceptor', () => {
     url: string,
     body: Record<string, unknown> = {},
     username = 'AIBRAHIM39',
+    httpHandler: object = () => undefined,
   ): ExecutionContext {
     return {
+      getHandler: () => httpHandler,
       switchToHttp: () => ({
         getRequest: () => ({ method, url, body, user: username ? { username } : undefined }),
       }),
@@ -192,6 +203,159 @@ describe('NotificationTriggerInterceptor', () => {
     await settle();
 
     expect(notifier.onSubmitted).not.toHaveBeenCalled();
+  });
+
+  describe('selected worklist submissions', () => {
+    const operations = [
+      ['profile/personal', 'profile_updatePersonal', ProfileController.prototype.updatePersonal],
+      [
+        'employee/supervisor',
+        'employee_supervisorUpdate',
+        EmployeeController.prototype.supervisorUpdate,
+      ],
+      ['leave/apply', 'leave_apply', LeaveController.prototype.apply],
+      ['leave/amend', 'leave_amend', LeaveController.prototype.amend],
+      ['leave/cancel', 'leave_cancel', LeaveController.prototype.cancel],
+      ['leave/return', 'leave_return', LeaveController.prototype.returnFromLeave],
+      ['identity/qid/update', 'identity_qidUpdate', IdentityController.prototype.updateQid],
+      [
+        'identity/idcard/apply',
+        'identity_idCardApply',
+        IdentityController.prototype.requestCompanyId,
+      ],
+      ['dependents', 'dependents_add', DependentsController.prototype.add],
+      ['dependents/update', 'dependents_update', DependentsController.prototype.update],
+      ['dependents/delete', 'dependents_delete', DependentsController.prototype.delete],
+      [
+        'dependents/passport/apply',
+        'dependents_passportApply',
+        DependentsController.prototype.passportApply,
+      ],
+      ['school-fees/apply', 'schoolFees_apply', SchoolFeesController.prototype.apply],
+    ] as const;
+
+    it.each(operations)(
+      'uses the real %s handler metadata and never the legacy submit path',
+      async (path, operationId, httpHandler) => {
+        const { interceptor, notifier, worklist } = make();
+        expect(Reflect.getMetadata(DECORATORS.API_OPERATION, httpHandler).operationId).toBe(
+          operationId,
+        );
+        let now = 1000000;
+        const clock = jest.spyOn(Date, 'now').mockImplementation(() => now);
+        const response = { successflag: 'S', status: 'success', result: { leaveDays: 3 } };
+        try {
+          const result = await firstValueFrom(
+            interceptor.intercept(
+              context(
+                'POST',
+                `/custom/prefix/${path}?username=SPOOF`,
+                { username: 'SPOOF', p_attachment1: 'attachment' },
+                'ACTOR',
+                httpHandler,
+              ),
+              {
+                handle: () => {
+                  now += 500;
+                  return of(response);
+                },
+              },
+            ),
+          );
+          await settle();
+
+          expect(result).toBe(response);
+          expect(worklist).toHaveBeenCalledTimes(1);
+          expect(worklist).toHaveBeenCalledWith({
+            username: 'ACTOR',
+            startedAt: 1000000,
+            succeededAt: 1000500,
+          });
+          expect(notifier.onSubmitted).not.toHaveBeenCalled();
+          expect(notifier.captureRequest).not.toHaveBeenCalled();
+        } finally {
+          clock.mockRestore();
+        }
+      },
+    );
+
+    it.each([
+      ['GET', { successflag: 'S' }, 'ACTOR'],
+      ['POST', { successflag: 'N' }, 'ACTOR'],
+      ['POST', {}, 'ACTOR'],
+      ['POST', { successflag: true }, 'ACTOR'],
+      ['POST', { successflag: 'S' }, ''],
+    ])('does not enqueue for %s with %j and caller %s', async (method, response, username) => {
+      const { interceptor, notifier, worklist } = make();
+      await firstValueFrom(
+        interceptor.intercept(
+          context(
+            method as string,
+            '/api/v1/employee/supervisor',
+            {},
+            username as string,
+            EmployeeController.prototype.supervisorUpdate,
+          ),
+          handler(response),
+        ),
+      );
+      await settle();
+      expect(worklist).not.toHaveBeenCalled();
+      expect(notifier.onSubmitted).not.toHaveBeenCalled();
+    });
+
+    it.each(['letters/apply', 'read?path=/apply', 'dependents/fake/update'])(
+      'does not activate the worklist path from URL text %s',
+      async (path) => {
+        const { interceptor, worklist } = make();
+        await firstValueFrom(
+          interceptor.intercept(context('POST', `/api/v1/${path}`), handler({ successflag: 'S' })),
+        );
+        await settle();
+        expect(worklist).not.toHaveBeenCalled();
+      },
+    );
+
+    it('does not wait for a worklist job or change errors from the business handler', async () => {
+      const { interceptor, worklist } = make();
+      worklist.mockImplementation(() => new Promise(() => undefined));
+      const ctx = context(
+        'POST',
+        '/api/v1/leave/apply',
+        {},
+        'ACTOR',
+        LeaveController.prototype.apply,
+      );
+      await expect(
+        firstValueFrom(interceptor.intercept(ctx, handler({ successflag: 'S' }))),
+      ).resolves.toEqual({ successflag: 'S' });
+      expect(worklist).toHaveBeenCalledTimes(1);
+      worklist.mockClear();
+      await expect(
+        firstValueFrom(
+          interceptor.intercept(ctx, {
+            handle: () => throwError(() => new Error('Oracle failed')),
+          }),
+        ),
+      ).rejects.toThrow('Oracle failed');
+      expect(worklist).not.toHaveBeenCalled();
+    });
+
+    it('catches a rejected worklist job without changing the successful response', async () => {
+      const { interceptor, worklist } = make();
+      worklist.mockRejectedValue(new Error('Worklist unavailable'));
+      const response = { successflag: 'S' };
+      await expect(
+        firstValueFrom(
+          interceptor.intercept(
+            context('POST', '/api/v1/dependents', {}, 'ACTOR', DependentsController.prototype.add),
+            handler(response),
+          ),
+        ),
+      ).resolves.toBe(response);
+      await settle();
+      expect(worklist).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('workflow actions to all recipient devices', () => {

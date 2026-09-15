@@ -1117,3 +1117,96 @@ ISO/compact date inputs remain supported. The Oracle formal is still DATE;
 leave-reference compaction, other fields, and date handling outside these two
 leave endpoints are unchanged. Regression tests cover both conversions,
 parameterized SQL, unchanged input fields, and null-on-unparseable behavior.
+
+## Original-requestor notifications for approval actions (2026-09-15)
+
+The client confirmed that all four successful approval actions notify the
+original requestor's registered devices. Reassign and request-info ALSO retain
+their existing target notification (`assignTo` / `toUsername`). Recipients are
+deduplicated by trimmed, case-insensitive login; the acting user is always
+excluded, including when they are the original requestor. Reassignment tells
+the target `Request reassigned to you` and the original requestor
+`Request reassigned`. Missing request-info target means requestor only.
+
+`NotificationTriggerInterceptor` now captures participants before these Oracle
+actions, using a per-request snapshot and a 2-second lookup wait limit. This
+supersedes the earlier statement that callers never wait for an Oracle
+notification lookup: only FCM delivery remains unawaited. Lookup failure or
+timeout allows the business action to proceed; an unknown requestor is skipped,
+while an explicit target can still be notified. Late lookup completion does not
+replay the action or trigger another notification. Delivery requires
+`successflag === 'S'`; the existing response bodies and DTOs are unchanged.
+
+The existing SQL Server token-store query remains bound by `LoginID`; every
+registered device returned for each recipient is passed to the push sender.
+Employee-number-to-login translation now caches only successful mappings and
+never substitutes an unresolved employee number for a login. Failed lookups
+can be retried on later actions. This remains best-effort delivery, not a durable
+notification queue.
+
+Regression command from `HMC_BackEnd/`:
+`npm.cmd test -- --runInBand modules/notifications modules/approvals core/http/response.interceptor.spec.ts`.
+
+## Worklist notifications for the 13 selected submits (2026-09-15)
+
+`NotificationTriggerInterceptor` uses the public Swagger `DECORATORS.API_OPERATION`
+metadata to override submit notifications for personal-details update, supervisor
+update, leave apply/amend/cancel/return, QID update, ID-card apply, dependent
+add/update/delete/passport apply, and school-fee apply. These operations never
+also call the legacy latest-summary notifier. Other submits and the approval-action
+notifications above are unchanged. No submit DTO, procedure, response, or gateway
+changes are needed.
+
+For these 13 operations, capture only the authenticated username and handler-entry
+and business-success timestamps. There is NO pre-submit notification query. After
+`successflag = S`, poll `XXHMC_SND_WORKLISTS_V` for `FROM_ROLE = :username`,
+`STATUS = 'OPEN'`, and a fixed inclusive `BEGIN_DATE` window from handler entry to
+two minutes after success. Bind native Oracle DATE values; do not widen this to a
+day or fall back to an older summary row. `RECIPIENT_ROLE` is the recipient login;
+`SUBJECT` is the push body, with a generic fallback for blank subjects. Navigation
+uses `NOTIFICATION_ID`, `ITEM_KEY`, and `MESSAGE_TYPE` (not `TYPE`). The existing
+`NotificationsService.notifyUser` queries every registered device by `LoginID`
+and sends to all of its tokens; self-notifications remain excluded.
+
+Discovery has up to six attempts with successive waits of 0/2/5/10/20/30 seconds,
+a two-minute deadline, two workers, and at most 100 queued jobs. Disabled push
+skips discovery. Expired or overflowed queued jobs are dropped, never allowed to
+hold an HTTP response. Shutdown cancels queued work/retry timers and ignores late
+lookup results. Dispatch-attempt deduplication is per notification ID plus
+case-insensitive recipient, capped at 10,000 claims with ten-minute retention;
+in-flight claims cannot be evicted. Polling retries discovery, not business
+procedures or failed push sends.
+
+This is best-effort time-based correlation, not proof of which concurrent submit
+created a row, a durable queue, or cross-instance/exactly-once delivery. Before
+rollout, verify the actual Oracle `BEGIN_DATE` datatype, precision, timezone, and
+query performance against the backend's native date binds. No live submit/push
+or DDL was performed by the automated verification.
+
+Verification from `HMC_BackEnd/`:
+`npm.cmd test -- --runInBand modules/notifications core/http/response.interceptor.spec.ts core/database/base.repository.spec.ts modules/approvals`,
+then `npm.cmd run build`. The notification-folder ESLint baseline still includes
+untouched Prettier/CRLF findings; lint the changed files separately without `--fix`.
+
+## Login employment-details view (supersedes the two ID-based lookups)
+
+Login now makes one Oracle read from `XXHMC_SND_EMPLOYMENT_DETAILS_V`, selecting
+only `JOB`, `JOB_AR`, `DEPARTMENT`, and `DEPARTMENT_AR`, filtered by
+`USER_NAME = :username`. The bound username is the resolved login used for the
+SQL Server employee-master `UserName` lookup, uppercased at the Oracle boundary;
+the original authentication inputs and JWT principal are unchanged.
+
+The response mapping is `JOB` -> `job_title`, `JOB_AR` -> `job_title_ar`,
+`DEPARTMENT` -> `organization_name`, and `DEPARTMENT_AR` -> `organization_name_ar`.
+An Oracle error or missing row falls back to `HMC_SND_LIV_EMP_MASTER_VW.JOB_NAME`
+for both job fields and `FACILITY_NAME` for both organization fields. Blank/null
+columns fall back individually without discarding populated Oracle values.
+
+`JOB_DETAILS_V` and `ORG_DETAILS_V` are no longer queried or registered, so the
+previous login-specific `HMCERP.` qualification and job/facility ID mappings no
+longer apply. The existing employment-view registry name is reused unchanged.
+Bilingual employee names, success-response keys, Arabic invalid-credentials
+messages, and static/dev-bypass behavior remain unchanged.
+
+Regression checks from `HMC_BackEnd/`:
+`npm.cmd test -- --runInBand modules/auth core/audit` and `npm.cmd run build`.

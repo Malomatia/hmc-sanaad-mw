@@ -192,23 +192,28 @@ describe('AuthService bilingual login details', () => {
     employeeNumber: '037400',
     employeeName: 'Test Employee',
     employeeNameAr: 'موظف تجريبي',
-    facilityId: '456',
     facility: 'SQL facility name',
-    jobId: '123',
     jobName: 'SQL job name',
     isEmployee: true,
     isNewUser: false,
   };
 
-  it('returns both employee names and lowercase bilingual job/organization fields', async () => {
+  it('returns both employee names and lowercase bilingual employment-view fields', async () => {
     const { service, ldap, employment, jwt } = makeService();
+    const ora = {
+      isConfigured: jest.fn().mockReturnValue(true),
+      query: jest.fn().mockResolvedValue([
+        {
+          JOB: 'Oracle job',
+          JOB_AR: 'المسمى الوظيفي',
+          DEPARTMENT: 'Oracle organization',
+          DEPARTMENT_AR: 'المؤسسة',
+        },
+      ]),
+    };
+    const repository = new OracleLoginEmploymentRepository(ora as unknown as OracleService);
     jest.mocked(ldap.validate).mockResolvedValueOnce(identity);
-    employment.resolve.mockResolvedValueOnce({
-      jobTitle: 'Oracle job',
-      jobTitleAr: 'المسمى الوظيفي',
-      organizationName: 'Oracle organization',
-      organizationNameAr: 'المؤسسة',
-    });
+    employment.resolve.mockImplementation((employee) => repository.resolve(employee));
 
     const response = await service.login(LOGIN);
 
@@ -224,12 +229,17 @@ describe('AuthService bilingual login details', () => {
       organization_name_ar: 'المؤسسة',
     });
     expect(employment.resolve).toHaveBeenCalledWith(identity);
+    expect(ora.query).toHaveBeenCalledTimes(1);
+    expect(ora.query).toHaveBeenCalledWith(
+      'SELECT JOB, JOB_AR, DEPARTMENT, DEPARTMENT_AR FROM XXHMC_SND_EMPLOYMENT_DETAILS_V WHERE USER_NAME = :username AND ROWNUM <= 1',
+      { username: 'HMC1' },
+    );
     expect(jwt.decode(response.token!)).toMatchObject({ username: 'hmc1', name: 'Test Employee' });
     expect(response).not.toHaveProperty('JOB_TITLE');
     expect(response).not.toHaveProperty('ORGANIZATION_NAME');
   });
 
-  it('still issues tokens with SQL Server names when both Oracle lookups fail', async () => {
+  it('issues tokens with SQL fallbacks when the Oracle employment lookup fails', async () => {
     const { service, ldap, employment, jwt } = makeService();
     const ora = {
       isConfigured: jest.fn().mockReturnValue(true),
@@ -250,7 +260,7 @@ describe('AuthService bilingual login details', () => {
       organization_name: identity.facility,
       organization_name_ar: identity.facility,
     });
-    expect(ora.query).toHaveBeenCalledTimes(2);
+    expect(ora.query).toHaveBeenCalledTimes(1);
     expect(jwt.verify(response.token!)).toMatchObject({ username: 'hmc1' });
     expect(jwt.verify(response.refreshtoken!)).toMatchObject({ username: 'hmc1', typ: 'refresh' });
   });

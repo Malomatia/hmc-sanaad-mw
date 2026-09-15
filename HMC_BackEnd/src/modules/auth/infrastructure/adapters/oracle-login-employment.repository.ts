@@ -7,11 +7,6 @@ import {
   LoginEmploymentPort,
 } from '../../domain/ports/login-employment.port';
 
-interface Labels {
-  english?: string;
-  arabic?: string;
-}
-
 @Injectable()
 export class OracleLoginEmploymentRepository implements LoginEmploymentPort {
   private readonly logger = new Logger(OracleLoginEmploymentRepository.name);
@@ -19,50 +14,26 @@ export class OracleLoginEmploymentRepository implements LoginEmploymentPort {
   constructor(private readonly ora: OracleService) {}
 
   async resolve(identity: EmployeeIdentity): Promise<LoginEmploymentDetails> {
-    const [organization, job] = await Promise.all([
-      this.readLabels(
-        ORACLE_OBJECTS.ORG_DETAILS_V,
-        'ORGANIZATION_ID',
-        ['ORGANIZATION_NAME', 'ORGANIZATION_NAME_AR'],
-        identity.facilityId,
-        identity.facility,
-      ),
-      this.readLabels(
-        ORACLE_OBJECTS.JOB_DETAILS_V,
-        'JOB_ID',
-        ['JOB_TITLE', 'JOB_TITLE_AR'],
-        identity.jobId,
-        identity.jobName,
-      ),
-    ]);
-    return {
-      organizationName: organization.english,
-      organizationNameAr: organization.arabic,
-      jobTitle: job.english,
-      jobTitleAr: job.arabic,
+    const defaults: LoginEmploymentDetails = {
+      organizationName: identity.facility,
+      organizationNameAr: identity.facility,
+      jobTitle: identity.jobName,
+      jobTitleAr: identity.jobName,
     };
-  }
+    const username = text(identity.username)?.toUpperCase();
+    if (!username || !this.ora.isConfigured()) return defaults;
 
-  private async readLabels(
-    view: string,
-    keyColumn: string,
-    columns: readonly [string, string],
-    id: string | undefined,
-    fallback: string | undefined,
-  ): Promise<Labels> {
-    const defaults = { english: fallback, arabic: fallback };
-    const key = id?.trim();
-    if (!key || !/^\d+$/.test(key) || !Number.isSafeInteger(Number(key))) return defaults;
-    if (!this.ora.isConfigured()) return defaults;
-
+    const view = ORACLE_OBJECTS.EMPLOYMENT_DETAILS_V;
     try {
       const [row] = await this.ora.query<Record<string, unknown>>(
-        `SELECT ${columns.join(', ')} FROM ${view} WHERE ${keyColumn} = :id AND ROWNUM <= 1`,
-        { id: Number(key) },
+        `SELECT JOB, JOB_AR, DEPARTMENT, DEPARTMENT_AR FROM ${view} WHERE USER_NAME = :username AND ROWNUM <= 1`,
+        { username },
       );
       return {
-        english: text(row?.[columns[0]]) ?? fallback,
-        arabic: text(row?.[columns[1]]) ?? fallback,
+        organizationName: text(row?.DEPARTMENT) ?? defaults.organizationName,
+        organizationNameAr: text(row?.DEPARTMENT_AR) ?? defaults.organizationNameAr,
+        jobTitle: text(row?.JOB) ?? defaults.jobTitle,
+        jobTitleAr: text(row?.JOB_AR) ?? defaults.jobTitleAr,
       };
     } catch {
       this.logger.warn(`${view} lookup failed; using employee-master fallback.`);

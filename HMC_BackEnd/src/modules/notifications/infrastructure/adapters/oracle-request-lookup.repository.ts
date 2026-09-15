@@ -4,7 +4,12 @@ import { OracleSchemaService } from '@core/database/oracle-schema.service';
 import { BaseOracleRepository } from '@core/database/base.repository';
 import { ORACLE_OBJECTS } from '@shared/constants/oracle-objects';
 import { str } from '@shared/utils/mapper.util';
-import { RequestLookupPort, RequestParticipants } from '../../domain/ports/request-lookup.port';
+import {
+  RequestLookupPort,
+  RequestParticipants,
+  WorklistNotification,
+} from '../../domain/ports/request-lookup.port';
+import * as oracledb from 'oracledb';
 
 type Row = Record<string, unknown>;
 
@@ -33,6 +38,54 @@ export class OracleRequestLookupRepository
 
   constructor(ora: OracleService, schema: OracleSchemaService) {
     super(ora, schema);
+  }
+
+  async findWorklistNotifications(
+    username: string,
+    windowStart: Date,
+    windowEnd: Date,
+  ): Promise<WorklistNotification[] | undefined> {
+    const login = username.trim().toUpperCase();
+    if (
+      !login ||
+      !Number.isFinite(windowStart.getTime()) ||
+      !Number.isFinite(windowEnd.getTime()) ||
+      windowStart > windowEnd
+    )
+      return [];
+
+    return this.safely('findWorklistNotifications', async () => {
+      const rows = await this.query<Row>(
+        `SELECT NOTIFICATION_ID, FROM_ROLE, RECIPIENT_ROLE, SUBJECT,
+                BEGIN_DATE, ITEM_KEY, MESSAGE_TYPE
+           FROM ${ORACLE_OBJECTS.WORKLISTS_V}
+          WHERE FROM_ROLE = :username
+            AND STATUS = 'OPEN'
+            AND BEGIN_DATE >= :window_start
+            AND BEGIN_DATE <= :window_end
+          ORDER BY BEGIN_DATE, NOTIFICATION_ID`,
+        {
+          username: login,
+          window_start: { dir: oracledb.BIND_IN, type: oracledb.DB_TYPE_DATE, val: windowStart },
+          window_end: { dir: oracledb.BIND_IN, type: oracledb.DB_TYPE_DATE, val: windowEnd },
+        },
+      );
+      return rows.flatMap((row) => {
+        const notificationId = str(row, 'NOTIFICATION_ID')?.trim();
+        const recipient = str(row, 'RECIPIENT_ROLE')?.trim();
+        return notificationId && recipient
+          ? [
+              {
+                notificationId,
+                recipient,
+                subject: str(row, 'SUBJECT'),
+                itemKey: str(row, 'ITEM_KEY')?.trim() || undefined,
+                itemType: str(row, 'MESSAGE_TYPE')?.trim() || undefined,
+              },
+            ]
+          : [];
+      });
+    });
   }
 
   async findLatestSubmission(username: string): Promise<RequestParticipants | undefined> {

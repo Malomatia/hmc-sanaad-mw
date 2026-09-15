@@ -238,6 +238,258 @@ describe('RequestNotifier', () => {
     });
   });
 
+  describe('worklist submission jobs', () => {
+    const notifiers: RequestNotifier[] = [];
+    const row = {
+      notificationId: '123',
+      recipient: 'APPROVER',
+      subject: '  Leave request  ',
+      itemKey: '456',
+      itemType: 'HRSSA',
+    };
+
+    beforeEach(() => {
+      jest.useFakeTimers();
+      jest.setSystemTime(new Date('2026-09-15T08:00:00Z'));
+    });
+
+    afterEach(async () => {
+      for (const notifier of notifiers.splice(0)) notifier.onModuleDestroy();
+      await jest.advanceTimersByTimeAsync(0);
+      jest.clearAllTimers();
+      jest.useRealTimers();
+    });
+
+    function makeWorklist(enabled = true) {
+      const findWorklistNotifications = jest.fn().mockResolvedValue([]);
+      const notifyUser = jest.fn().mockResolvedValue(undefined);
+      const notifier = new RequestNotifier(
+        { notifyUser, enabled } as unknown as NotificationsService,
+        { findWorklistNotifications } as unknown as RequestLookupPort,
+      );
+      notifiers.push(notifier);
+      const submit = (username = 'SUBMITTER') =>
+        notifier.onWorklistSubmitted({
+          username,
+          startedAt: Date.now() - 100,
+          succeededAt: Date.now(),
+        });
+      return { notifier, submit, findWorklistNotifications, notifyUser };
+    }
+
+    it('discovers later rows across all six polls with fixed bounds and preserves the subject', async () => {
+      const { submit, findWorklistNotifications, notifyUser } = makeWorklist();
+      const start = Date.now() - 100;
+      const end = Date.now() + 120000;
+      findWorklistNotifications
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([row])
+        .mockResolvedValue([row, { ...row, notificationId: '124', recipient: 'OTHER' }]);
+      await submit(' submitter ');
+      await jest.advanceTimersByTimeAsync(0);
+      expect(notifyUser).not.toHaveBeenCalled();
+      for (const delay of [2000, 5000, 10000, 20000, 30000])
+        await jest.advanceTimersByTimeAsync(delay);
+      expect(findWorklistNotifications).toHaveBeenCalledTimes(6);
+      for (const args of findWorklistNotifications.mock.calls) {
+        expect(args).toEqual(['SUBMITTER', new Date(start), new Date(end)]);
+      }
+      expect(notifyUser).toHaveBeenCalledTimes(2);
+      expect(notifyUser).toHaveBeenCalledWith('APPROVER', {
+        title: 'New request awaiting your approval',
+        body: '  Leave request  ',
+        data: {
+          event: 'APPROVAL_REQUIRED',
+          notificationId: '123',
+          itemKey: '456',
+          itemType: 'HRSSA',
+        },
+      });
+      await jest.advanceTimersByTimeAsync(120000);
+      expect(findWorklistNotifications).toHaveBeenCalledTimes(6);
+    });
+
+    it('deduplicates overlapping jobs by notification and normalized recipient, not notification alone', async () => {
+      const { submit, findWorklistNotifications, notifyUser } = makeWorklist();
+      findWorklistNotifications.mockResolvedValue([
+        row,
+        { ...row, recipient: ' approver ' },
+        { ...row, recipient: 'OTHER' },
+      ]);
+      await Promise.all([submit(), submit()]);
+      await jest.advanceTimersByTimeAsync(67000);
+      expect(notifyUser).toHaveBeenCalledTimes(2);
+      expect(notifyUser).toHaveBeenCalledWith('OTHER', expect.any(Object));
+    });
+
+    it('uses a generic blank-subject body and omits absent navigation fields', async () => {
+      const { submit, findWorklistNotifications, notifyUser } = makeWorklist();
+      findWorklistNotifications.mockResolvedValue([
+        { notificationId: '123', recipient: 'APPROVER', subject: '  ' },
+      ]);
+      await submit();
+      await jest.advanceTimersByTimeAsync(0);
+      expect(notifyUser).toHaveBeenCalledWith('APPROVER', {
+        title: 'New request awaiting your approval',
+        body: 'A request needs your action.',
+        data: { event: 'APPROVAL_REQUIRED', notificationId: '123' },
+      });
+    });
+
+    it('keeps skipping the submitter own devices', async () => {
+      const { submit, findWorklistNotifications, notifyUser } = makeWorklist();
+      findWorklistNotifications.mockResolvedValue([{ ...row, recipient: ' submitter ' }]);
+      await submit();
+      await jest.advanceTimersByTimeAsync(67000);
+      expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    it('does no discovery when the sender is disabled', async () => {
+      const { submit, findWorklistNotifications } = makeWorklist(false);
+      await submit();
+      await jest.advanceTimersByTimeAsync(120000);
+      expect(findWorklistNotifications).not.toHaveBeenCalled();
+    });
+
+    it('retries lookup errors but does not retry failed delivery attempts', async () => {
+      const { submit, findWorklistNotifications, notifyUser } = makeWorklist();
+      findWorklistNotifications
+        .mockRejectedValueOnce(new Error('Oracle unavailable'))
+        .mockResolvedValue([row]);
+      notifyUser.mockRejectedValue(new Error('FCM unavailable'));
+      await expect(submit()).resolves.toBeUndefined();
+      await jest.advanceTimersByTimeAsync(67000);
+      expect(findWorklistNotifications).toHaveBeenCalledTimes(6);
+      expect(notifyUser).toHaveBeenCalledTimes(1);
+    });
+
+    it('caps active lookups at two and the waiting queue at one hundred', async () => {
+      const { submit, findWorklistNotifications, notifier } = makeWorklist();
+      const release: Array<(rows: []) => void> = [];
+      findWorklistNotifications.mockImplementation(
+        () => new Promise((resolve) => release.push(resolve)),
+      );
+      for (let i = 0; i < 103; i++) await submit(`USER_${i}`);
+      await jest.advanceTimersByTimeAsync(0);
+      expect(findWorklistNotifications).toHaveBeenCalledTimes(2);
+      expect(notifier['worklistQueue']).toHaveLength(100);
+      await jest.advanceTimersByTimeAsync(120001);
+      for (const resolve of release) resolve([]);
+      await jest.advanceTimersByTimeAsync(0);
+      expect(findWorklistNotifications).toHaveBeenCalledTimes(2);
+      expect(notifier['worklistQueue']).toHaveLength(0);
+    });
+
+    it('releases workers so waiting jobs can run without exceeding concurrency', async () => {
+      const { submit, findWorklistNotifications } = makeWorklist();
+      await submit('ONE');
+      await submit('TWO');
+      await submit('THREE');
+      await jest.advanceTimersByTimeAsync(0);
+      expect(findWorklistNotifications.mock.calls.map(([username]) => username)).toEqual([
+        'ONE',
+        'TWO',
+      ]);
+      await jest.advanceTimersByTimeAsync(67000);
+      expect(findWorklistNotifications).toHaveBeenCalledWith(
+        'THREE',
+        expect.any(Date),
+        expect.any(Date),
+      );
+    });
+
+    it('skips lookup results arriving after the fixed two-minute deadline', async () => {
+      const { submit, findWorklistNotifications, notifyUser } = makeWorklist();
+      findWorklistNotifications.mockImplementation(
+        () => new Promise((resolve) => setTimeout(() => resolve([row]), 120001)),
+      );
+      await submit();
+      await jest.advanceTimersByTimeAsync(120001);
+      expect(findWorklistNotifications).toHaveBeenCalledTimes(1);
+      expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    it('does not enqueue an already-expired event', async () => {
+      const { notifier, findWorklistNotifications } = makeWorklist();
+      await notifier.onWorklistSubmitted({
+        username: 'SUBMITTER',
+        startedAt: Date.now() - 130000,
+        succeededAt: Date.now() - 120000,
+      });
+      await jest.advanceTimersByTimeAsync(0);
+      expect(findWorklistNotifications).not.toHaveBeenCalled();
+    });
+
+    it('clears retry timers and queued work on shutdown', async () => {
+      const { submit, notifier, findWorklistNotifications, notifyUser } = makeWorklist();
+      await Promise.all([submit(), submit(), submit()]);
+      await jest.advanceTimersByTimeAsync(0);
+      expect(findWorklistNotifications).toHaveBeenCalledTimes(2);
+      notifier.onModuleDestroy();
+      await submit();
+      await jest.advanceTimersByTimeAsync(120000);
+      expect(findWorklistNotifications).toHaveBeenCalledTimes(2);
+      expect(notifyUser).not.toHaveBeenCalled();
+      expect(notifier['worklistTimers'].size).toBe(0);
+      expect(notifier['worklistQueue']).toHaveLength(0);
+    });
+
+    it('does not dispatch a pending lookup result after shutdown', async () => {
+      const { submit, notifier, findWorklistNotifications, notifyUser } = makeWorklist();
+      let release!: (rows: (typeof row)[]) => void;
+      findWorklistNotifications.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            release = resolve;
+          }),
+      );
+      await submit();
+      await jest.advanceTimersByTimeAsync(0);
+      notifier.onModuleDestroy();
+      release([row]);
+      await jest.advanceTimersByTimeAsync(0);
+      expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    it('expires completed claims after ten minutes and bounds the registry capacity', async () => {
+      const { submit, notifier, findWorklistNotifications, notifyUser } = makeWorklist();
+      for (let i = 0; i < 10000; i++)
+        notifier['worklistClaims'].set(`existing-${i}`, {
+          inFlight: false,
+          expiresAt: Date.now() + 600000,
+        });
+      findWorklistNotifications.mockResolvedValue([row]);
+      await submit();
+      await jest.advanceTimersByTimeAsync(67000);
+      expect(notifyUser).not.toHaveBeenCalled();
+      expect(notifier['worklistClaims'].size).toBe(10000);
+      await jest.advanceTimersByTimeAsync(533001);
+      await submit();
+      await jest.advanceTimersByTimeAsync(0);
+      expect(notifyUser).toHaveBeenCalledTimes(1);
+      expect(notifier['worklistClaims'].size).toBe(1);
+    });
+
+    it('never evicts an in-flight claim even after its retention period', async () => {
+      const { submit, findWorklistNotifications, notifyUser } = makeWorklist();
+      findWorklistNotifications.mockResolvedValue([row]);
+      let finish!: () => void;
+      notifyUser.mockImplementation(
+        () =>
+          new Promise<void>((resolve) => {
+            finish = resolve;
+          }),
+      );
+      await submit();
+      await jest.advanceTimersByTimeAsync(600001);
+      await submit();
+      await jest.advanceTimersByTimeAsync(0);
+      expect(notifyUser).toHaveBeenCalledTimes(1);
+      finish();
+      await jest.advanceTimersByTimeAsync(0);
+    });
+  });
+
   describe('Oracle requestor identity', () => {
     function makeOracle(employeeNumber: string) {
       const query = jest

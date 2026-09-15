@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import {
   REQUEST_LOOKUP_PORT,
   RequestLookupPort,
@@ -9,6 +9,30 @@ import { NotificationsService } from './notifications.service';
 
 /** What the workflow decided, as the decision endpoint reports it. */
 export type DecisionOutcome = 'APPROVE' | 'REJECT';
+
+export interface WorklistSubmission {
+  username: string;
+  startedAt: number;
+  succeededAt: number;
+}
+
+interface WorklistJob {
+  username: string;
+  windowStart: Date;
+  windowEnd: Date;
+}
+
+interface WorklistClaim {
+  expiresAt: number;
+  inFlight: boolean;
+}
+
+const WORKLIST_POLL_DELAYS_MS = [0, 2000, 5000, 10000, 20000, 30000];
+const WORKLIST_WINDOW_MS = 120000;
+const WORKLIST_WORKERS = 2;
+const WORKLIST_QUEUE_LIMIT = 100;
+const WORKLIST_CLAIM_LIMIT = 10000;
+const WORKLIST_CLAIM_TTL_MS = 600000;
 
 /**
  * Turns a business event into a notification for the right person.
@@ -22,13 +46,160 @@ export type DecisionOutcome = 'APPROVE' | 'REJECT';
  * notification is a nuisance, a failed submit is a fault.
  */
 @Injectable()
-export class RequestNotifier {
+export class RequestNotifier implements OnModuleDestroy {
   private static readonly log = new Logger(RequestNotifier.name);
+  private readonly worklistQueue: WorklistJob[] = [];
+  private readonly worklistClaims = new Map<string, WorklistClaim>();
+  private readonly worklistTimers = new Map<ReturnType<typeof setTimeout>, () => void>();
+  private activeWorklistJobs = 0;
+  private nextClaimCleanup = 0;
+  private claimsFullWarned = false;
+  private stopping = false;
 
   constructor(
     private readonly notifications: NotificationsService,
     @Inject(REQUEST_LOOKUP_PORT) private readonly requests: RequestLookupPort,
   ) {}
+
+  async onWorklistSubmitted(event: WorklistSubmission): Promise<void> {
+    if (this.stopping || !this.notifications.enabled) return;
+    const username = event.username.trim().toUpperCase();
+    if (
+      !username ||
+      !Number.isFinite(event.startedAt) ||
+      !Number.isFinite(event.succeededAt) ||
+      event.startedAt > event.succeededAt
+    )
+      return;
+    const job = {
+      username,
+      windowStart: new Date(event.startedAt),
+      windowEnd: new Date(event.succeededAt + WORKLIST_WINDOW_MS),
+    };
+    if (!this.worklistJobActive(job)) {
+      RequestNotifier.log.warn('Expired worklist notification job skipped.');
+      return;
+    }
+    if (this.worklistQueue.length >= WORKLIST_QUEUE_LIMIT) {
+      RequestNotifier.log.warn(
+        'Worklist notification queue is full; submission notification skipped.',
+      );
+      return;
+    }
+    this.worklistQueue.push(job);
+    this.drainWorklist();
+  }
+
+  onModuleDestroy(): void {
+    this.stopping = true;
+    this.worklistQueue.length = 0;
+    for (const cancel of this.worklistTimers.values()) cancel();
+  }
+
+  private drainWorklist(): void {
+    while (
+      !this.stopping &&
+      this.activeWorklistJobs < WORKLIST_WORKERS &&
+      this.worklistQueue.length
+    ) {
+      const job = this.worklistQueue.shift()!;
+      if (!this.worklistJobActive(job)) {
+        RequestNotifier.log.warn('Expired or disabled worklist notification job skipped.');
+        continue;
+      }
+      this.activeWorklistJobs++;
+      void this.pollWorklist(job)
+        .catch(() => RequestNotifier.log.warn('Worklist notification job failed.'))
+        .finally(() => {
+          this.activeWorklistJobs--;
+          this.drainWorklist();
+        });
+    }
+  }
+
+  private worklistJobActive(job: WorklistJob): boolean {
+    return !this.stopping && this.notifications.enabled && Date.now() < job.windowEnd.getTime();
+  }
+
+  private async pollWorklist(job: WorklistJob): Promise<void> {
+    for (const delay of WORKLIST_POLL_DELAYS_MS) {
+      if (!this.worklistJobActive(job)) return;
+      await this.waitForWorklist(Math.min(delay, job.windowEnd.getTime() - Date.now()));
+      if (!this.worklistJobActive(job)) return;
+      const rows = await this.requests
+        .findWorklistNotifications(job.username, job.windowStart, job.windowEnd)
+        .catch(() => {
+          RequestNotifier.log.warn('Worklist notification lookup failed.');
+          return undefined;
+        });
+      if (!this.worklistJobActive(job)) return;
+      for (const row of rows ?? []) {
+        if (!this.worklistJobActive(job)) return;
+        const recipient = row.recipient.trim();
+        if (!row.notificationId || !recipient || this.same(recipient, job.username)) continue;
+        const claim = this.claimWorklistNotification(row.notificationId, recipient);
+        if (!claim) continue;
+        try {
+          await this.notifications.notifyUser(recipient, {
+            title: 'New request awaiting your approval',
+            body: row.subject?.trim() ? row.subject : 'A request needs your action.',
+            data: {
+              event: 'APPROVAL_REQUIRED',
+              notificationId: row.notificationId,
+              ...(row.itemKey ? { itemKey: row.itemKey } : {}),
+              ...(row.itemType ? { itemType: row.itemType } : {}),
+            },
+          });
+        } catch {
+          RequestNotifier.log.warn('Worklist notification dispatch failed.');
+        } finally {
+          claim.inFlight = false;
+          claim.expiresAt = Date.now() + WORKLIST_CLAIM_TTL_MS;
+        }
+      }
+    }
+  }
+
+  private waitForWorklist(delay: number): Promise<void> {
+    if (this.stopping || delay <= 0) return Promise.resolve();
+    return new Promise((resolve) => {
+      const done = () => {
+        clearTimeout(timer);
+        this.worklistTimers.delete(timer);
+        resolve();
+      };
+      const timer = setTimeout(done, delay);
+      timer.unref();
+      this.worklistTimers.set(timer, done);
+    });
+  }
+
+  private claimWorklistNotification(
+    notificationId: string,
+    recipient: string,
+  ): WorklistClaim | undefined {
+    const now = Date.now();
+    if (now >= this.nextClaimCleanup) {
+      for (const [key, claim] of this.worklistClaims) {
+        if (!claim.inFlight && claim.expiresAt <= now) this.worklistClaims.delete(key);
+      }
+      this.nextClaimCleanup = now + 60000;
+    }
+    const key = JSON.stringify([notificationId, recipient.toUpperCase()]);
+    const existing = this.worklistClaims.get(key);
+    if (existing && (existing.inFlight || existing.expiresAt > now)) return undefined;
+    this.worklistClaims.delete(key);
+    if (this.worklistClaims.size >= WORKLIST_CLAIM_LIMIT) {
+      if (!this.claimsFullWarned)
+        RequestNotifier.log.warn('Worklist notification registry is full; dispatch skipped.');
+      this.claimsFullWarned = true;
+      return undefined;
+    }
+    this.claimsFullWarned = false;
+    const claim = { expiresAt: now + WORKLIST_CLAIM_TTL_MS, inFlight: true };
+    this.worklistClaims.set(key, claim);
+    return claim;
+  }
 
   async captureRequest(notificationId: string): Promise<RequestParticipants> {
     return {

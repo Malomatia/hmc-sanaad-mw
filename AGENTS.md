@@ -1084,3 +1084,36 @@ with `Invalid credentials.` for English and the client's exact text
 invalid-credentials message; bilingual success fields and other auth endpoints
 are unchanged. HTTP regressions use the real controller/service with mocked
 MPIN verification in `auth.service.spec.ts`.
+
+## Login Oracle view owner
+
+The server reported ORA-01031 for the unqualified login employment views while
+local lookups worked. At the client's request, only `JOB_DETAILS_V` and
+`ORG_DETAILS_V` in `ORACLE_OBJECTS` are now qualified with `HMCERP.`. The ID
+mappings and employee-master fallbacks are unchanged. Qualification selects the
+owner's objects; it does not grant SELECT privileges. Server verification with
+the API's Oracle account is still required.
+
+## Leave-amend explicit date conversion
+
+Only `/leave/amend` formats `p_new_end_date` as `DD-MON-YYYY` and binds that text
+through `TO_DATE(:p_new_end_date, 'DD-MON-YYYY', 'NLS_DATE_LANGUAGE=English')`.
+For example, `2026-09-16` becomes `16-SEP-2026`, not the illustrative
+`13-SEP-2026`. Formatting uses UTC calendar components; request values are never
+interpolated into SQL. This supersedes native JS-Date binding for this parameter
+only: its Oracle contract remains DATE and all other date binds are unchanged.
+The existing parser's accepted formats and null-on-unparseable behavior remain.
+`SubmitProcOptions.wrap` now also accepts a code-owned bind-expression callback;
+existing string function wrappers for phone/dependent arrays are unchanged.
+Regression coverage is in `core/database/confirmed-submit-contracts.spec.ts`.
+
+## Return-from-leave explicit date conversion
+
+The same conversion now also applies to `/leave/return`'s `p_return_date`:
+mobile sends `30-Sep-2026` (not a SQL expression), the API binds `30-SEP-2026`,
+and Oracle receives
+`TO_DATE(:p_return_date, 'DD-MON-YYYY', 'NLS_DATE_LANGUAGE=English')`.
+ISO/compact date inputs remain supported. The Oracle formal is still DATE;
+leave-reference compaction, other fields, and date handling outside these two
+leave endpoints are unchanged. Regression tests cover both conversions,
+parameterized SQL, unchanged input fields, and null-on-unparseable behavior.

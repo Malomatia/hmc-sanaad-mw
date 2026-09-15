@@ -95,3 +95,13 @@ export function parseOracleDate(value: unknown): Date | null {
   const parsed = new Date(s);
   return isNaN(parsed.getTime()) ? null : parsed;
 }
+
+export function formatOracleDisplayDate(value: unknown): string | null {
+  const date = parseOracleDate(value);
+  if (!date) return null;
+  return [
+    String(date.getUTCDate()).padStart(2, '0'),
+    MONTHS[date.getUTCMonth()].slice(0, 3).toUpperCase(),
+    String(date.getUTCFullYear()).padStart(4, '0'),
+  ].join('-');
+}

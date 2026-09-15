@@ -5,7 +5,7 @@ import { OracleSchemaService } from '@core/database/oracle-schema.service';
 import { BaseOracleRepository } from '@core/database/base.repository';
 import { sanitizeOracleMessage } from '@core/http/error-category';
 import { SubmitResult } from '@shared/domain/submit-result';
-import { parseOracleDate } from '@shared/utils/date.util';
+import { formatOracleDisplayDate, parseOracleDate } from '@shared/utils/date.util';
 import { col, dateStr, pruneUndefined, str, strAr } from '@shared/utils/mapper.util';
 import { ORACLE_OBJECTS } from '@shared/constants/oracle-objects';
 import { USERNAME_KEY_CANDIDATES } from '@shared/constants/oracle-columns';
@@ -217,7 +217,14 @@ export class LeaveOracleRepository extends BaseOracleRepository implements Leave
   }
 
   async amend(cmd: LeaveMutationCommand): Promise<SubmitResult> {
-    return this.callSubmitProc(ORACLE_OBJECTS.HR_LEAV_AMEND_PR, LEAVE_AMEND_PARAMS, this.values(cmd));
+    const values = this.values(cmd);
+    values.p_new_end_date = formatOracleDisplayDate(values.p_new_end_date);
+    return this.callSubmitProc(ORACLE_OBJECTS.HR_LEAV_AMEND_PR, LEAVE_AMEND_PARAMS, values, undefined, {
+      wrap: {
+        p_new_end_date: (bind) =>
+          `TO_DATE(${bind}, 'DD-MON-YYYY', 'NLS_DATE_LANGUAGE=English')`,
+      },
+    });
   }
 
   async cancel(cmd: LeaveMutationCommand): Promise<SubmitResult> {
@@ -235,7 +242,12 @@ export class LeaveOracleRepository extends BaseOracleRepository implements Leave
       const compact = LeaveOracleRepository.compactLeaveRef(values[field]);
       if (compact !== undefined) values[field] = compact;
     }
-    return this.callSubmitProc(ORACLE_OBJECTS.RET_FRM_LEAV_PR, LEAVE_RETURN_PARAMS, values);
+    values.p_return_date = formatOracleDisplayDate(values.p_return_date);
+    return this.callSubmitProc(ORACLE_OBJECTS.RET_FRM_LEAV_PR, LEAVE_RETURN_PARAMS, values, undefined, {
+      wrap: {
+        p_return_date: (bind) => `TO_DATE(${bind}, 'DD-MON-YYYY', 'NLS_DATE_LANGUAGE=English')`,
+      },
+    });
   }
 
   /**

@@ -45,7 +45,7 @@ describe('OracleLoginEmploymentRepository', () => {
   beforeEach(() => jest.spyOn(Logger.prototype, 'warn').mockImplementation());
   afterEach(() => jest.restoreAllMocks());
 
-  it('binds FACILITY_ID to ORGANIZATION_ID and JOB_ID to JOB_ID, returning both languages', async () => {
+  it('uses HMCERP views with corresponding facility/job IDs and returns both languages', async () => {
     const { ora, repository } = makeRepository();
 
     await expect(repository.resolve(IDENTITY)).resolves.toEqual({
@@ -56,11 +56,11 @@ describe('OracleLoginEmploymentRepository', () => {
     });
     expect(ora.query).toHaveBeenCalledTimes(2);
     expect(ora.query).toHaveBeenCalledWith(
-      'SELECT ORGANIZATION_NAME, ORGANIZATION_NAME_AR FROM XXHMC_SND_ORG_DETAILS_V WHERE ORGANIZATION_ID = :id AND ROWNUM <= 1',
+      'SELECT ORGANIZATION_NAME, ORGANIZATION_NAME_AR FROM HMCERP.XXHMC_SND_ORG_DETAILS_V WHERE ORGANIZATION_ID = :id AND ROWNUM <= 1',
       { id: 456 },
     );
     expect(ora.query).toHaveBeenCalledWith(
-      'SELECT JOB_TITLE, JOB_TITLE_AR FROM XXHMC_SND_JOB_DETAILS_V WHERE JOB_ID = :id AND ROWNUM <= 1',
+      'SELECT JOB_TITLE, JOB_TITLE_AR FROM HMCERP.XXHMC_SND_JOB_DETAILS_V WHERE JOB_ID = :id AND ROWNUM <= 1',
       { id: 123 },
     );
   });
@@ -90,7 +90,11 @@ describe('OracleLoginEmploymentRepository', () => {
     },
   );
 
-  it.each(['ORA-01013: operation cancelled', 'Oracle pool is unavailable'])(
+  it.each([
+    'ORA-01013: operation cancelled',
+    'ORA-01031: insufficient privileges',
+    'Oracle pool is unavailable',
+  ])(
     'returns both SQL fallback pairs on %s',
     async (message) => {
       const { ora, repository } = makeRepository();

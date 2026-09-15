@@ -263,7 +263,8 @@ export const LEAVE_AMEND_BODY = {
       p_new_end_date: {
         type: 'string',
         example: '2026-03-13',
-        description: 'New end date (yyyy-MM-dd or dd-Mon-yyyy) — bound as a DATE.',
+        description:
+          'New end date (yyyy-MM-dd or dd-Mon-yyyy) — formatted as DD-MON-YYYY and bound through TO_DATE with English month names.',
       },
       p_comments: { type: 'string', example: 'Extending by one day.', nullable: true },
       ...attachmentProperties(),
@@ -327,7 +328,8 @@ export const LEAVE_RETURN_BODY = {
       p_return_date: {
         type: 'string',
         example: '20-Apr-2026',
-        description: 'Return date (yyyy-MM-dd or dd-Mon-yyyy) — bound as a DATE.',
+        description:
+          'Return date (yyyy-MM-dd or dd-Mon-yyyy) — formatted as DD-MON-YYYY and bound through TO_DATE with English month names.',
       },
       p_comments: { type: 'string', example: 'Returned early.', nullable: true },
       ...attachmentProperties(),

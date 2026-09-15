@@ -113,22 +113,75 @@ describe('Confirmed submit contracts (2026-09-14 export)', () => {
     expect(binds.p_attachment1).toEqual({ type: oracledb.DB_TYPE_BLOB, val: Buffer.from('x') });
   });
 
-  it('HR_LEAV_AMEND_PR / RET_FRM_LEAV_PR: the dates are DATE formals', async () => {
+  it.each([
+    ['2026-09-16', '16-SEP-2026'],
+    ['2026-09-13', '13-SEP-2026'],
+    ['30-Sep-2026', '30-SEP-2026'],
+    ['2026-09-30', '30-SEP-2026'],
+    ['13-MAR-2026', '13-MAR-2026'],
+    [' 16-sep-2026 ', '16-SEP-2026'],
+    ['20260916', '16-SEP-2026'],
+    ['2028-02-29', '29-FEB-2028'],
+    ['2026-01-01', '01-JAN-2026'],
+  ])('amend and return convert %s through bound TO_DATE expressions', async (input, expected) => {
     const { ora, schema, call } = make();
     const repo = new LeaveOracleRepository(ora, schema);
-    await repo.amend({ username: 'TESTUSER', lang: 'en', fields: { p_leave_type: 'Annual Leave', p_leave_to_amend: 'x', p_new_end_date: '13-MAR-2026' } });
-    await repo.returnFromLeave({ username: 'TESTUSER', lang: 'en', fields: { p_leave_details: '56949953', p_return_date: '20-Apr-2026' } });
+    const fields = {
+      p_leave_type: 'Annual Leave',
+      p_leave_to_amend: 'Annual Leave|12-SEP-2026|13-SEP-2026',
+      p_new_end_date: input,
+    };
+    const returnFields = { p_leave_details: '56949953', p_return_date: input };
+    await repo.amend({ username: 'TESTUSER', lang: 'en', fields });
+    await repo.returnFromLeave({ username: 'TESTUSER', lang: 'en', fields: returnFields });
     const [amendSql, amend] = call.mock.calls[0];
     const [returnSql, ret] = call.mock.calls[1];
     expect(amendSql).toContain('XXHMC_SND_HR_LEAV_AMEND_PR(');
+    expect(amendSql).toContain(
+      "p_new_end_date => TO_DATE(:p_new_end_date, 'DD-MON-YYYY', 'NLS_DATE_LANGUAGE=English')",
+    );
+    expect(amendSql).not.toContain(expected);
     expect(Object.keys(amend)).toHaveLength(28);
-    expect(amend.p_new_end_date).toEqual(DATE('2026-03-13'));
+    expect(amend.p_new_end_date).toBe(expected);
+    expect(amend.p_leave_to_amend).toBe(fields.p_leave_to_amend);
+    expect(fields.p_new_end_date).toBe(input);
     expect(returnSql).toContain('XXHMC_SND_RET_FRM_LEAV_PR(');
+    expect(returnSql).toContain(
+      "p_return_date => TO_DATE(:p_return_date, 'DD-MON-YYYY', 'NLS_DATE_LANGUAGE=English')",
+    );
+    expect(returnSql).not.toContain(expected);
     expect(Object.keys(ret)).toHaveLength(29);
-    expect(ret.p_return_date).toEqual(DATE('2026-04-20'));
+    expect(ret.p_return_date).toBe(expected);
     expect(ret.p_leave_details).toBe('56949953');
+    expect(returnFields.p_return_date).toBe(input);
     for (const b of [amend, ret]) expect(b).not.toHaveProperty('p_language');
   });
+
+  it.each([null, undefined, '', ' ', 'not-a-date', "2026-09-16'); END; --"])(
+    'amend and return preserve the null bind for unparseable input %s',
+    async (input) => {
+      const { ora, schema, call } = make();
+      const repo = new LeaveOracleRepository(ora, schema);
+      await repo.amend({
+        username: 'TESTUSER',
+        lang: 'en',
+        fields: { p_leave_type: 'Annual Leave', p_leave_to_amend: 'x', p_new_end_date: input },
+      });
+      await repo.returnFromLeave({
+        username: 'TESTUSER',
+        lang: 'en',
+        fields: { p_leave_details: '56949953', p_return_date: input },
+      });
+      for (const [index, param] of ['p_new_end_date', 'p_return_date'].entries()) {
+        const [sql, binds] = call.mock.calls[index];
+        expect(sql).toContain(
+          `${param} => TO_DATE(:${param}, 'DD-MON-YYYY', 'NLS_DATE_LANGUAGE=English')`,
+        );
+        expect(binds[param]).toBeNull();
+        expect(sql).not.toContain("2026-09-16'); END; --");
+      }
+    },
+  );
 
   it('PASS_DTL_PR: issue/expiry are DATE formals, no p_language', async () => {
     const { ora, schema, issued } = make();

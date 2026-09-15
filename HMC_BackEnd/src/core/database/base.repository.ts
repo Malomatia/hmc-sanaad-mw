@@ -40,7 +40,7 @@ export interface SubmitProcOptions {
    * business error "Phone type doesnot exist" for every value — the type was
    * never the problem, the empty array was.
    */
-  wrap?: Record<string, string>;
+  wrap?: Record<string, string | ((bind: string) => string)>;
 }
 
 export interface ResolvedKeyReadOptions {
@@ -399,7 +399,13 @@ export abstract class BaseOracleRepository {
     }
 
     const namedArgs = names
-      .map((n) => (wrap[n] ? `${n} => ${wrap[n]}(:${n})` : `${n} => :${n}`))
+      .map((n) => {
+        const wrapper = wrap[n];
+        const bind = `:${n}`;
+        const expression =
+          typeof wrapper === 'function' ? wrapper(bind) : wrapper ? `${wrapper}(${bind})` : bind;
+        return `${n} => ${expression}`;
+      })
       .join(',\n          ');
     const out = await this.call<Record<string, any>>(
       `BEGIN ${object}(\n          ${namedArgs}); END;`,

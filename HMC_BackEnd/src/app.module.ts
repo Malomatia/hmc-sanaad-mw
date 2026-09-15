@@ -14,7 +14,7 @@ import { SchoolFeesModule } from '@modules/school-fees/school-fees.module';
 import { AppointmentsModule } from '@modules/appointments/appointments.module';
 import { AnnualTicketModule } from '@modules/annual-ticket/annual-ticket.module';
 import { ApprovalsModule } from '@modules/approvals/approvals.module';
-
+import { DemoModule } from './modules/demo/demo.module';
 /**
  * Root module. Imports core cross-cutting concerns, the shared lookups kernel,
  * and the 14 feature modules (one per Sanaad bounded context).
@@ -38,6 +38,7 @@ import { ApprovalsModule } from '@modules/approvals/approvals.module';
     AppointmentsModule,
     AnnualTicketModule,
     ApprovalsModule,
+    DemoModule,
   ],
 })
 export class AppModule {}

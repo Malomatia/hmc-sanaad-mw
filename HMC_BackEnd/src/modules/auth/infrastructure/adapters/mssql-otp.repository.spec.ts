@@ -73,7 +73,7 @@ describe('MssqlOtpRepository', () => {
         }),
       );
       const otp = (db.execute.mock.calls[1][1] as { otp: string }).otp;
-      expect(delivery.sendOtpSms).toHaveBeenCalledWith('77861234', otp, 'ONBOARDING', 'en');
+      expect(delivery.sendOtpSms).toHaveBeenCalledWith('77861234', otp, 'ONBOARDING', 'en', undefined);
     });
 
     describe.each(['ONBOARDING', 'FORGOT_MPIN'] as const)('%s SMS language', (purpose) => {
@@ -87,7 +87,13 @@ describe('MssqlOtpRepository', () => {
           await repo.send({ ...SEND, purpose, lang });
 
           const otp = (db.execute.mock.calls[0][1] as { otp: string }).otp;
-          expect(delivery.sendOtpSms).toHaveBeenCalledWith('77861234', otp, purpose, lang ?? 'en');
+          expect(delivery.sendOtpSms).toHaveBeenCalledWith(
+            '77861234',
+            otp,
+            purpose,
+            lang ?? 'en',
+            undefined,
+          );
         },
       );
     });
@@ -247,6 +253,7 @@ describe('MssqlOtpRepository', () => {
           otp,
           'ONBOARDING',
           'en',
+          undefined,
         );
         expect(emailDelivery.sendOtpEmail).not.toHaveBeenCalled();
       } else {

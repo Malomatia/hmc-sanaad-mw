@@ -177,6 +177,7 @@ export interface SmsConfig {
   timeoutMs: number;
   /** Message body; `{otp}` is substituted with the raw OTP at send time. */
   messageTemplate: string;
+  forgetMessageTemplate: string;
 }
 
 /**
@@ -668,6 +669,7 @@ export default (): RootConfig => ({
     messageTemplate:
       process.env.SMS_MESSAGE_TEMPLATE ??
       'OTP to register for Sanaad App is {otp}\n\nرمز التحقق للتسجيل في تطبيق سند هو {otp}',
+    forgetMessageTemplate: process.env.SMS_FORGET_MESSAGE_TEMPLATE ?? '',
   },
   email: {
     smtpHost: process.env.SMTP_HOST ?? '',

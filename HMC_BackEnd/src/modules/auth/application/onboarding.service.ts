@@ -218,6 +218,7 @@ export class OnboardingService {
           imei: dto.imeinumber,
           purpose: 'ONBOARDING',
           lang,
+          smsTemplate: 'forget',
           appName: dto.appname,
           appVersion: dto.version,
           appDatetime: dto.sysdate,

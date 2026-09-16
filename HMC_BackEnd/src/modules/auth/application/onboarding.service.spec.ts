@@ -1,4 +1,10 @@
 import { ConfigService } from '@nestjs/config';
+import configuration from '@core/config/configuration';
+import { MssqlService } from '@core/database/mssql.service';
+import { MotcSmsDbService } from '@core/database/motc-sms-db.service';
+import { MssqlOtpRepository } from '../infrastructure/adapters/mssql-otp.repository';
+import { MotcSmsOtpRepository } from '../infrastructure/adapters/motc-sms-otp.repository';
+import { MotcPushOtpDeliveryAdapter } from '../infrastructure/adapters/motc-push-otp-delivery.adapter';
 import { AuditService } from '@core/audit/audit.service';
 import { safePreview } from '@core/logging/sensitive-data.util';
 import { OnboardingService } from './onboarding.service';
@@ -70,6 +76,93 @@ describe.each(['validateUser', 'sendOtp'] as const)('OnboardingService.%s langua
     expect(otp.send).toHaveBeenCalledWith(
       expect.objectContaining({ email: IDENTITY.email, lang: lang ?? 'en' }),
     );
+  });
+});
+
+describe.each(['legacy', 'motc'] as const)('%s store SMS insertion', (store) => {
+  describe.each(['validateUser', 'sendOtp'] as const)('%s', (method) => {
+    it.each(['en', 'ar'] as const)('uses the template and shared fields for %s', async (lang) => {
+      const defaults = configuration();
+      const config = new ConfigService({
+        app: { nodeEnv: 'development' },
+        auth: { disabled: false },
+        otp: { ...defaults.otp, store, staticValue: '012345', charset: 'numeric', inResponse: true },
+        sms: {
+          ...defaults.sms,
+          messageTemplate: 'Register [{otp}].\\n\\nRegistration code: {otp}',
+          forgetMessageTemplate: 'Reset [{otp}].\\n\\nReset code: {otp}',
+        },
+        motcSms: {
+          ...defaults.motcSms,
+          table: 'MOTC_SMS_PushTable',
+          appId: 'old-app',
+          fromAddress: 'old-sender',
+          messageExpireMinutes: '9',
+          businessParam1: '',
+          businessParam2: '',
+        },
+      });
+      const usersDb = {
+        query: jest.fn().mockResolvedValue([]),
+        execute: jest.fn().mockResolvedValue({ rowsAffected: 1, rows: [{ SeqNo: 42 }] }),
+      } as unknown as jest.Mocked<MssqlService>;
+      const smsDb = {
+        query: jest.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([{ NextId: 42 }]),
+        execute: jest.fn().mockResolvedValue({ rowsAffected: 1, rows: [] }),
+      } as unknown as jest.Mocked<MotcSmsDbService>;
+      const emailDelivery = { sendOtpEmail: jest.fn() };
+      const otp =
+        store === 'legacy'
+          ? new MssqlOtpRepository(
+              usersDb,
+              new MotcPushOtpDeliveryAdapter(smsDb, config),
+              emailDelivery,
+              config,
+            )
+          : new MotcSmsOtpRepository(smsDb, emailDelivery, config);
+      const { ldap, devices } = makeService();
+      const audit = { lifecycle: jest.fn() } as unknown as AuditService;
+      const service = new OnboardingService(ldap, otp, devices, audit, config);
+
+      const result = await service[method]({ ...DTO, phonenumber: IDENTITY.phoneNumber }, lang);
+
+      const expectedBody =
+        method === 'validateUser'
+          ? 'Register [012345].\n\nRegistration code: 012345'
+          : 'Reset [012345].\n\nReset code: 012345';
+      expect(smsDb.execute).toHaveBeenCalledTimes(1);
+      expect(smsDb.execute).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO MOTC_SMS_PushTable'),
+        expect.objectContaining({
+          messageBody: expectedBody,
+          serviceId: 'Sanaad',
+          fromAddress: 'Sanaad',
+          applicationId: 'Sanaad',
+          messageExpireMinutes: '9',
+          toAddress: IDENTITY.phoneNumber,
+        }),
+      );
+      expect(result).toMatchObject({ status: 'success', requestid: '42', otp: '012345' });
+      expect(emailDelivery.sendOtpEmail).not.toHaveBeenCalled();
+      if (store === 'motc') {
+        const restarted = new MotcSmsOtpRepository(smsDb, emailDelivery, config);
+        const verify = { username: DTO.username, imei: DTO.imeinumber, requestId: '42', otp: '012345' };
+        smsDb.query.mockResolvedValue([
+          { MessageID: 42, DiffInSeconds: 10, MessageBody: expectedBody.replace('012345', '987654') },
+        ]);
+        await expect(restarted.verify(verify)).resolves.toBe(false);
+        smsDb.query.mockResolvedValue([
+          { MessageID: 42, DiffInSeconds: 10, MessageBody: expectedBody },
+        ]);
+        await expect(restarted.verify(verify)).resolves.toBe(true);
+        await expect(restarted.verify(verify)).resolves.toBe(false);
+      } else {
+        expect(usersDb.execute).toHaveBeenCalledWith(
+          expect.any(String),
+          expect.objectContaining({ requestType: 'USER_REG' }),
+        );
+      }
+    });
   });
 });
 

@@ -1380,3 +1380,22 @@ production responses for all three initiate outcomes, unchanged OTP destinations
 missing/formatted contact values, nested redaction, and the wire-versus-log
 boundary. Run `npm.cmd test -- --runInBand modules/auth core/audit
 core/http/response.interceptor.spec.ts` and `npm.cmd run build` from `HMC_BackEnd/`.
+
+## Initiate and send-OTP SMS insertion
+
+`/auth/initiate` uses `SMS_MESSAGE_TEMPLATE`; `/auth/send-otp` selects
+`SMS_FORGET_MESSAGE_TEMPLATE`. An unset/empty forget template falls back to the
+registration template. Both normalize literal `\n` escapes and replace every
+`{otp}`, independent of request language. Docker Compose forwards the new setting.
+The selection is internal SMS metadata, not a client field or a change to OTP
+purpose: legacy `RequestType`, email delivery, response exposure, validation,
+and pending-code reuse stay unchanged. A pending legacy OTP does not queue a
+second SMS.
+
+Both MOTC insertion adapters fix `ServiceID`, `FromAddress`, and `ApplicationID`
+to the exact string `Sanaad`, ignoring the older `MOTC_SMS_APP_ID` and
+`MOTC_SMS_FROM_ADDRESS` settings for these inserts. Both endpoints retain the
+same `MOTC_SMS_MESSAGE_EXPIRE_MINUTES` (default `5`), separate from OTP TTL.
+The alternate `OTP_STORE=motc` verifies stored messages against either template,
+including after a process restart; no table/schema change is required.
+Regression tests use mocked databases, not real SMS delivery.

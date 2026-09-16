@@ -233,15 +233,15 @@ describe('MotcSmsOtpRepository', () => {
         toAddress: '77861234',
         processedState: '0',
         priority: '1',
-        serviceId: '77',
+        serviceId: 'Sanaad',
         subjectId: 'Sanaad OTP',
         languageId: '1',
         recipientAddressType: '1',
         messageExpireMinutes: '5',
         customerId: null,
-        fromAddress: '77', // defaults to the AppId, as in the client's INSERT
+        fromAddress: 'Sanaad', // defaults to the AppId, as in the client's INSERT
         maskMessageLog: '1',
-        applicationId: '77',
+        applicationId: 'Sanaad',
         businessParam1: 'hmc1', // username correlation
         businessParam2: 'imei-1', // device correlation
       });

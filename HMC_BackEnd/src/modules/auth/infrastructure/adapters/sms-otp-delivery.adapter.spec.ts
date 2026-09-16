@@ -18,6 +18,7 @@ const CONFIG: SmsConfig = {
   senderId: 'HMC',
   timeoutMs: 25000,
   messageTemplate: TEMPLATE,
+  forgetMessageTemplate: '',
 };
 
 const ok = (): AxiosResponse =>
@@ -135,6 +136,24 @@ describe.each(['http', 'motc'] as const)('%s bilingual SMS delivery', (transport
     expect(message()).not.toContain('{otp}');
   });
 
+  it.each(['\n\n', '\\n\\n'])('renders the forget template with newlines %j', async (separator) => {
+    const { adapter, message } = makeDelivery(transport, {
+      forgetMessageTemplate: `Reset [{otp}].${separator}Reset code: {otp}`,
+    });
+
+    await adapter.sendOtpSms('77861234', '012345', 'ONBOARDING', 'ar', 'forget');
+
+    expect(message()).toBe('Reset [012345].\n\nReset code: 012345');
+  });
+
+  it('falls back to the registration template when the forget template is unset', async () => {
+    const { adapter, message } = makeDelivery(transport);
+
+    await adapter.sendOtpSms('77861234', 'AB2C34', 'ONBOARDING', 'en', 'forget');
+
+    expect(message()).toBe(TEMPLATE.replace(/\{otp\}/g, 'AB2C34'));
+  });
+
   it('still supports a custom single-placeholder template', async () => {
     const { adapter, message } = makeDelivery(transport, { messageTemplate: 'Code: {otp}' });
 
@@ -145,7 +164,7 @@ describe.each(['http', 'motc'] as const)('%s bilingual SMS delivery', (transport
 });
 
 describe('SMS template configuration', () => {
-  const keys = ['SMS_MESSAGE_TEMPLATE', 'SMS_MESSAGE_TEMPLATE_AR'];
+  const keys = ['SMS_MESSAGE_TEMPLATE', 'SMS_FORGET_MESSAGE_TEMPLATE', 'SMS_MESSAGE_TEMPLATE_AR'];
   const saved: Record<string, string | undefined> = {};
 
   beforeEach(() => {
@@ -169,6 +188,31 @@ describe('SMS template configuration', () => {
       cfg.messageTemplate,
     );
   });
+
+  it('keeps the forget template optional in runtime and environment validation', () => {
+    expect(configuration().sms.forgetMessageTemplate).toBe('');
+    const schema = envValidationSchema.extract('SMS_FORGET_MESSAGE_TEMPLATE');
+    expect(schema.validate(undefined).value).toBe('');
+    expect(schema.validate('').error).toBeUndefined();
+  });
+
+  it.each(['http', 'motc'] as const)(
+    'renders the forget environment override through %s without changing registration',
+    async (transport) => {
+      process.env.SMS_MESSAGE_TEMPLATE = 'Register: {otp}';
+      process.env.SMS_FORGET_MESSAGE_TEMPLATE = 'Reset: {otp}\\n\\nReset code: {otp}';
+      const { messageTemplate, forgetMessageTemplate } = configuration().sms;
+      const templates = { messageTemplate, forgetMessageTemplate };
+      const registration = makeDelivery(transport, templates);
+      const reset = makeDelivery(transport, templates);
+
+      await registration.adapter.sendOtpSms('77861234', '012345', 'ONBOARDING');
+      await reset.adapter.sendOtpSms('77861234', '012345', 'ONBOARDING', 'ar', 'forget');
+
+      expect(registration.message()).toBe('Register: 012345');
+      expect(reset.message()).toBe('Reset: 012345\n\nReset code: 012345');
+    },
+  );
 
   it.each(['http', 'motc'] as const)(
     'renders the server environment override through %s',

@@ -4,7 +4,8 @@ import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import { SmsConfig } from '@core/config/configuration';
 import { OtpDeliveryPort } from '../../domain/ports/otp-delivery.port';
-import { OtpPurpose } from '../../domain/ports/otp.port';
+import { OtpPurpose, OtpSmsTemplate } from '../../domain/ports/otp.port';
+import { Lang } from '@shared/domain/lang';
 
 /**
  * Generic, config-driven SMS gateway adapter for OTP delivery (OtpDeliveryPort).
@@ -31,7 +32,13 @@ export class SmsOtpDeliveryAdapter implements OtpDeliveryPort {
     this.isProduction = config.get<string>('app.nodeEnv') === 'production';
   }
 
-  async sendOtpSms(phoneNumber: string, otp: string, purpose: OtpPurpose): Promise<void> {
+  async sendOtpSms(
+    phoneNumber: string,
+    otp: string,
+    purpose: OtpPurpose,
+    _lang?: Lang,
+    smsTemplate?: OtpSmsTemplate,
+  ): Promise<void> {
     const masked = SmsOtpDeliveryAdapter.maskPhone(phoneNumber);
     if (!this.cfg.baseUrl) {
       if (this.isProduction) {
@@ -42,7 +49,11 @@ export class SmsOtpDeliveryAdapter implements OtpDeliveryPort {
       return;
     }
 
-    const message = this.cfg.messageTemplate.replace(/\\n/g, '\n').replace(/\{otp\}/g, otp);
+    const template =
+      smsTemplate === 'forget'
+        ? this.cfg.forgetMessageTemplate || this.cfg.messageTemplate
+        : this.cfg.messageTemplate;
+    const message = template.replace(/\\n/g, '\n').replace(/\{otp\}/g, otp);
     try {
       await firstValueFrom(
         this.http.post(

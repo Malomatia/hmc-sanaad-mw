@@ -58,8 +58,10 @@ export class MotcSmsOtpRepository implements OtpPort {
   private readonly cfg: OtpConfig;
   private readonly motc: MotcSmsConfig;
   private readonly messageTemplate: string;
+  private readonly forgetMessageTemplate: string;
   /** Pattern extracting the OTP back out of a stored MessageBody. */
   private readonly otpPattern: RegExp;
+  private readonly forgetOtpPattern: RegExp;
   /** Failed verify attempts per MessageID (no attempts column in the table). */
   private readonly attempts = new Map<string, number>();
   /** MessageIDs already verified successfully — single-use within the TTL. */
@@ -74,12 +76,17 @@ export class MotcSmsOtpRepository implements OtpPort {
     this.motc = config.getOrThrow<MotcSmsConfig>('motcSms');
     const sms = config.getOrThrow<SmsConfig>('sms');
     this.messageTemplate = sms.messageTemplate.replace(/\\n/g, '\n');
+    this.forgetMessageTemplate = (sms.forgetMessageTemplate || sms.messageTemplate).replace(
+      /\\n/g,
+      '\n',
+    );
     // The table name is config-controlled (never user input) but interpolated
     // into SQL as an identifier, so keep it to identifier characters.
     if (!/^[A-Za-z0-9_.[\]]+$/.test(this.motc.table)) {
       throw new Error(`Invalid MOTC_SMS_TABLE "${this.motc.table}" — not a SQL identifier.`);
     }
     this.otpPattern = this.buildOtpPattern(this.messageTemplate);
+    this.forgetOtpPattern = this.buildOtpPattern(this.forgetMessageTemplate);
   }
 
   /** BusinessParam1/2 free for username+IMEI correlation (the default). */
@@ -104,7 +111,8 @@ export class MotcSmsOtpRepository implements OtpPort {
 
     const otp = generateOtp(this.cfg);
     // Raw OTP goes only into MessageBody — never logged, never returned.
-    const messageBody = this.messageTemplate.replace(/\{otp\}/g, otp);
+    const template = cmd.smsTemplate === 'forget' ? this.forgetMessageTemplate : this.messageTemplate;
+    const messageBody = template.replace(/\{otp\}/g, otp);
     const messageId = await this.insertMessage(cmd, messageBody);
     if (!cmd.phoneNumber && cmd.email) {
       // No mobile: the row is stored for VALIDATION only (emailProcessedState
@@ -157,7 +165,7 @@ export class MotcSmsOtpRepository implements OtpPort {
    * a duplicate-key race with a concurrent insert is retried with a fresh id.
    */
   private async insertMessage(cmd: SendOtpCommand, messageBody: string): Promise<number> {
-    const appId = this.motc.appId || null;
+    const appId = 'Sanaad';
     for (let attempt = 1; attempt <= INSERT_RETRIES; attempt++) {
       const next = await this.db.query<{ NextId: number }>(
         `SELECT ISNULL(MAX(MessageID), 0) + 1 AS NextId FROM ${this.motc.table} WITH (NOLOCK)`,
@@ -192,7 +200,7 @@ export class MotcSmsOtpRepository implements OtpPort {
             recipientAddressType: this.motc.recipientAddressType,
             messageExpireMinutes: this.motc.messageExpireMinutes,
             customerId: this.motc.customerId || null,
-            fromAddress: this.motc.fromAddress || appId,
+            fromAddress: appId,
             maskMessageLog: this.motc.maskMessageLog,
             applicationId: appId,
             businessParam1: this.motc.businessParam1 || cmd.username,
@@ -285,7 +293,7 @@ export class MotcSmsOtpRepository implements OtpPort {
   }
 
   private extractOtp(messageBody: string): string | undefined {
-    const match = this.otpPattern.exec(messageBody);
+    const match = this.otpPattern.exec(messageBody) ?? this.forgetOtpPattern.exec(messageBody);
     if (match) return match[1];
     this.logger.warn('Stored MessageBody did not match the OTP message template.');
     return undefined;

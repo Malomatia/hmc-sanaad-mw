@@ -1,5 +1,5 @@
 import { Lang } from '@shared/domain/lang';
-import { OtpPurpose } from './otp.port';
+import { OtpPurpose, OtpSmsTemplate } from './otp.port';
 
 /**
  * Delivery half of the OTP flow (the storage half lives in OtpPort's adapter):
@@ -8,7 +8,13 @@ import { OtpPurpose } from './otp.port';
  * phone number.
  */
 export interface OtpDeliveryPort {
-  sendOtpSms(phoneNumber: string, otp: string, purpose: OtpPurpose, lang?: Lang): Promise<void>;
+  sendOtpSms(
+    phoneNumber: string,
+    otp: string,
+    purpose: OtpPurpose,
+    lang?: Lang,
+    smsTemplate?: OtpSmsTemplate,
+  ): Promise<void>;
 }
 
 export const OTP_DELIVERY_PORT = Symbol('OTP_DELIVERY_PORT');

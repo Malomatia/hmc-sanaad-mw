@@ -81,6 +81,7 @@ export const envValidationSchema = Joi.object({
   SMS_API_KEY: Joi.string().allow('').default(''),
   SMS_SENDER_ID: Joi.string().allow('').default(''),
   SMS_API_TIMEOUT_MS: Joi.number().min(1).default(25000),
+  SMS_FORGET_MESSAGE_TEMPLATE: Joi.string().allow('').default(''),
   SMS_MESSAGE_TEMPLATE: Joi.string().default(
     'OTP to register for Sanaad App is {otp}\n\nرمز التحقق للتسجيل في تطبيق سند هو {otp}',
   ),

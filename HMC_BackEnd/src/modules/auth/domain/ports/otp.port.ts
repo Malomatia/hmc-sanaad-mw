@@ -1,6 +1,7 @@
 import { Lang } from '@shared/domain/lang';
 
 export type OtpPurpose = 'ONBOARDING' | 'FORGOT_MPIN';
+export type OtpSmsTemplate = 'registration' | 'forget';
 
 /** Channel the OTP goes out on (mobile SMS vs. email). */
 export type OtpMode = 'SMS' | 'Email';
@@ -13,6 +14,7 @@ export interface SendOtpCommand {
   imei: string;
   purpose: OtpPurpose;
   lang?: Lang;
+  smsTemplate?: OtpSmsTemplate;
   /** Client app context mirrored into the legacy OTP row (nothing NULL). */
   appName?: string;
   appVersion?: string;

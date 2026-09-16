@@ -5,7 +5,8 @@ import { MotcSmsDbService } from '@core/database/motc-sms-db.service';
 import { MssqlQueryError } from '@core/database/mssql.error';
 import { MotcSmsConfig, SmsConfig } from '@core/config/configuration';
 import { OtpDeliveryPort } from '../../domain/ports/otp-delivery.port';
-import { OtpPurpose } from '../../domain/ports/otp.port';
+import { OtpPurpose, OtpSmsTemplate } from '../../domain/ports/otp.port';
+import { Lang } from '@shared/domain/lang';
 
 /** SQL Server duplicate-key errors (PK violation / unique index). */
 const DUPLICATE_KEY_ERRORS = new Set([2601, 2627]);
@@ -43,9 +44,19 @@ export class MotcPushOtpDeliveryAdapter implements OtpDeliveryPort {
     }
   }
 
-  async sendOtpSms(phoneNumber: string, otp: string, purpose: OtpPurpose): Promise<void> {
-    const messageBody = this.sms.messageTemplate.replace(/\\n/g, '\n').replace(/\{otp\}/g, otp);
-    const appId = this.motc.appId || null;
+  async sendOtpSms(
+    phoneNumber: string,
+    otp: string,
+    purpose: OtpPurpose,
+    _lang?: Lang,
+    smsTemplate?: OtpSmsTemplate,
+  ): Promise<void> {
+    const template =
+      smsTemplate === 'forget'
+        ? this.sms.forgetMessageTemplate || this.sms.messageTemplate
+        : this.sms.messageTemplate;
+    const messageBody = template.replace(/\\n/g, '\n').replace(/\{otp\}/g, otp);
+    const appId = 'Sanaad';
     for (let attempt = 1; attempt <= INSERT_RETRIES; attempt++) {
       const messageId = randomUUID().replace(/-/g, '').toUpperCase();
       try {
@@ -74,7 +85,7 @@ export class MotcPushOtpDeliveryAdapter implements OtpDeliveryPort {
             recipientAddressType: this.motc.recipientAddressType,
             messageExpireMinutes: this.motc.messageExpireMinutes,
             customerId: this.motc.customerId || null,
-            fromAddress: this.motc.fromAddress || appId,
+            fromAddress: appId,
             maskMessageLog: this.motc.maskMessageLog,
             applicationId: appId,
             businessParam1: this.motc.businessParam1 || purpose,

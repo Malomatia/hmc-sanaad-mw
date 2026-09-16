@@ -75,11 +75,17 @@ export class NotificationTriggerInterceptor implements NestInterceptor {
     if (WORKLIST_SUBMIT_OPERATIONS.has(operation?.operationId ?? '')) {
       const startedAt = Date.now();
       const username = req.user?.username;
+      const requesterName = req.user?.employeeName;
       return next.handle().pipe(
         tap((body) => {
           if (!username || !this.succeeded(body)) return;
           void this.notifier
-            .onWorklistSubmitted({ username, startedAt, succeededAt: Date.now() })
+            .onWorklistSubmitted({
+              username,
+              ...(requesterName ? { requesterName } : {}),
+              startedAt,
+              succeededAt: Date.now(),
+            })
             .catch(() => undefined);
         }),
       );
@@ -132,7 +138,13 @@ export class NotificationTriggerInterceptor implements NestInterceptor {
     if (decision) {
       const outcome = String(req.body?.decision ?? req.body?.p_result ?? '').toUpperCase();
       if (outcome === 'APPROVE' || outcome === 'REJECT') {
-        await this.notifier.onDecided(decision[1], outcome as DecisionOutcome, username, snapshot);
+        await this.notifier.onDecided(
+          decision[1],
+          outcome as DecisionOutcome,
+          username,
+          snapshot,
+          req.user?.employeeName,
+        );
       }
       return;
     }
@@ -144,6 +156,7 @@ export class NotificationTriggerInterceptor implements NestInterceptor {
         String(req.body?.assignTo ?? ''),
         username,
         snapshot,
+        req.user?.employeeName,
       );
       return;
     }
@@ -154,8 +167,9 @@ export class NotificationTriggerInterceptor implements NestInterceptor {
         requestInfo[1],
         req.body?.toUsername as string | undefined,
         username,
-        req.body?.comment as string | undefined,
+        String(req.body?.mode ?? 'QUESTION'),
         snapshot,
+        req.user?.employeeName,
       );
       return;
     }

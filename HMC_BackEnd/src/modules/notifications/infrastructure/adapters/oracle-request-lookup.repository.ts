@@ -9,7 +9,6 @@ import {
   RequestParticipants,
   WorklistNotification,
 } from '../../domain/ports/request-lookup.port';
-import * as oracledb from 'oracledb';
 
 type Row = Record<string, unknown>;
 
@@ -40,45 +39,43 @@ export class OracleRequestLookupRepository
     super(ora, schema);
   }
 
-  async findWorklistNotifications(
-    username: string,
-    windowStart: Date,
-    windowEnd: Date,
-  ): Promise<WorklistNotification[] | undefined> {
+  async findWorklistNotifications(username: string): Promise<WorklistNotification[] | undefined> {
     const login = username.trim().toUpperCase();
-    if (
-      !login ||
-      !Number.isFinite(windowStart.getTime()) ||
-      !Number.isFinite(windowEnd.getTime()) ||
-      windowStart > windowEnd
-    )
-      return [];
+    if (!login) return [];
 
     return this.safely('findWorklistNotifications', async () => {
       const rows = await this.query<Row>(
-        `SELECT NOTIFICATION_ID, FROM_ROLE, RECIPIENT_ROLE, SUBJECT,
+        `SELECT NOTIFICATION_ID, FROM_ROLE, FROM_USER, RECIPIENT_ROLE, SUBJECT,
                 BEGIN_DATE, ITEM_KEY, MESSAGE_TYPE
            FROM ${ORACLE_OBJECTS.WORKLISTS_V}
           WHERE FROM_ROLE = :username
             AND STATUS = 'OPEN'
-            AND BEGIN_DATE >= :window_start
-            AND BEGIN_DATE <= :window_end
+            AND BEGIN_DATE >= SYSDATE - (1 / 1440)
+            AND BEGIN_DATE <= SYSDATE
           ORDER BY BEGIN_DATE, NOTIFICATION_ID`,
-        {
-          username: login,
-          window_start: { dir: oracledb.BIND_IN, type: oracledb.DB_TYPE_DATE, val: windowStart },
-          window_end: { dir: oracledb.BIND_IN, type: oracledb.DB_TYPE_DATE, val: windowEnd },
-        },
+        { username: login },
       );
       return rows.flatMap((row) => {
         const notificationId = str(row, 'NOTIFICATION_ID')?.trim();
         const recipient = str(row, 'RECIPIENT_ROLE')?.trim();
+        const subject = str(row, 'SUBJECT');
+        const fromUser = str(row, 'FROM_USER')?.replace(/\s+/g, ' ').trim();
+        const requesterName = fromUser?.replace(/^\d+\s*-\s*/, '').trim();
+        const normalizedSubject = subject?.replace(/\s+/g, ' ').trim();
+        const suffix = fromUser ? ` for ${fromUser}` : undefined;
+        const requestType =
+          suffix && normalizedSubject?.toUpperCase().endsWith(suffix.toUpperCase())
+            ? normalizedSubject.slice(0, -suffix.length).trim() || undefined
+            : undefined;
         return notificationId && recipient
           ? [
               {
                 notificationId,
                 recipient,
-                subject: str(row, 'SUBJECT'),
+                subject,
+                requesterName:
+                  requesterName && !/^\d+$/.test(requesterName) ? requesterName : undefined,
+                requestType,
                 itemKey: str(row, 'ITEM_KEY')?.trim() || undefined,
                 itemType: str(row, 'MESSAGE_TYPE')?.trim() || undefined,
               },
@@ -131,7 +128,10 @@ export class OracleRequestLookupRepository
     return {
       requestor,
       approver,
-      requestType: str(row, 'REQUEST_TYPE') ?? str(row, 'SERVICE_REQUEST'),
+      requestorName: str(row, 'REQUESTOR_NAME')?.trim() || undefined,
+      approverName: str(row, 'APPROVER_NAME')?.trim() || undefined,
+      requestType:
+        str(row, 'REQUEST_TYPE')?.trim() || str(row, 'SERVICE_REQUEST')?.trim() || undefined,
       notificationId: str(row, 'NOTIFICATION_ID'),
     };
   }

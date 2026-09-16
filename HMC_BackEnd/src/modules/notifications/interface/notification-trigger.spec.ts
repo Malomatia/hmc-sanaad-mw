@@ -44,11 +44,17 @@ describe('NotificationTriggerInterceptor', () => {
     body: Record<string, unknown> = {},
     username = 'AIBRAHIM39',
     httpHandler: object = () => undefined,
+    employeeName?: string,
   ): ExecutionContext {
     return {
       getHandler: () => httpHandler,
       switchToHttp: () => ({
-        getRequest: () => ({ method, url, body, user: username ? { username } : undefined }),
+        getRequest: () => ({
+          method,
+          url,
+          body,
+          user: username ? { username, employeeName } : undefined,
+        }),
       }),
     } as unknown as ExecutionContext;
   }
@@ -108,7 +114,13 @@ describe('NotificationTriggerInterceptor', () => {
     );
     await settle();
 
-    expect(notifier.onDecided).toHaveBeenCalledWith('123859449', 'APPROVE', 'AIBRAHIM39', {});
+    expect(notifier.onDecided).toHaveBeenCalledWith(
+      '123859449',
+      'APPROVE',
+      'AIBRAHIM39',
+      {},
+      undefined,
+    );
     expect(notifier.onSubmitted).not.toHaveBeenCalled();
   });
 
@@ -123,7 +135,13 @@ describe('NotificationTriggerInterceptor', () => {
     );
     await settle();
 
-    expect(notifier.onDecided).toHaveBeenCalledWith('123859449', 'REJECT', 'AIBRAHIM39', {});
+    expect(notifier.onDecided).toHaveBeenCalledWith(
+      '123859449',
+      'REJECT',
+      'AIBRAHIM39',
+      {},
+      undefined,
+    );
     expect(notifier.onSubmitted).not.toHaveBeenCalled();
   });
 
@@ -152,7 +170,13 @@ describe('NotificationTriggerInterceptor', () => {
     );
     await settle();
 
-    expect(notifier.onReassigned).toHaveBeenCalledWith('123', 'V-NFERNANDO', 'AIBRAHIM39', {});
+    expect(notifier.onReassigned).toHaveBeenCalledWith(
+      '123',
+      'V-NFERNANDO',
+      'AIBRAHIM39',
+      {},
+      undefined,
+    );
     expect(notifier.onSubmitted).not.toHaveBeenCalled();
   });
 
@@ -174,11 +198,73 @@ describe('NotificationTriggerInterceptor', () => {
       '123',
       'V-NFERNANDO',
       'AIBRAHIM39',
-      'Please attach documents.',
+      'QUESTION',
       {},
+      undefined,
     );
     expect(notifier.onSubmitted).not.toHaveBeenCalled();
   });
+
+  it.each([
+    ['decision', { decision: 'APPROVE' }],
+    ['decision', { decision: 'REJECT' }],
+    ['reassign', { assignTo: 'TARGET' }],
+    ['request-info', { toUsername: 'TARGET', comment: 'Details', mode: 'ANSWER' }],
+  ])('passes the signed actor name for %s, never a body-supplied name', async (route, body) => {
+    const { interceptor, notifier } = make();
+    await firstValueFrom(
+      interceptor.intercept(
+        context(
+          'POST',
+          `/api/v1/approvals/123/${route}`,
+          { ...body, approverName: 'Forged', requesterName: 'Forged' },
+          'ACTOR',
+          undefined,
+          'Signed Actor Name',
+        ),
+        handler({ successflag: 'S' }),
+      ),
+    );
+    await settle();
+    const calls = [
+      ...notifier.onDecided.mock.calls,
+      ...notifier.onReassigned.mock.calls,
+      ...notifier.onRequestInfo.mock.calls,
+    ];
+    expect(calls).toHaveLength(1);
+    expect(calls[0][calls[0].length - 1]).toBe('Signed Actor Name');
+    expect(JSON.stringify(calls)).not.toContain('Forged');
+  });
+
+  it.each(['QUESTION', 'ANSWER', undefined, null])(
+    'forwards request-info mode %s using the controller default',
+    async (mode) => {
+      const { interceptor, notifier } = make();
+      await firstValueFrom(
+        interceptor.intercept(
+          context(
+            'POST',
+            '/api/v1/approvals/123/request-info',
+            { mode, toUsername: 'TARGET', comment: 'Private details' },
+            'ACTOR',
+            undefined,
+            'Actor Name',
+          ),
+          handler({ successflag: 'S' }),
+        ),
+      );
+      await settle();
+      expect(notifier.onRequestInfo).toHaveBeenCalledWith(
+        '123',
+        'TARGET',
+        'ACTOR',
+        mode ?? 'QUESTION',
+        {},
+        'Actor Name',
+      );
+      expect(JSON.stringify(notifier.onRequestInfo.mock.calls)).not.toContain('Private details');
+    },
+  );
 
   it('does nothing on GET', async () => {
     const { interceptor, notifier } = make();
@@ -250,9 +336,10 @@ describe('NotificationTriggerInterceptor', () => {
               context(
                 'POST',
                 `/custom/prefix/${path}?username=SPOOF`,
-                { username: 'SPOOF', p_attachment1: 'attachment' },
+                { username: 'SPOOF', requesterName: 'Forged name', p_attachment1: 'attachment' },
                 'ACTOR',
                 httpHandler,
+                'Signed Actor Name',
               ),
               {
                 handle: () => {
@@ -268,6 +355,7 @@ describe('NotificationTriggerInterceptor', () => {
           expect(worklist).toHaveBeenCalledTimes(1);
           expect(worklist).toHaveBeenCalledWith({
             username: 'ACTOR',
+            requesterName: 'Signed Actor Name',
             startedAt: 1000000,
             succeededAt: 1000500,
           });
@@ -374,6 +462,12 @@ describe('NotificationTriggerInterceptor', () => {
         recipients: ['TARGET', 'OWNER'],
         event: 'INFO_REQUESTED',
       },
+      {
+        route: 'request-info',
+        body: { mode: 'ANSWER', toUsername: 'TARGET', comment: 'Provided information.' },
+        recipients: ['TARGET', 'OWNER'],
+        event: 'INFO_REQUESTED',
+      },
     ];
 
     function makeWorkflow() {
@@ -404,6 +498,46 @@ describe('NotificationTriggerInterceptor', () => {
         send,
       };
     }
+
+    it.each([
+      [
+        'QUESTION',
+        'OWNER',
+        'Your Leave Request has been requested for more information by Signed Actor.',
+      ],
+      [
+        'ANSWER',
+        'ACTOR',
+        'Signed Actor has provided you more information for the Leave Request approval.',
+      ],
+    ])(
+      'sends the %s message to every target device based on the request mode',
+      async (mode, actor, body) => {
+        const { interceptor, send } = makeWorkflow();
+        await firstValueFrom(
+          interceptor.intercept(
+            context(
+              'POST',
+              '/api/v1/approvals/123/request-info',
+              { mode, toUsername: 'TARGET', comment: 'Private answer content' },
+              actor,
+              undefined,
+              'Signed Actor',
+            ),
+            handler({ successflag: 'S' }),
+          ),
+        );
+        await settle();
+        expect(send).toHaveBeenCalledWith(
+          ['TARGET-phone', 'TARGET-tablet'],
+          expect.objectContaining({
+            body,
+            data: { notificationId: '123', requestType: 'Leave Request', event: 'INFO_REQUESTED' },
+          }),
+        );
+        expect(JSON.stringify(send.mock.calls)).not.toContain('Private answer content');
+      },
+    );
 
     it.each(actions)(
       'captures the original owner before $event and sends to all devices',

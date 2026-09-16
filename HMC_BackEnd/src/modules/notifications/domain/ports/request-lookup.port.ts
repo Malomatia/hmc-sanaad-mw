@@ -7,6 +7,8 @@ export interface RequestParticipants {
   /** Display label, e.g. `Return from Leave`. */
   requestType?: string;
   notificationId?: string;
+  requestorName?: string;
+  approverName?: string;
 }
 
 /**
@@ -21,11 +23,7 @@ export interface RequestParticipants {
  * means no notification — never a failed API call.
  */
 export interface RequestLookupPort {
-  findWorklistNotifications(
-    username: string,
-    windowStart: Date,
-    windowEnd: Date,
-  ): Promise<WorklistNotification[] | undefined>;
+  findWorklistNotifications(username: string): Promise<WorklistNotification[] | undefined>;
 
   /**
    * The caller's most recently submitted request.
@@ -46,6 +44,8 @@ export interface WorklistNotification {
   notificationId: string;
   recipient: string;
   subject?: string;
+  requesterName?: string;
+  requestType?: string;
   itemKey?: string;
   itemType?: string;
 }

@@ -1,4 +1,5 @@
 import { NotificationsService } from './notifications.service';
+import { Logger } from '@nestjs/common';
 import { DeviceTokenStorePort } from '../domain/ports/device-token-store.port';
 import { PushResult, PushSenderPort } from '../domain/ports/push-sender.port';
 
@@ -33,6 +34,27 @@ describe('NotificationsService', () => {
     expect(send).toHaveBeenCalledWith(['tok-phone', 'tok-tablet'], MESSAGE);
   });
 
+  it('logs the notification, recipient, device count and FCM acceptance without tokens or message contents', async () => {
+    const log = jest.spyOn(Logger.prototype, 'log').mockImplementation();
+    try {
+      const { service } = make([{ token: 'private-device-token' }]);
+      await service.notifyUser('AIBRAHIM39', {
+        title: 'Private title',
+        body: 'Private body',
+        data: { notificationId: '123' },
+      });
+      expect(log).toHaveBeenCalledWith(
+        'Push notification 123 to AIBRAHIM39: 1 registered device(s).',
+      );
+      expect(log).toHaveBeenCalledWith('Push notification 123 to AIBRAHIM39: 1 accepted by FCM.');
+      expect(JSON.stringify(log.mock.calls)).not.toMatch(
+        /private-device-token|Private title|Private body/,
+      );
+    } finally {
+      log.mockRestore();
+    }
+  });
+
   it('does not call the transport when the user has no device', async () => {
     const { service, send } = make([]);
 
@@ -59,9 +81,7 @@ describe('NotificationsService', () => {
 
     await service.notifyUser('AIBRAHIM39', MESSAGE);
 
-    expect(store.removeDevices).toHaveBeenCalledWith([
-      { username: 'AIBRAHIM39', imei: 'tablet' },
-    ]);
+    expect(store.removeDevices).toHaveBeenCalledWith([{ username: 'AIBRAHIM39', imei: 'tablet' }]);
   });
 
   it('leaves the live devices alone while pruning a dead one', async () => {
@@ -76,9 +96,7 @@ describe('NotificationsService', () => {
 
     await service.notifyUser('AIBRAHIM39', MESSAGE);
 
-    const [removed] = (store.removeDevices as jest.Mock).mock.calls[0] as [
-      { imei: string }[],
-    ];
+    const [removed] = (store.removeDevices as jest.Mock).mock.calls[0] as [{ imei: string }[]];
     expect(removed.map((d) => d.imei)).toEqual(['old-phone', 'old-tablet']);
   });
 

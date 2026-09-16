@@ -1399,3 +1399,95 @@ same `MOTC_SMS_MESSAGE_EXPIRE_MINUTES` (default `5`), separate from OTP TTL.
 The alternate `OTP_STORE=motc` verifies stored messages against either template,
 including after a process restart; no table/schema change is required.
 Regression tests use mocked databases, not real SMS delivery.
+
+## Personalized notification message bodies
+
+The client chose the Oracle request type/name (`REQUEST_TYPE`, falling back to
+`SERVICE_REQUEST`), NOT the full worklist `SUBJECT`, for the six message templates.
+This supersedes the earlier subject-as-body behavior for the 13 selected submits.
+The worklist job now enriches each claimed notification through the existing
+notification-ID lookup, after business success; the extra lookup remains inside
+the background worker and its deadline/shutdown checks. No pre-submit read,
+new SQL columns in the worklist query, request DTOs, or procedure changes.
+
+Actor display names prefer guard-resolved `CurrentUser.employeeName` (JWT `name`),
+then the matching captured `REQUESTOR_NAME`/`APPROVER_NAME`, then the actor login.
+Blank request names use `request`; body/query name fields are never trusted.
+The selected-submit event retains only the requester name, login, and timestamps,
+not the HTTP request, attachments, or JWT. Legacy non-selected submits are unchanged.
+
+Approval/rejection bodies name the acting approver. Reassignment keeps both
+recipients: the assignee gets `{actorName} has forwarded you {requestName}`, while
+the original requestor gets `Your {requestName} has been forwarded by {actorName}`.
+For request-info, actor/requestor login equality (trimmed, case-insensitive) picks
+`has provided you more information` versus `has been requested for more information`.
+An answer uses explicit `toUsername`, otherwise the captured approver; a question
+falls back to the requestor. The actor is still excluded and recipients deduplicated.
+Comments still go to Oracle but are no longer appended to notification bodies.
+Existing titles and data event keys are unchanged, including `INFO_REQUESTED` for
+both more-info message variants. All-device token lookup and delivery are unchanged.
+
+Verification from `HMC_BackEnd/`: `npm.cmd test -- --runInBand modules/notifications
+modules/approvals core/http/response.interceptor.spec.ts core/database/base.repository.spec.ts`,
+then `npm.cmd run build` and lint only changed TypeScript files. Tests use mocked
+Oracle/SQL Server/FCM; live name availability and push receipt require staging tests.
+
+## Oracle-clock worklist discovery and direct recipient delivery
+
+The client explicitly switched the 13-submit notification lookup to the tested
+rolling last-minute query: `FROM_ROLE = :username AND STATUS = 'OPEN' AND
+BEGIN_DATE >= SYSDATE - (1 / 1440) AND BEGIN_DATE <= SYSDATE`, ordered by
+`BEGIN_DATE, NOTIFICATION_ID`. This supersedes the fixed API-clock date binds
+above. Only the uppercase submitter login is bound. The two-minute duration now
+limits background job lifetime only; it is NOT the SQL lookback. Other recent
+submissions by the same user can qualify; existing per-notification/recipient
+attempt deduplication remains in-process and does not survive restart.
+
+The supplied notification 123864402 exposed an avoidable dependency: after a
+worklist row had been found, a stalled summary/name lookup could prevent the
+SQL Server device query entirely. A regression reproduces this using the supplied
+row and mocked Oracle/SQL Server/FCM. Worklist projection now includes confirmed
+`FROM_USER`. Its leading employee-number/hyphen prefix is removed for display-name
+fallback. A request name is derived locally only when the normalized subject ends
+with ` for <the complete normalized FROM_USER>` (case-insensitive); arbitrary
+subjects are NOT split at the first `for`, and `TYPE` is not used as a request name.
+The signed-in display name still wins. For the supplied row this yields
+`Vandana Pavithran sent you Return from Leave for Approval` addressed exclusively
+through `RECIPIENT_ROLE = AIBRAHIM39` to all matching token-store devices.
+
+Rows with a locally derived request name skip summary enrichment. Other rows get
+a maximum one-second wait for the existing request-name lookup, then a generic
+fallback; no more than two such underlying lookups may be outstanding. Timers
+are cancelled on shutdown, late results cannot dispatch/replay notifications,
+and the job deadline is checked before sending. Approval-action notification
+lookup/recipient rules are unchanged.
+
+Operational logs now distinguish worklist row counts, notification-ID/recipient
+dispatch, registered-device counts (including zero), and FCM acceptance counts.
+They do not log tokens, message subjects/bodies, or display names. FCM acceptance
+is not proof of on-device display. After deployment use a fresh successful submit:
+running the diagnostics SELECT does not enqueue a job, and an older-than-one-minute
+row is no longer eligible. These changes have not been live-tested or deployed by
+the coding session; the original staging failure still needs confirmation from logs.
+
+## Request-info notification mode
+
+`POST /approvals/:id/request-info` now selects its notification body from the
+body's `mode`, NOT actor/requestor equality. The interceptor forwards mode in
+place of the unused notification comment argument. Missing/null mode defaults to
+`QUESTION`, matching the existing controller's Oracle call; the notification
+layer trims and uppercases mode and skips unsupported values without changing
+the API response, DTO validation, or procedure inputs.
+
+`ANSWER` sends `{actorName} has provided you more information for the
+{requestName} approval.`; `QUESTION` sends `Your {requestName} has been requested
+for more information by {actorName}.`. Names still come from authenticated identity
+and captured Oracle details. Explicit `toUsername` wins; the default target is the
+captured approver for ANSWER and the original requestor for QUESTION. Existing
+requestor copies, self-suppression, deduplication, all-device delivery, titles, and
+`INFO_REQUESTED` event key are unchanged. Comments still go to Oracle, not the push.
+
+Regression checks: `npm.cmd test -- --runInBand modules/notifications modules/approvals
+core/http/response.interceptor.spec.ts` and `npm.cmd run build` from `HMC_BackEnd/`.
+Coverage includes explicit modes conflicting with actor identity, missing mode,
+missing participant data, unchanged success/failure behavior, and multi-device sends.

@@ -50,7 +50,10 @@ export class NotificationsService {
    * deployment actually deliver a notification?" had no answer short of the
    * boot log or waiting for a dead token to disappear from the table.
    */
-  async sendTest(username: string, message: PushMessage): Promise<PushResult & { devices: number }> {
+  async sendTest(
+    username: string,
+    message: PushMessage,
+  ): Promise<PushResult & { devices: number }> {
     const devices = await this.store.findByUsername(username);
     if (!devices.length) return { sent: 0, failed: 0, invalidTokens: [], devices: 0 };
 
@@ -72,6 +75,12 @@ export class NotificationsService {
   async notifyUser(username: string, message: PushMessage): Promise<void> {
     try {
       const devices = await this.store.findByUsername(username);
+      const context = message.data?.notificationId
+        ? `Push notification ${message.data.notificationId}`
+        : 'Push';
+      NotificationsService.log.log(
+        `${context} to ${username}: ${devices.length} registered device(s).`,
+      );
       if (!devices.length) return;
 
       const result = await this.sender.send(
@@ -88,6 +97,8 @@ export class NotificationsService {
         .map(({ username: owner, imei }) => ({ username: owner, imei }));
       if (staleDevices.length) await this.store.removeDevices(staleDevices);
 
+      if (result.sent)
+        NotificationsService.log.log(`${context} to ${username}: ${result.sent} accepted by FCM.`);
       if (result.failed) {
         NotificationsService.log.warn(
           `Push to ${username}: ${result.sent} sent, ${result.failed} failed, ` +

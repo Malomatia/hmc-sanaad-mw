@@ -1,10 +1,8 @@
-import * as oracledb from 'oracledb';
 import { OracleService } from '@core/database/oracle.service';
 import { OracleSchemaService } from '@core/database/oracle-schema.service';
 import { OracleRequestLookupRepository } from './oracle-request-lookup.repository';
 
-const START = new Date('2026-09-15T08:00:00.000Z');
-const END = new Date('2026-09-15T08:02:00.000Z');
+const DATABASE_NOW = new Date('2026-09-16T18:06:00.000Z');
 
 describe('worklist notification lookup', () => {
   function make(rows: Record<string, unknown>[] = []) {
@@ -16,33 +14,29 @@ describe('worklist notification lookup', () => {
     return { repo, query };
   }
 
-  it('uses only the scoped OPEN worklist query and explicit native date binds', async () => {
+  it('uses the posted OPEN last-minute Oracle-clock query with only a username bind', async () => {
     const { repo, query } = make();
-    await repo.findWorklistNotifications(' actor ', START, END);
+    await repo.findWorklistNotifications(' actor ');
     expect(query).toHaveBeenCalledTimes(1);
     const [sql, binds] = query.mock.calls[0];
-    expect(sql).toContain('SELECT NOTIFICATION_ID, FROM_ROLE, RECIPIENT_ROLE, SUBJECT,');
+    expect(sql).toContain('SELECT NOTIFICATION_ID, FROM_ROLE, FROM_USER, RECIPIENT_ROLE, SUBJECT,');
     expect(sql).toContain('BEGIN_DATE, ITEM_KEY, MESSAGE_TYPE');
     expect(sql).toContain('FROM XXHMC_SND_WORKLISTS_V');
     expect(sql).toContain('FROM_ROLE = :username');
     expect(sql).toContain("STATUS = 'OPEN'");
-    expect(sql).toContain('BEGIN_DATE >= :window_start');
-    expect(sql).toContain('BEGIN_DATE <= :window_end');
+    expect(sql).toContain('BEGIN_DATE >= SYSDATE - (1 / 1440)');
+    expect(sql).toContain('BEGIN_DATE <= SYSDATE');
     expect(sql).toContain('ORDER BY BEGIN_DATE, NOTIFICATION_ID');
     expect(sql).not.toMatch(
-      /SELECT \*|TRUNC\(|UPPER\(FROM_ROLE\)|ALL_ARGUMENTS|ALL_TAB_COLUMNS|MY_REQEST_SUMMARY_V/,
+      /SELECT \*|TRUNC\(|UPPER\(FROM_ROLE\)|ALL_ARGUMENTS|ALL_TAB_COLUMNS|MY_REQEST_SUMMARY_V|:window_start|:window_end/,
     );
-    expect(binds).toEqual({
-      username: 'ACTOR',
-      window_start: { dir: oracledb.BIND_IN, type: oracledb.DB_TYPE_DATE, val: START },
-      window_end: { dir: oracledb.BIND_IN, type: oracledb.DB_TYPE_DATE, val: END },
-    });
+    expect(binds).toEqual({ username: 'ACTOR' });
   });
 
   it('does not interpolate a supplied username into SQL', async () => {
     const { repo, query } = make();
     const username = "actor' OR '1'='1";
-    await repo.findWorklistNotifications(username, START, END);
+    await repo.findWorklistNotifications(username);
     expect(query.mock.calls[0][0]).not.toContain(username);
     expect(query.mock.calls[0][1].username).toBe(username.toUpperCase());
   });
@@ -75,7 +69,7 @@ describe('worklist notification lookup', () => {
         ORIGINAL_RECIPIENT: 'OTHER',
       },
     ]);
-    expect(await repo.findWorklistNotifications('ACTOR', START, END)).toEqual([
+    expect(await repo.findWorklistNotifications('ACTOR')).toEqual([
       {
         notificationId: '123',
         recipient: 'APPROVER',
@@ -93,20 +87,56 @@ describe('worklist notification lookup', () => {
     ]);
   });
 
-  it('excludes old, closed, future and other-submitter fixtures under the SQL predicates', async () => {
+  it.each([
+    ['Return from Leave for 038999    - Vandana Pavithran    ', 'Return from Leave'],
+    ['Travel for Treatment for 038999 - Vandana Pavithran', 'Travel for Treatment'],
+    ['Return from Leave FOR 038999 - VANDANA PAVITHRAN', 'Return from Leave'],
+    ['Return from Leave for another employee', undefined],
+    ['Return from Leave for 038999 - Vandana Pavithran with more details', undefined],
+  ])(
+    'derives a request name only from a matching FROM_USER suffix: %s',
+    async (subject, requestType) => {
+      const { repo } = make([
+        {
+          NOTIFICATION_ID: 123864402,
+          FROM_ROLE: 'VPAVITHRAN',
+          FROM_USER: '038999    - Vandana Pavithran',
+          TO_USER: '037400 - Amir Ibrahim',
+          RECIPIENT_ROLE: 'AIBRAHIM39',
+          SUBJECT: subject,
+          ITEM_KEY: '18876468',
+          MESSAGE_TYPE: 'HRSSA',
+          TYPE: 'HR',
+        },
+      ]);
+      expect(await repo.findWorklistNotifications('VPAVITHRAN')).toEqual([
+        {
+          notificationId: '123864402',
+          recipient: 'AIBRAHIM39',
+          subject,
+          requesterName: 'Vandana Pavithran',
+          requestType,
+          itemKey: '18876468',
+          itemType: 'HRSSA',
+        },
+      ]);
+    },
+  );
+
+  it('excludes old, closed, future and other-submitter fixtures using database time even if API time differs', async () => {
     const { repo, query } = make();
     const current = {
       NOTIFICATION_ID: 123,
       FROM_ROLE: 'ACTOR',
       RECIPIENT_ROLE: 'APPROVER',
       STATUS: 'OPEN',
-      BEGIN_DATE: START,
+      BEGIN_DATE: new Date('2026-09-16T18:05:46.000Z'),
     };
     const fixtures = [
       current,
-      { ...current, NOTIFICATION_ID: 124, BEGIN_DATE: new Date(START.getTime() - 1000) },
+      { ...current, NOTIFICATION_ID: 124, BEGIN_DATE: new Date(DATABASE_NOW.getTime() - 61000) },
       { ...current, NOTIFICATION_ID: 125, STATUS: 'CLOSED' },
-      { ...current, NOTIFICATION_ID: 126, BEGIN_DATE: new Date(END.getTime() + 1000) },
+      { ...current, NOTIFICATION_ID: 126, BEGIN_DATE: new Date(DATABASE_NOW.getTime() + 1000) },
       { ...current, NOTIFICATION_ID: 127, FROM_ROLE: 'OTHER' },
     ];
     query.mockImplementation(async (_sql, binds) =>
@@ -114,31 +144,62 @@ describe('worklist notification lookup', () => {
         (row) =>
           row.FROM_ROLE === binds.username &&
           row.STATUS === 'OPEN' &&
-          row.BEGIN_DATE >= binds.window_start.val &&
-          row.BEGIN_DATE <= binds.window_end.val,
+          row.BEGIN_DATE.getTime() >= DATABASE_NOW.getTime() - 60000 &&
+          row.BEGIN_DATE <= DATABASE_NOW,
       ),
     );
-    expect(await repo.findWorklistNotifications('ACTOR', START, END)).toEqual([
-      expect.objectContaining({ notificationId: '123', recipient: 'APPROVER' }),
-    ]);
+    const clock = jest.spyOn(Date, 'now').mockReturnValue(DATABASE_NOW.getTime() - 3 * 3600000);
+    try {
+      expect(await repo.findWorklistNotifications('ACTOR')).toEqual([
+        expect.objectContaining({ notificationId: '123', recipient: 'APPROVER' }),
+      ]);
+      expect(query.mock.calls[0][1]).toEqual({ username: 'ACTOR' });
+    } finally {
+      clock.mockRestore();
+    }
   });
+
+  it.each([
+    { REQUEST_TYPE: ' Annual Leave ' },
+    { REQUEST_TYPE: ' ', SERVICE_REQUEST: ' Annual Leave ' },
+  ])(
+    'maps request type and participant display names from existing lookup rows',
+    async (requestName) => {
+      const { repo, query } = make([
+        {
+          ...requestName,
+          NOTIFICATION_ID: 123,
+          REQUESTOR_USER_NAME: 'REQUESTER',
+          REQUESTOR_NAME: ' Alice Requester ',
+          APPROVER_USER_NAME: 'APPROVER',
+          APPROVER_NAME: ' Bob Approver ',
+        },
+      ]);
+      await expect(repo.findByNotificationId('123')).resolves.toEqual({
+        notificationId: '123',
+        requestType: 'Annual Leave',
+        requestor: 'REQUESTER',
+        requestorName: 'Alice Requester',
+        approver: 'APPROVER',
+        approverName: 'Bob Approver',
+      });
+      expect(query).toHaveBeenCalledTimes(1);
+      expect(query).toHaveBeenCalledWith(expect.stringContaining('WHERE notification_id = :id'), {
+        id: '123',
+      });
+    },
+  );
 
   it('returns no result on Oracle failure without falling back to another query', async () => {
     const { repo, query } = make();
     query.mockRejectedValue(new Error('Oracle unavailable'));
-    await expect(repo.findWorklistNotifications('ACTOR', START, END)).resolves.toBeUndefined();
+    await expect(repo.findWorklistNotifications('ACTOR')).resolves.toBeUndefined();
     expect(query).toHaveBeenCalledTimes(1);
   });
 
-  it.each([
-    ['', START, END],
-    ['ACTOR', END, START],
-    ['ACTOR', new Date('invalid'), END],
-  ])('does not query with invalid caller/window inputs', async (username, start, end) => {
+  it.each(['', ' ', '\t'])('does not query with a blank caller', async (username) => {
     const { repo, query } = make();
-    await expect(
-      repo.findWorklistNotifications(username as string, start as Date, end as Date),
-    ).resolves.toEqual([]);
+    await expect(repo.findWorklistNotifications(username)).resolves.toEqual([]);
     expect(query).not.toHaveBeenCalled();
   });
 });

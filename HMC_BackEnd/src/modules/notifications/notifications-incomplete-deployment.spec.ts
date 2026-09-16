@@ -182,7 +182,17 @@ describe('worklist submission HTTP and device delivery', () => {
         { provide: MssqlService, useValue: { query, execute: jest.fn() } },
         { provide: DEVICE_TOKEN_STORE_PORT, useExisting: MssqlDeviceTokenRepository },
         { provide: PUSH_SENDER_PORT, useValue: sender },
-        { provide: REQUEST_LOOKUP_PORT, useValue: { findWorklistNotifications: lookup } },
+        {
+          provide: REQUEST_LOOKUP_PORT,
+          useValue: {
+            findWorklistNotifications: lookup,
+            findByNotificationId: jest.fn().mockResolvedValue({
+              requestType: 'Supervisor Change',
+              requestor: 'SUBMITTER',
+              requestorName: 'Old Requester Name',
+            }),
+          },
+        },
         { provide: APP_INTERCEPTOR, useClass: ResponseInterceptor },
         { provide: APP_INTERCEPTOR, useClass: NotificationTriggerInterceptor },
       ],
@@ -193,7 +203,7 @@ describe('worklist submission HTTP and device delivery', () => {
       new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }),
     );
     app.use((req: { user?: unknown }, _res: unknown, next: () => void) => {
-      req.user = { username: 'SUBMITTER', roles: ['EMPLOYEE'] };
+      req.user = { username: 'SUBMITTER', employeeName: 'Alice Requester', roles: ['EMPLOYEE'] };
       next();
     });
     await app.init();
@@ -218,16 +228,16 @@ describe('worklist submission HTTP and device delivery', () => {
     await new Promise((resolve) => setImmediate(resolve));
   }
 
-  it('queries every device by the worklist recipient login and sends the subject to all tokens', async () => {
+  it('queries every device by the worklist recipient login and sends the personalized message to all tokens', async () => {
     await submit();
-    expect(lookup).toHaveBeenCalledWith('SUBMITTER', expect.any(Date), expect.any(Date));
+    expect(lookup).toHaveBeenCalledWith('SUBMITTER');
     expect(query).toHaveBeenCalledWith(
       expect.stringMatching(/FROM HMC_Sanad_DeviceToken_tbl\s+WHERE LoginID = @username/),
       { username: 'APPROVER' },
     );
     expect(send).toHaveBeenCalledWith(['test-phone', 'test-tablet'], {
       title: 'New request awaiting your approval',
-      body: 'Supervisor change request',
+      body: 'Alice Requester sent you Supervisor Change for Approval',
       data: {
         event: 'APPROVAL_REQUIRED',
         notificationId: '123',

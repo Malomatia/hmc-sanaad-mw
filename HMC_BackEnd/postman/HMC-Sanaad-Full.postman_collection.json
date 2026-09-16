@@ -3835,6 +3835,108 @@
           ]
         },
         {
+          "name": "POST /leave/calculate-duration",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Response is valid JSON\", function () {",
+                  "    pm.response.to.be.json;",
+                  "});",
+                  "",
+                  "pm.test(\"Has the read envelope and duration\", function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json).to.have.property('status', 'success');",
+                  "    pm.expect(json).to.have.property('opstatus', 0);",
+                  "    pm.expect(json).to.have.property('httpStatusCode', 200);",
+                  "    pm.expect(json.result).to.have.property('duration');",
+                  "    pm.expect(json.result.duration === null || typeof json.result.duration === 'number').to.be.true;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/leave/calculate-duration",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "leave",
+                "calculate-duration"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"Start_date\": \"2026-09-16\",\n  \"end_date\": \"2026-09-18\",\n  \"absence_type\": \"Casual Leave\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "**Purpose:** Calculate leave duration using XXHMC_SND_CALC_LEAV_DUR_PR (read-only).\n\n**Auth:** Inherits collection-level Bearer {{token}}. The username is taken from the authenticated user; do not send username, user_name, or p_user_name in the body.\n\n**Required body fields:** Start_date (capital S), end_date, absence_type. Dates accept yyyy-MM-dd or dd-Mon-yyyy. Both must be valid calendar dates, and end_date must be on or after Start_date. Replace the sample dates and absence type with your own values.\n\n**Response:** result.duration is the Oracle duration (number, or null when unavailable). result.successFlag and result.errorMessage preserve the procedure's business outcome; HTTP 200 alone does not mean business success. The existing /leave/calculate endpoint remains separate and returns days.\n\n**Example below is expected output verified with mocked Oracle tests, not a live Oracle capture.**"
+          },
+          "response": [
+            {
+              "name": "Expected Success (200) — mocked Oracle example",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/leave/calculate-duration",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "leave",
+                    "calculate-duration"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"Start_date\": \"2026-09-16\",\n  \"end_date\": \"2026-09-18\",\n  \"absence_type\": \"Casual Leave\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"result\": {\n    \"duration\": 3,\n    \"successFlag\": \"S\",\n    \"errorMessage\": null\n  },\n  \"opstatus\": 0,\n  \"status\": \"success\",\n  \"httpStatusCode\": 200\n}"
+            }
+          ]
+        },
+        {
           "name": "POST /leave/amend",
           "event": [
             {

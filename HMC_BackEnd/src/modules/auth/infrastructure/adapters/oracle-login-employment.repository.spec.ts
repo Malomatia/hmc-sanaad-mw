@@ -9,9 +9,9 @@ const IDENTITY: EmployeeIdentity = {
   employeeName: 'Test Employee',
   employeeNameAr: 'موظف تجريبي',
   facilityId: '456',
-  facility: 'SQL facility name',
+  facility: 'SQL facility.Hospital',
   jobId: '123',
-  jobName: 'SQL job name',
+  jobName: 'SQL job.HMC',
   isEmployee: true,
   isNewUser: false,
 };
@@ -19,12 +19,13 @@ const IDENTITY: EmployeeIdentity = {
 const EMPLOYMENT = {
   JOB: 'Oracle job',
   JOB_AR: 'المسمى الوظيفي',
-  DEPARTMENT: 'Oracle organization',
-  DEPARTMENT_AR: 'المؤسسة',
+  ORG: 'Oracle organization',
+  ORG_AR: 'المؤسسة',
+  USER_NAME: 'HMC1',
 };
 const DETAILS = {
-  organizationName: EMPLOYMENT.DEPARTMENT,
-  organizationNameAr: EMPLOYMENT.DEPARTMENT_AR,
+  organizationName: EMPLOYMENT.ORG,
+  organizationNameAr: EMPLOYMENT.ORG_AR,
   jobTitle: EMPLOYMENT.JOB,
   jobTitleAr: EMPLOYMENT.JOB_AR,
 };
@@ -35,7 +36,12 @@ const FALLBACK = {
   jobTitleAr: IDENTITY.jobName,
 };
 const SQL =
-  'SELECT JOB, JOB_AR, DEPARTMENT, DEPARTMENT_AR FROM XXHMC_SND_EMPLOYMENT_DETAILS_V WHERE USER_NAME = :username AND ROWNUM <= 1';
+  "SELECT REGEXP_SUBSTR(DEPARTMENT, '[^.]+$') AS ORG, " +
+  "REGEXP_SUBSTR(DEPARTMENT_AR, '^[^.]+') AS ORG_AR, " +
+  "REGEXP_SUBSTR(JOB, '[^.]+', 1, 2) AS JOB, " +
+  "REGEXP_SUBSTR(JOB_AR, '[^.]+', 1, 2) AS JOB_AR, " +
+  'USER_NAME FROM APPS.XXHMC_SND_EMPLOYMENT_DETAILS_V ' +
+  'WHERE USER_NAME = :username AND ROWNUM <= 1';
 
 function makeRepository() {
   const ora = {
@@ -50,7 +56,7 @@ describe('OracleLoginEmploymentRepository', () => {
   beforeEach(() => jest.spyOn(Logger.prototype, 'warn').mockImplementation());
   afterEach(() => jest.restoreAllMocks());
 
-  it('reads all four labels from one employment-details query scoped by username', async () => {
+  it('extracts all four labels with Oracle regexes in one username-scoped query', async () => {
     const { ora, repository } = makeRepository();
 
     await expect(repository.resolve(IDENTITY)).resolves.toEqual(DETAILS);
@@ -112,9 +118,7 @@ describe('OracleLoginEmploymentRepository', () => {
     'falls back for missing or blank labels: %s',
     async (value) => {
       const { ora, repository } = makeRepository();
-      ora.query.mockResolvedValue([
-        { JOB: value, JOB_AR: value, DEPARTMENT: value, DEPARTMENT_AR: value },
-      ]);
+      ora.query.mockResolvedValue([{ JOB: value, JOB_AR: value, ORG: value, ORG_AR: value }]);
 
       await expect(repository.resolve(IDENTITY)).resolves.toEqual(FALLBACK);
     },
@@ -126,8 +130,8 @@ describe('OracleLoginEmploymentRepository', () => {
       {
         JOB: '   ',
         JOB_AR: ' المسمى الوظيفي ',
-        DEPARTMENT: ' Oracle organization ',
-        DEPARTMENT_AR: null,
+        ORG: ' Oracle organization ',
+        ORG_AR: null,
       },
     ]);
 
@@ -138,6 +142,25 @@ describe('OracleLoginEmploymentRepository', () => {
       jobTitleAr: 'المسمى الوظيفي',
     });
   });
+
+  it.each([
+    [
+      { JOB: null, JOB_AR: null },
+      { ...DETAILS, jobTitle: IDENTITY.jobName, jobTitleAr: IDENTITY.jobName },
+    ],
+    [
+      { ORG: null, ORG_AR: null },
+      { ...DETAILS, organizationName: IDENTITY.facility, organizationNameAr: IDENTITY.facility },
+    ],
+  ])(
+    'keeps SQL fallback text unmodified when regexes return no match: %j',
+    async (columns, expected) => {
+      const { ora, repository } = makeRepository();
+      ora.query.mockResolvedValue([{ ...EMPLOYMENT, ...columns }]);
+
+      await expect(repository.resolve(IDENTITY)).resolves.toEqual(expected);
+    },
+  );
 
   it.each(['', ' ', '\t'])(
     'never queries an unscoped view for a blank username: %s',

@@ -23,13 +23,18 @@ export interface ProfileRowSet {
 /** Oracle row → profile domain (Anticorruption Layer; decodes Arabic). */
 export class ProfileMapper {
   static toPersonal(row: Record<string, any> | undefined, _lang: Lang): PersonalDetails {
+    void _lang;
     if (!row) return {};
+    const fullName = str(row, 'full_name') ?? str(row, 'fullname');
+    const fullNameAr = strAr(row, 'full_name_ar') ?? strAr(row, 'fullnamear');
     return pruneUndefined<PersonalDetails>({
       username: str(row, 'user_name') ?? str(row, 'username'),
       employeeNumber: str(row, 'employee_number') ?? str(row, 'employeenumber'),
       joiningDate: dateStr(row, 'joining_date') ?? dateStr(row, 'joiningdate'),
       emailAddress: str(row, 'email_address') ?? str(row, 'emailaddress'),
-      fullName: str(row, 'full_name') ?? str(row, 'fullname'),
+      fullName,
+      FULL_NAME: fullName,
+      FULL_NAME_AR: fullNameAr,
       firstName: str(row, 'first_name') ?? str(row, 'firstname'),
       middleNames: str(row, 'middle_names') ?? str(row, 'middlenames'),
       lastName: str(row, 'last_name') ?? str(row, 'lastname'),
@@ -37,7 +42,7 @@ export class ProfileMapper {
       qidNumber: str(row, 'qid_number') ?? str(row, 'qidnumber'),
       gender: str(row, 'gender'),
       maritalStatus: str(row, 'marital_status') ?? str(row, 'maritalstatus'),
-      fullNameAr: strAr(row, 'full_name_ar') ?? strAr(row, 'fullnamear'),
+      fullNameAr,
       genderAr: strAr(row, 'gender_ar') ?? strAr(row, 'genderar'),
       maritalStatusAr: strAr(row, 'marital_status_ar') ?? strAr(row, 'maritalstatusar'),
     });

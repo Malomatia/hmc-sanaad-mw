@@ -184,6 +184,9 @@ const MODULES = [
       { name: 'Leave duration calculation', method: 'POST', p: 'leave/calculate', auth: 'bearer', kind: 'read',
         body: { absenceType: 'Casual Leave', startDate: '12-Jun-2025', endDate: '14-Jun-2025' },
         success: leaveEx.LEAVE_CALCULATE_EXAMPLE, errors: [400, 401, 500] },
+      { name: 'Calculate leave duration for the authenticated user', method: 'POST', p: 'leave/calculate-duration', auth: 'bearer', kind: 'read',
+        body: { Start_date: '2026-09-16', end_date: '2026-09-18', absence_type: 'Casual Leave' },
+        success: { duration: 3, successFlag: 'S', errorMessage: null }, errors: [400, 401, 500] },
       { name: 'Leave amend', method: 'POST', p: 'leave/amend', auth: 'bearer', kind: 'action',
         // p_user_name is accepted but the authenticated username is enforced
         // server-side. Dates accept yyyy-MM-dd or dd-Mon-yyyy. Unused

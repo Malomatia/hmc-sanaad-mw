@@ -26,6 +26,17 @@ describe('LOV registry', () => {
     expect(resolveLovObject('BEREAVED_RELATIONSHIP_LOV')).toBe(resolveLovObject('BEREAV_RELAT_LOV'));
   });
 
+  it.each([
+    ['ALSR_DEFAULT_LOV', 'ALSR_DFALT_LOV', 'XXHMC_SND_ALSR_DFALT_LOV'],
+    ['LIBR_DEFAULT_LOV', 'LIBR_DFALT_LOV', 'XXHMC_SND_LIBR_DFALT_LOV'],
+  ])(
+    'registers the documented public name %s without removing %s',
+    (name, legacy, object) => {
+      expect(resolveLovObject(name)).toBe(object);
+      expect(resolveLovObject(legacy)).toBe(object);
+    },
+  );
+
   it('only exposes objects the ORACLE_OBJECTS registry knows', () => {
     const known = new Set(Object.values(ORACLE_OBJECTS));
     for (const [name, object] of Object.entries(LOV_OBJECT)) {

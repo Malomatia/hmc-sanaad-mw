@@ -1,3 +1,13 @@
+import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
+import { Test } from '@nestjs/testing';
+import request from 'supertest';
+import { ResponseInterceptor } from '@core/http/response.interceptor';
+import { LookupsService } from '@lookups/application/lookups.service';
+import { WorklistService } from '@modules/approvals/application/approvals.service';
+import { ProfileService } from '../../application/profile.service';
+import { PROFILE_REPOSITORY } from '../../domain/profile.repository';
+import { ProfileController } from '../../interface/profile.controller';
 import { OracleService } from '@core/database/oracle.service';
 import { OracleSchemaService } from '@core/database/oracle-schema.service';
 import { SchemaColumnNotFoundException } from '@core/database/schema-column-not-found.error';
@@ -24,6 +34,129 @@ function make(keyColumn = 'USER_NAME') {
   );
   return { repository, query, resolveKeyColumn };
 }
+
+describe('Profile bilingual full names over HTTP', () => {
+  let app: INestApplication;
+  const englishName = 'Test Employee';
+  const arabicName = 'موظف تجريبي';
+  const personal = Object.freeze({
+    USER_NAME: 'TESTUSER',
+    FULL_NAME: englishName,
+    FULL_NAME_AR: encodeURIComponent(arabicName),
+    GENDER: 'Male',
+    GENDER_AR: encodeURIComponent('ذكر'),
+  });
+  let personalRows: Record<string, unknown>[];
+
+  beforeAll(async () => {
+    const { repository, query } = make();
+    query.mockImplementation(async (sql: string) => {
+      if (sql.includes(ORACLE_OBJECTS.PERSONAL_DETAILS_V)) return personalRows;
+      if (sql.includes(ORACLE_OBJECTS.EMP_PHONE_V)) {
+        return [{ PHONE_TYPE: 'Home', PHONE_TYPE_AR: 'المنزل' }];
+      }
+      return [];
+    });
+    const moduleRef = await Test.createTestingModule({
+      controllers: [ProfileController],
+      providers: [
+        ProfileService,
+        { provide: PROFILE_REPOSITORY, useValue: repository },
+        { provide: LookupsService, useValue: {} },
+        {
+          provide: WorklistService,
+          useValue: {
+            worklist: jest.fn().mockResolvedValue([{ FULL_NAME: englishName, FULL_NAME_AR: arabicName }]),
+          },
+        },
+      ],
+    }).compile();
+    app = moduleRef.createNestApplication({ logger: false });
+    app.setGlobalPrefix('api/v1');
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }),
+    );
+    app.useGlobalInterceptors(new ResponseInterceptor(new Reflector()));
+    await app.init();
+  });
+
+  beforeEach(() => {
+    personalRows = [personal];
+  });
+
+  afterAll(async () => {
+    await app?.close();
+  });
+
+  it.each(['en', 'ar', undefined] as const)(
+    'returns FULL_NAME and FULL_NAME_AR together with lang=%s',
+    async (lang) => {
+      const req = request(app.getHttpServer()).get('/api/v1/profile').query({ username: 'TESTUSER' });
+      if (lang !== undefined) req.query({ lang });
+      const response = await req.expect(200);
+
+      expect(response.body).toMatchObject({
+        opstatus: 0,
+        status: 'success',
+        httpStatusCode: 200,
+        result: {
+          personal: {
+            username: 'TESTUSER',
+            FULL_NAME: englishName,
+            FULL_NAME_AR: arabicName,
+            fullName: lang === 'ar' ? arabicName : englishName,
+            gender: lang === 'ar' ? 'ذكر' : 'Male',
+          },
+          phones: [{ phoneType: lang === 'ar' ? 'المنزل' : 'Home' }],
+        },
+      });
+      expect(response.body.result.personal).not.toHaveProperty('fullNameAr');
+      expect(response.body.result.personal).not.toHaveProperty('genderAr');
+      expect(response.body.result.phones[0]).not.toHaveProperty('phoneTypeAr');
+      expect(personal.FULL_NAME_AR).toBe(encodeURIComponent(arabicName));
+    },
+  );
+
+  it('keeps both names with an Arabic header and no query language', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/api/v1/profile')
+      .query({ username: 'TESTUSER' })
+      .set('lang', 'ar')
+      .expect(200);
+
+    expect(response.body.result.personal).toMatchObject({
+      FULL_NAME: englishName,
+      FULL_NAME_AR: arabicName,
+    });
+  });
+
+  it('does not change localization on the other profile routes', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/api/v1/profile/notifications?username=TESTUSER&lang=ar')
+      .expect(200);
+
+    expect(response.body.result).toEqual([{ FULL_NAME: arabicName }]);
+  });
+
+  it('preserves empty-profile behavior when no personal row exists', async () => {
+    personalRows = [];
+    const response = await request(app.getHttpServer())
+      .get('/api/v1/profile?username=TESTUSER&lang=ar')
+      .expect(200);
+
+    expect(response.body.result.personal).toEqual({});
+  });
+
+  it('does not invent an Arabic name when the source value is null', async () => {
+    personalRows = [{ ...personal, FULL_NAME_AR: null }];
+    const response = await request(app.getHttpServer())
+      .get('/api/v1/profile?username=TESTUSER&lang=ar')
+      .expect(200);
+
+    expect(response.body.result.personal).toMatchObject({ FULL_NAME: englishName });
+    expect(response.body.result.personal).not.toHaveProperty('FULL_NAME_AR');
+  });
+});
 
 describe('Profile outside address selection', () => {
   it.each(['USER_NAME', 'USERNAME'])(

@@ -17,7 +17,7 @@ import { APPROVALS_REPOSITORY } from '@modules/approvals/domain/approvals.reposi
 import { ApprovalsController } from '@modules/approvals/interface/approvals.controller';
 import { LettersService } from '@modules/letters/application/letters.service';
 import { LettersController } from '@modules/letters/interface/letters.controller';
-import { ResponseInterceptor } from './response.interceptor';
+import { ResponseInterceptor, SKIP_ENVELOPE } from './response.interceptor';
 
 async function shape(
   data: unknown,
@@ -25,7 +25,9 @@ async function shape(
   headerLang?: string | readonly string[],
   skip = false,
 ) {
-  const reflector = { getAllAndOverride: () => skip } as unknown as Reflector;
+  const reflector = {
+    getAllAndOverride: (key: string) => (key === SKIP_ENVELOPE ? skip : undefined),
+  } as unknown as Reflector;
   const context = {
     getHandler: () => function handler() {},
     getClass: () => class Controller {},
@@ -38,6 +40,22 @@ async function shape(
     new ResponseInterceptor(reflector).intercept(context, { handle: () => of(data) }),
   );
 }
+
+describe('unconfigured read localization', () => {
+  it.each(['en', 'ar'])(
+    'still localizes full-name twins outside the profile opt-in for %s',
+    async (lang) => {
+      const row = { FULL_NAME: 'Test Employee', FULL_NAME_AR: 'موظف تجريبي' };
+
+      expect(await shape({ personal: row }, lang)).toEqual({
+        result: { personal: { FULL_NAME: lang === 'ar' ? row.FULL_NAME_AR : row.FULL_NAME } },
+        opstatus: 0,
+        status: 'success',
+        httpStatusCode: 200,
+      });
+    },
+  );
+});
 
 describe('successful submit messages', () => {
   it.each([

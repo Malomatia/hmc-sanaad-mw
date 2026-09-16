@@ -70,6 +70,43 @@ describe('localizeArTwins', () => {
     });
   });
 
+  it.each(['en', 'ar'] as const)(
+    'preserves selected base keys in nested objects and arrays for %s without changing other twins',
+    (lang) => {
+      const source = Object.freeze({
+        FULL_NAME: 'Test Employee',
+        FULL_NAME_AR: 'موظف تجريبي',
+        fullName: 'Test Employee',
+        fullNameAr: 'موظف تجريبي',
+        gender: 'Male',
+        genderAr: 'ذكر',
+      });
+      const payload = { personal: source, rows: [source] };
+      const expected = {
+        FULL_NAME: source.FULL_NAME,
+        FULL_NAME_AR: source.FULL_NAME_AR,
+        fullName: lang === 'ar' ? source.fullNameAr : source.fullName,
+        gender: lang === 'ar' ? source.genderAr : source.gender,
+      };
+
+      expect(localizeArTwins(payload, lang, ['FULL_NAME'])).toEqual({
+        personal: expected,
+        rows: [expected],
+      });
+      expect(source.FULL_NAME).toBe('Test Employee');
+      expect(localizeArTwins(source, lang)).toEqual({
+        FULL_NAME: lang === 'ar' ? source.FULL_NAME_AR : source.FULL_NAME,
+        fullName: expected.fullName,
+        gender: expected.gender,
+      });
+    },
+  );
+
+  it('keeps a preserved empty Arabic value rather than substituting the English value', () => {
+    const source = { FULL_NAME: 'Test Employee', FULL_NAME_AR: null };
+    expect(localizeArTwins(source, 'ar', ['full_name'])).toEqual(source);
+  });
+
   it('passes primitives and class instances through untouched', () => {
     const date = new Date('2026-01-01');
     expect(localizeArTwins({ when: date }, 'ar')).toEqual({ when: date });

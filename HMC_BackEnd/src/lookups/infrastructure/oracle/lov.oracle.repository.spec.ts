@@ -1,5 +1,7 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Reflector } from '@nestjs/core';
+import { ResponseInterceptor } from '@core/http/response.interceptor';
 import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
@@ -52,6 +54,26 @@ describe('Static LOV contracts', () => {
     await expect(repo.readLov(ORACLE_OBJECTS.ANNUAL_TICKT_LOV, 'en', 'TESTUSER'))
       .rejects.toBeInstanceOf(OracleContractUnavailableException);
     expect(query).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['ALSR_DEFAULT_LOV', ORACLE_OBJECTS.ALSR_DFALT_LOV],
+    ['LIBR_DEFAULT_LOV', ORACLE_OBJECTS.LIBR_DFALT_LOV],
+    ['ALSR_DFALT_LOV', ORACLE_OBJECTS.ALSR_DFALT_LOV],
+    ['LIBR_DFALT_LOV', ORACLE_OBJECTS.LIBR_DFALT_LOV],
+  ])('reads the confirmed default columns for %s without caller filtering', async (name, object) => {
+    const { repo, query } = make();
+    const service = new LookupsService(repo);
+    query.mockResolvedValue([{ DEFAULT_VALUE: 'No', DEFAULT_VALUE_AR: 'لا' }]);
+    const expected = [{ code: 'No', meaning: 'No', meaningAr: 'لا', used_value: 'No' }];
+
+    await expect(service.getLov(name, 'en', 'TESTUSER')).resolves.toEqual(expected);
+    await expect(service.getLov(name, 'en')).resolves.toEqual(expected);
+    await expect(service.getLov(name, 'ar', 'TESTUSER', '123')).resolves.toEqual(expected);
+    expect(query).toHaveBeenCalledTimes(3);
+    for (const call of query.mock.calls) {
+      expect(call).toEqual([`SELECT * FROM ${object}`, {}]);
+    }
   });
 
   it('keeps a global country lookup as a direct view query', async () => {
@@ -461,6 +483,116 @@ describe('LovOracleRepository', () => {
       { leaveType: 'CASUAL LEAVE' },
     );
   });
+});
+
+describe('Default leave LOV HTTP responses', () => {
+  const path = '/api/v1/lookups/lov';
+  const secret = 'default-lov-test-secret-not-for-production';
+  const token = new JwtService({ secret }).sign({ username: 'TESTUSER', employeeNumber: '037400' });
+  const query = jest.fn();
+  let app: INestApplication;
+
+  beforeAll(async () => {
+    const config = {
+      get: (key: string, fallback: unknown) => (key === 'app.lovCacheTtlMs' ? 0 : fallback),
+      getOrThrow: () => ({ jwtSecret: secret }),
+    };
+    const moduleRef = await Test.createTestingModule({
+      controllers: [LookupsController],
+      providers: [
+        LookupsService,
+        JwtAuthGuard,
+        JwtStrategy,
+        TokenRevocationService,
+        OracleContractCatalog,
+        OracleSchemaService,
+        { provide: LOV_REPOSITORY, useClass: LovOracleRepository },
+        { provide: OracleService, useValue: { query } },
+        { provide: ConfigService, useValue: config },
+      ],
+    }).compile();
+    app = moduleRef.createNestApplication({ logger: false });
+    app.setGlobalPrefix('api/v1');
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }),
+    );
+    app.useGlobalGuards(app.get(JwtAuthGuard));
+    app.useGlobalInterceptors(new ResponseInterceptor(new Reflector()));
+    await app.init();
+  });
+
+  beforeEach(() => {
+    query.mockReset().mockResolvedValue([{ DEFAULT_VALUE: 'No', DEFAULT_VALUE_AR: 'لا' }]);
+  });
+
+  afterAll(async () => {
+    await app?.close();
+  });
+
+  it.each([
+    ['ALSR_DEFAULT_LOV', 'XXHMC_SND_ALSR_DFALT_LOV', 'en'],
+    ['ALSR_DEFAULT_LOV', 'XXHMC_SND_ALSR_DFALT_LOV', 'ar'],
+    ['LIBR_DEFAULT_LOV', 'XXHMC_SND_LIBR_DFALT_LOV', 'en'],
+    ['LIBR_DEFAULT_LOV', 'XXHMC_SND_LIBR_DFALT_LOV', 'ar'],
+  ])('returns %s in %s with lang=%s using its static contract', async (lovname, object, lang) => {
+    for (const scope of [{}, { username: 'TESTUSER', person_id: '123' }]) {
+      await request(app.getHttpServer())
+        .get(path)
+        .query({ lovname, lang, ...scope })
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200)
+        .expect({
+          result: { items: [{ code: 'No', meaning: lang === 'ar' ? 'لا' : 'No', used_value: 'No' }] },
+          opstatus: 0,
+          status: 'success',
+          httpStatusCode: 200,
+        });
+    }
+    expect(query).toHaveBeenCalledTimes(2);
+    for (const call of query.mock.calls) {
+      expect(call).toEqual([`SELECT * FROM ${object}`, {}]);
+    }
+  });
+
+  it.each(['ALSR_DEFAULT_LOV', 'LIBR_DEFAULT_LOV'])(
+    'keeps English fallback and empty results for %s',
+    async (lovname) => {
+      query.mockResolvedValueOnce([{ DEFAULT_VALUE: 'No', DEFAULT_VALUE_AR: null }]);
+      const fallback = await request(app.getHttpServer())
+        .get(path)
+        .query({ lovname, lang: 'ar' })
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      expect(fallback.body.result.items).toEqual([{ code: 'No', meaning: 'No', used_value: 'No' }]);
+
+      query.mockResolvedValueOnce([]);
+      const empty = await request(app.getHttpServer())
+        .get(path)
+        .query({ lovname, lang: 'en' })
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      expect(empty.body.result.items).toEqual([]);
+    },
+  );
+
+  it('decodes an encoded ALSR Arabic default while retaining the English submit value', async () => {
+    query.mockResolvedValueOnce([{ DEFAULT_VALUE: 'No', DEFAULT_VALUE_AR: encodeURIComponent('لا') }]);
+    const response = await request(app.getHttpServer())
+      .get(path)
+      .query({ lovname: 'ALSR_DEFAULT_LOV', lang: 'ar' })
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    expect(response.body.result.items).toEqual([{ code: 'No', meaning: 'لا', used_value: 'No' }]);
+  });
+
+  it.each(['ALSR_DEFAULT_LOV', 'LIBR_DEFAULT_LOV'])(
+    'still requires authentication for %s',
+    async (lovname) => {
+      await request(app.getHttpServer()).get(path).query({ lovname }).expect(401);
+      expect(query).not.toHaveBeenCalled();
+    },
+  );
 });
 
 describe('CONTRACT_YEARS_V authenticated lookup', () => {

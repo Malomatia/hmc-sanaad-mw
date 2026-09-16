@@ -3,6 +3,7 @@ import { ApiBearerAuth, ApiBody, ApiOkResponse, ApiOperation, ApiTags } from '@n
 import { Lang } from '@core/i18n/lang.decorator';
 import type { Lang as LangCode } from '@shared/domain/lang';
 import { CurrentUser } from '@core/auth/decorators/current-user.decorator';
+import { PreserveArTwins } from '@core/http/response.interceptor';
 import { AuthenticatedUser } from '@core/auth/auth-user.interface';
 import { LovUserQueryDto } from '@shared/dto/common-query.dto';
 import { LangQueryDto } from '@shared/dto/lang-query.dto';
@@ -33,8 +34,13 @@ export class ProfileController {
   constructor(private readonly service: ProfileService) {}
 
   @Get()
+  @PreserveArTwins('FULL_NAME')
   @ApiOperation({ summary: 'op 2 — Personal detail', operationId: 'profile_get' })
-  @ApiReadOkResponse({ example: PROFILE_GET_EXAMPLE })
+  @ApiReadOkResponse({
+    example: PROFILE_GET_EXAMPLE,
+    description:
+      'Personal profile. result.personal.FULL_NAME (English) and FULL_NAME_AR (Arabic) are independent of lang.',
+  })
   get(@Query() q: LovUserQueryDto) {
     return this.service.getProfile(q.username, q.lang);
   }

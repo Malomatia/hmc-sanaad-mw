@@ -9,6 +9,8 @@ export interface PersonalDetails {
   joiningDate?: string;
   emailAddress?: string;
   fullName?: string;
+  FULL_NAME?: string;
+  FULL_NAME_AR?: string;
   firstName?: string;
   middleNames?: string;
   lastName?: string;

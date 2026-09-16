@@ -1034,7 +1034,7 @@ typed declarations). Every registered parameter is bound (NULL when absent), so
 this only affects the "unmapped parameter" warning, not the call.
 
 Still unregistered (503 until their columns arrive): `QID_DET_V`,
-`LEAVE_BAL_PLAN_LOV`, `ANNUAL_TICKT_LOV`, `LIBR_DFALT_LOV`, `ALSR_DFALT_LOV`.
+`LEAVE_BAL_PLAN_LOV`, `ANNUAL_TICKT_LOV`.
 Do not treat unit-test fixtures as production Oracle definitions or restore
 runtime discovery to hide these gaps.
 
@@ -1274,3 +1274,109 @@ not zero. Existing `/leave/calculate` retains camelCase inputs and `days`.
 Regression checks: `npm.cmd test -- --runInBand modules/leave core/audit
 core/http/response.interceptor.spec.ts` and `npm.cmd run build` from
 `HMC_BackEnd/`. Tests mock Oracle; live procedure execution is not verified.
+
+Postman in this checkout has flat module folders, not the versioned layout
+mentioned above; `postman/version-collection.js` is absent. Add requests in place
+in `HMC-Sanaad-Full.postman_collection.json` and update the registry in
+`generate-full-collection.js`, without running the generator over curated
+captures. The calculate-duration request is under `Leave`, inherits Bearer
+`{{token}}`, and labels its saved success response as mocked/expected output.
+
+## Login dotted employment labels
+
+Login's employment read now targets `APPS.XXHMC_SND_EMPLOYMENT_DETAILS_V` and
+applies the client's exact Oracle `REGEXP_SUBSTR` projections, superseding the
+raw-column projection above:
+
+- `DEPARTMENT`, `'[^.]+$'` -> `organization_name` (last segment).
+- `DEPARTMENT_AR`, `'^[^.]+'` -> `organization_name_ar` (first segment).
+- `JOB` and `JOB_AR`, `'[^.]+'`, position 1, occurrence 2 -> `job_title` and
+  `job_title_ar` (second non-empty segment). For example, `HICT Specialist.HMC`
+  yields `HMC`, not `HICT Specialist`.
+
+The query aliases organization values as `ORG`/`ORG_AR`, retains the bound
+uppercase `USER_NAME` filter and one-row cap, and does not change other callers
+of the employment view or its shared registry entry. Oracle errors, missing
+rows, null/blank results and regex misses still fall back per field to the SQL
+Server `JOB_NAME`/`FACILITY_NAME`. These fallback strings are NOT regex-trimmed;
+their dots are preserved. Both languages, response keys and employee names stay
+unchanged. Regression tests assert the emitted SQL and mock its result aliases;
+live Oracle regex execution is not part of automated verification.
+
+## Profile bilingual full-name aliases
+
+`GET /profile` adds `result.personal.FULL_NAME` (English) and `FULL_NAME_AR`
+(Arabic, URL-decoded by the profile mapper), independently of the request's
+language. The existing `fullName` remains localized for backward compatibility;
+other profile fields and endpoints retain their existing localization. These
+are aliases of the already-fetched personal-details columns, not extra Oracle
+queries. Missing source values retain the existing undefined-field pruning;
+an absent personal row still produces `personal: {}`.
+
+Only the profile GET handler opts in with `PreserveArTwins('FULL_NAME')`.
+`ResponseInterceptor` passes its metadata to `localizeArTwins` as per-call,
+case-insensitive preserved base keys, including nested objects/arrays. Do not
+add full names to the global preservation set or disable all profile
+localization: the uppercase aliases must coexist with the legacy localized
+camelCase field. Swagger's response description documents the additions; the
+previously captured example is not replaced with invented employee data.
+
+Regression checks from `HMC_BackEnd/`:
+`npm.cmd test -- --runInBand modules/profile shared/utils/localize.util.spec.ts core/http modules/auth core/audit`
+and `npm.cmd run build`. Profile HTTP tests exercise the real mapper, repository,
+service, controller and response interceptor with mocked Oracle calls.
+
+## Default leave LOV public aliases
+
+`LOV_OBJECT` now accepts `ALSR_DEFAULT_LOV` and `LIBR_DEFAULT_LOV`, matching
+operation 45 in `Docs Project/sanaad-api-service-mapping.html`. These are public
+aliases for `XXHMC_SND_ALSR_DFALT_LOV` and `XXHMC_SND_LIBR_DFALT_LOV`, respectively;
+the Oracle spelling remains `DFALT`, and the existing `*_DFALT_LOV` public names
+are retained. No new `XXHMC_SND_*_DEFAULT_LOV` objects are assumed.
+
+The client's column screenshots now confirm exactly two nullable columns in
+both views: `DEFAULT_VALUE` (`VARCHAR2(2000)`) and `DEFAULT_VALUE_AR`
+(`VARCHAR2(240)` for ALSR, `VARCHAR2(3)` for LIBR). Both columns are registered
+as VARCHAR2 in `OracleContractCatalog`; the read catalog tracks base types,
+not string lengths. There is no username, employee-number, or person-id column,
+so these two views are global LOVs and no longer belong to `SCOPED_ORACLE_LOVS`.
+This fixes the former 503 missing-contract error and the former 400 requirement
+for a caller identifier, without relaxing other personal lookup filters.
+
+The authenticated lookup endpoint works with or without optional `username`
+/ `person_id` parameters, which do not add predicates to these global views.
+Existing `LovMapper` support provides English `code`/`used_value` and the
+request-language `meaning` (Arabic decoded; English fallback when empty).
+The query remains `SELECT * FROM` the registered view, with no dictionary SQL.
+This supersedes the earlier registration-only/missing-contract status.
+
+Regression checks from `HMC_BackEnd/`:
+`npm.cmd test -- --runInBand lookups shared/constants/lov-names.spec.ts core/database/oracle-schema.service.spec.ts`
+and `npm.cmd run build`. Tests cover aliases, exact columns/types, caller-filter
+absence, authenticated HTTP responses in both languages, and unchanged guards
+for personal/unregistered views; Oracle calls are mocked.
+
+## Initiate original contacts — approved pre-auth disclosure
+
+The client explicitly approved returning original contact values from the public
+`POST /auth/initiate` endpoint before OTP/MPIN verification. This supersedes the
+earlier masking-only response requirement for this endpoint, not the requirement
+to keep the new raw values out of logs. No authentication guard was changed.
+
+Successful existing-user, new-device, and pending-OTP responses now add
+`emailunmasked` from `EmployeeIdentity.email` and `employeephonenumberunmasked`
+from `EmployeeIdentity.phoneNumber`, including in production and both languages.
+The existing `email` and `employeephonenumber` fields still use the original
+masking helpers unchanged. Source case/format is preserved for the new fields;
+unavailable values are omitted by JSON serialization. No extra directory/DB
+queries or OTP deliveries are introduced, and other auth response DTOs are
+unchanged.
+
+Both new keys are explicitly sensitive in `core/logging/sensitive-data.util.ts`.
+`safePreview` redacts them recursively before `ApiLogInterceptor` writes to the
+in-memory store and file sink, without mutating the HTTP response. The gateway
+already relays the response without logging its body. Regression coverage checks
+production responses for all three initiate outcomes, unchanged OTP destinations,
+missing/formatted contact values, nested redaction, and the wire-versus-log
+boundary. Run `npm.cmd test -- --runInBand modules/auth core/audit
+core/http/response.interceptor.spec.ts` and `npm.cmd run build` from `HMC_BackEnd/`.

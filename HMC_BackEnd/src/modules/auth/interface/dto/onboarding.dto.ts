@@ -33,6 +33,12 @@ export class UserValidateResponseDto {
   @ApiPropertyOptional({ example: 'MK****@hamad.qa', description: 'Masked — first 2 characters visible.' })
   email?: string;
 
+  @ApiPropertyOptional({
+    example: 'user@example.test',
+    description: 'Original email address (unmasked; approved pre-auth disclosure).',
+  })
+  emailunmasked?: string;
+
   @ApiPropertyOptional({ example: 'Cardiothoracic Surgery.Heart Hospital' })
   department?: string;
 
@@ -47,6 +53,12 @@ export class UserValidateResponseDto {
     description: 'Masked — only the last 3 digits visible.',
   })
   employeephonenumber?: string;
+
+  @ApiPropertyOptional({
+    example: '0097454321654',
+    description: 'Original phone number (unmasked; approved pre-auth disclosure).',
+  })
+  employeephonenumberunmasked?: string;
 
   @ApiPropertyOptional({ example: 'Active', description: 'Device registration status.' })
   devicestatus?: string;

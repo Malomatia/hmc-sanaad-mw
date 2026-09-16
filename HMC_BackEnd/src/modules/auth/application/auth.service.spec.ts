@@ -206,8 +206,8 @@ describe('AuthService bilingual login details', () => {
         {
           JOB: 'Oracle job',
           JOB_AR: 'المسمى الوظيفي',
-          DEPARTMENT: 'Oracle organization',
-          DEPARTMENT_AR: 'المؤسسة',
+          ORG: 'Oracle organization',
+          ORG_AR: 'المؤسسة',
         },
       ]),
     };
@@ -231,7 +231,12 @@ describe('AuthService bilingual login details', () => {
     expect(employment.resolve).toHaveBeenCalledWith(identity);
     expect(ora.query).toHaveBeenCalledTimes(1);
     expect(ora.query).toHaveBeenCalledWith(
-      'SELECT JOB, JOB_AR, DEPARTMENT, DEPARTMENT_AR FROM XXHMC_SND_EMPLOYMENT_DETAILS_V WHERE USER_NAME = :username AND ROWNUM <= 1',
+      "SELECT REGEXP_SUBSTR(DEPARTMENT, '[^.]+$') AS ORG, " +
+        "REGEXP_SUBSTR(DEPARTMENT_AR, '^[^.]+') AS ORG_AR, " +
+        "REGEXP_SUBSTR(JOB, '[^.]+', 1, 2) AS JOB, " +
+        "REGEXP_SUBSTR(JOB_AR, '[^.]+', 1, 2) AS JOB_AR, " +
+        'USER_NAME FROM APPS.XXHMC_SND_EMPLOYMENT_DETAILS_V ' +
+        'WHERE USER_NAME = :username AND ROWNUM <= 1',
       { username: 'HMC1' },
     );
     expect(jwt.decode(response.token!)).toMatchObject({ username: 'hmc1', name: 'Test Employee' });

@@ -8,7 +8,7 @@
 
 /** Field names whose values must never be persisted verbatim. */
 const SENSITIVE_KEY_PATTERN =
-  /(password|confirmpassword|token|accesstoken|refreshtoken|authorization|api[-_]?key|secret|clientsecret|creditcard|cvv|otp|mpin)/i;
+  /(password|confirmpassword|token|accesstoken|refreshtoken|authorization|api[-_]?key|secret|clientsecret|creditcard|cvv|otp|mpin|emailunmasked|employeephonenumberunmasked)/i;
 
 export function isSensitiveKey(key: string): boolean {
   return SENSITIVE_KEY_PATTERN.test(key);

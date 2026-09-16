@@ -23,8 +23,14 @@ import { safeDecodeUri } from './url-decode.util';
 
 /** Base keys (lowercased) whose Arabic twins are kept as-is for every lang. */
 const PRESERVED_TWIN_BASES = new Set(['addresstype', 'address_type']);
-export function localizeArTwins<T>(value: T, lang: Lang): T {
-  if (Array.isArray(value)) return value.map((v) => localizeArTwins(v, lang)) as unknown as T;
+export function localizeArTwins<T>(
+  value: T,
+  lang: Lang,
+  preservedBaseKeys: readonly string[] = [],
+): T {
+  if (Array.isArray(value)) {
+    return value.map((v) => localizeArTwins(v, lang, preservedBaseKeys)) as unknown as T;
+  }
   if (!isPlainObject(value)) return value;
 
   const obj = value as Record<string, unknown>;
@@ -32,7 +38,11 @@ export function localizeArTwins<T>(value: T, lang: Lang): T {
   const arKeyByBase = new Map<string, string>();
   for (const key of keys) {
     const base = baseKeyFor(key, keys);
-    if (base !== undefined && !PRESERVED_TWIN_BASES.has(base.toLowerCase())) {
+    if (
+      base !== undefined &&
+      !PRESERVED_TWIN_BASES.has(base.toLowerCase()) &&
+      !preservedBaseKeys.some((name) => name.toLowerCase() === base.toLowerCase())
+    ) {
       arKeyByBase.set(base, key);
     }
   }
@@ -49,7 +59,7 @@ export function localizeArTwins<T>(value: T, lang: Lang): T {
         val = safeDecodeUri(arVal) ?? arVal;
       }
     }
-    out[key] = localizeArTwins(val, lang);
+    out[key] = localizeArTwins(val, lang, preservedBaseKeys);
   }
   return out as T;
 }

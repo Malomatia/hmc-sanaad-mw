@@ -155,6 +155,82 @@ describe.each(['validateUser', 'sendOtp'] as const)('OTP response for %s', (meth
   });
 });
 
+describe.each(['en', 'ar'] as const)('Initiate original contacts with lang=%s', (lang) => {
+  it.each(['Exist', 'New', 'Pending'] as const)(
+    'returns original contacts beside unchanged masked fields for %s in production',
+    async (phase) => {
+      const { service, otp, devices } = makeService({ config: { 'app.nodeEnv': 'production' } });
+      if (phase === 'Exist') devices.find.mockResolvedValue({ mpinSet: true, status: 'Active' });
+      if (phase === 'Pending') {
+        devices.find.mockResolvedValue({ mpinSet: false, status: 'Inactive' });
+        otp.send.mockResolvedValue({
+          requestId: '311',
+          status: 'PENDING',
+          mode: 'SMS',
+          validForSeconds: 240,
+        });
+      }
+
+      const result = await service.validateUser(DTO, lang);
+
+      expect(result).toMatchObject({
+        status: 'success',
+        vflag: phase,
+        email: 'MK****@hamad.qa',
+        employeephonenumber: 'XXXXX169',
+        emailunmasked: IDENTITY.email,
+        employeephonenumberunmasked: IDENTITY.phoneNumber,
+      });
+      expect(safePreview(result)).toMatchObject({
+        email: 'MK****@hamad.qa',
+        employeephonenumber: 'XXXXX169',
+        emailunmasked: '******',
+        employeephonenumberunmasked: '******',
+      });
+      expect(JSON.stringify(safePreview(result))).not.toContain(IDENTITY.email);
+      expect(JSON.stringify(safePreview(result))).not.toContain(IDENTITY.phoneNumber);
+      expect(result).toHaveProperty('emailunmasked', IDENTITY.email);
+      expect(result).toHaveProperty('employeephonenumberunmasked', IDENTITY.phoneNumber);
+      if (phase === 'Exist') expect(otp.send).not.toHaveBeenCalled();
+      else {
+        expect(otp.send).toHaveBeenCalledWith(
+          expect.objectContaining({ email: IDENTITY.email, phoneNumber: IDENTITY.phoneNumber }),
+        );
+      }
+    },
+  );
+});
+
+it('redacts original contact fields recursively without changing the source', () => {
+  const contacts = Object.freeze({
+    emailunmasked: IDENTITY.email,
+    employeephonenumberunmasked: IDENTITY.phoneNumber,
+  });
+
+  expect(safePreview({ rows: [contacts] })).toEqual({
+    rows: [{ emailunmasked: '******', employeephonenumberunmasked: '******' }],
+  });
+  expect(contacts.emailunmasked).toBe(IDENTITY.email);
+  expect(contacts.employeephonenumberunmasked).toBe(IDENTITY.phoneNumber);
+});
+
+it('preserves the original contact format and omits unavailable values in JSON', async () => {
+  const { service, devices } = makeService({
+    identity: { email: 'Mixed.Case@example.test', phoneNumber: ' +974 50 00 06 54 ' },
+  });
+  devices.find.mockResolvedValue({ mpinSet: true, status: 'Active' });
+
+  const result = await service.validateUser(DTO);
+  expect(result).toHaveProperty('emailunmasked', 'Mixed.Case@example.test');
+  expect(result).toHaveProperty('employeephonenumberunmasked', ' +974 50 00 06 54 ');
+
+  const missing = makeService({ identity: { email: undefined, phoneNumber: undefined } });
+  missing.devices.find.mockResolvedValue({ mpinSet: true, status: 'Active' });
+  const body = JSON.parse(JSON.stringify(await missing.service.validateUser(DTO)));
+  expect(body).not.toHaveProperty('emailunmasked');
+  expect(body).not.toHaveProperty('employeephonenumberunmasked');
+});
+
 describe('OnboardingService.validateUser (reworked initiate, 2026-09-03)', () => {
   it('rejects a username absent from the employee view without touching the device table', async () => {
     const { service, otp, devices } = makeService({

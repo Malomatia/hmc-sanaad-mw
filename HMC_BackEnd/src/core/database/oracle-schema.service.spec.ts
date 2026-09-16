@@ -105,6 +105,19 @@ describe('Static Oracle contracts', () => {
     },
   );
 
+  it.each([ORACLE_OBJECTS.ALSR_DFALT_LOV, ORACLE_OBJECTS.LIBR_DFALT_LOV])(
+    'registers only the two confirmed nullable VARCHAR2 columns for %s',
+    async (object) => {
+      await expect(catalog.describeColumns(object)).resolves.toEqual([
+        { name: 'DEFAULT_VALUE', dataType: 'VARCHAR2', position: 1, nullable: true },
+        { name: 'DEFAULT_VALUE_AR', dataType: 'VARCHAR2', position: 2, nullable: true },
+      ]);
+      for (const column of ['USER_NAME', 'USERNAME', 'EMPLOYEE_NUMBER', 'PERSON_ID']) {
+        await expect(schema.hasColumn(object, column)).resolves.toBe(false);
+      }
+    },
+  );
+
   it('resolves documented numeric and role-keyed views from static columns', async () => {
     await expect(schema.resolveKeyColumn(ORACLE_OBJECTS.LEAVE_CANCEL_V, ['username', 'person_id']))
       .resolves.toBe('person_id');

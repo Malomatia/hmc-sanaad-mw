@@ -185,9 +185,11 @@ export class OnboardingService {
       employeenumber: identity.employeeNumber,
       jobname: identity.jobName,
       email: maskEmail(identity.email),
+      emailunmasked: identity.email,
       department: identity.department,
       employeeflag: 'Yes',
       employeephonenumber: maskPhone(identity.phoneNumber),
+      employeephonenumberunmasked: identity.phoneNumber,
       devicestatus: device?.status,
     };
   }

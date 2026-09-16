@@ -19,6 +19,9 @@ const SUCCESS_MESSAGES = { en: 'Success', ar: 'تم الأرسال' } as const;
 export const SKIP_ENVELOPE = 'skipEnvelope';
 export const SkipEnvelope = () => SetMetadata(SKIP_ENVELOPE, true);
 
+export const PRESERVE_AR_TWINS = 'preserveArTwins';
+export const PreserveArTwins = (...baseKeys: string[]) => SetMetadata(PRESERVE_AR_TWINS, baseKeys);
+
 /**
  * Standardizes success responses into the Sanaad envelope. Action results
  * (SubmitResult from `_PR`/`_PKG`) get the action envelope; everything else the
@@ -36,6 +39,11 @@ export class ResponseInterceptor implements NestInterceptor<unknown, SanaadEnvel
       context.getHandler(),
       context.getClass(),
     ]);
+    const preservedBaseKeys =
+      this.reflector.getAllAndOverride<readonly string[]>(PRESERVE_AR_TWINS, [
+        context.getHandler(),
+        context.getClass(),
+      ]) ?? [];
 
     const http = context.switchToHttp();
     const res = http.getResponse<{ statusCode?: number }>();
@@ -68,7 +76,7 @@ export class ResponseInterceptor implements NestInterceptor<unknown, SanaadEnvel
             successflag: data.successflag,
             message,
             httpStatusCode,
-            result: localizeArTwins(data.result, lang),
+            result: localizeArTwins(data.result, lang, preservedBaseKeys),
           };
         }
 
@@ -77,7 +85,7 @@ export class ResponseInterceptor implements NestInterceptor<unknown, SanaadEnvel
         // the base field carries the value for the requested language and the
         // Arabic twin is dropped. See localizeArTwins.
         return {
-          result: localizeArTwins(data, lang),
+          result: localizeArTwins(data, lang, preservedBaseKeys),
           opstatus: 0 as const,
           status: 'success' as const,
           httpStatusCode,

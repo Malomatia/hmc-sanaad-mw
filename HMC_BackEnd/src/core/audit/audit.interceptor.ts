@@ -39,6 +39,7 @@ const FUNCTION_IDS: Readonly<Partial<Record<string, string>>> = {
   leave_balance: 'frmLeaveBalances',
   leave_apply: 'frmRequestForLeave',
   leave_calculate: 'frmRequestForLeave',
+  leave_calculateDuration: 'frmRequestForLeave',
   leave_typesLov: 'frmRequestForLeave',
   leave_reasonsLov: 'frmRequestForLeave',
   leave_classesLov: 'frmRequestForLeave',
@@ -85,6 +86,7 @@ const FUNCTION_IDS: Readonly<Partial<Record<string, string>>> = {
 
 const ACTION_OVERRIDES = new Map<string, 'view' | 'submit'>([
   ['leave_calculate', 'view'],
+  ['leave_calculateDuration', 'view'],
   ['auth_healthCheck', 'view'],
   ['appIntegrity_verifyAndroid', 'view'],
   ['diag_oracleSql', 'view'],

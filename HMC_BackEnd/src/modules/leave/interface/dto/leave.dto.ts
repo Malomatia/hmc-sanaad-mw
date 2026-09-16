@@ -263,6 +263,20 @@ export class LeaveCalcRequestDto {
   endDate!: string;
 }
 
+export class LeaveDurationRequestDto {
+  @RequiredString('2026-09-16', 'Leave start date in yyyy-MM-dd or dd-Mon-yyyy format.')
+  @Matches(SUBMIT_DATE, { message: `Start_date ${SUBMIT_DATE_MSG}` })
+  Start_date!: string;
+
+  @RequiredString('2026-09-18', 'Leave end date in yyyy-MM-dd or dd-Mon-yyyy format.')
+  @Matches(SUBMIT_DATE, { message: `end_date ${SUBMIT_DATE_MSG}` })
+  end_date!: string;
+
+  @RequiredString('Casual Leave')
+  @Matches(/\S/, { message: 'absence_type must not be blank.' })
+  absence_type!: string;
+}
+
 /** op 57 — POST /leave/amend (HR_LEAV_AMEND_PR request template). */
 export class LeaveAmendRequestDto {
   @RequiredString('Annual Leave')

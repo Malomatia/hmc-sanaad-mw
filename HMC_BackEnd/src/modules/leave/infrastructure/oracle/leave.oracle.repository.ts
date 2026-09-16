@@ -208,7 +208,7 @@ export class LeaveOracleRepository extends BaseOracleRepository implements Leave
         p_error_msg_ar: { dir: oracledb.BIND_OUT, type: oracledb.STRING, maxSize: 4000 },
       },
     );
-    const days = Number(out.p_duration);
+    const days = out.p_duration == null ? NaN : Number(out.p_duration);
     return {
       days: Number.isFinite(days) ? days : undefined,
       successFlag: out.p_success_flag,

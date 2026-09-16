@@ -1,5 +1,6 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { formatOracleDisplayDate, parseOracleDate } from '@shared/utils/date.util';
 import { Lang } from '@shared/domain/lang';
 import { LovItem } from '@shared/domain/lov-item';
 import { SubmitResult } from '@shared/domain/submit-result';
@@ -52,6 +53,31 @@ export class LeaveService {
     lang: Lang,
   ): Promise<LeaveDuration> {
     return this.repo.calculate({ username: user.username, lang, absenceType, startDate, endDate });
+  }
+
+  async calculateDuration(
+    absenceType: string,
+    startDate: string,
+    endDate: string,
+    user: AuthenticatedUser,
+    lang: Lang,
+  ) {
+    const dates = [startDate, endDate].map((value, index) => {
+      const date = parseOracleDate(value);
+      if (
+        !date ||
+        (value.toUpperCase() !== formatOracleDisplayDate(date) &&
+          value !== date.toISOString().slice(0, 10))
+      ) {
+        throw new BadRequestException(`${index === 0 ? 'Start_date' : 'end_date'} is not a valid date.`);
+      }
+      return date;
+    });
+    if (dates[1] < dates[0]) {
+      throw new BadRequestException('end_date must be on or after Start_date.');
+    }
+    const { days, ...result } = await this.calculate(absenceType, startDate, endDate, user, lang);
+    return { duration: days ?? null, ...result };
   }
 
   amend(fields: Record<string, unknown>, user: AuthenticatedUser, lang: Lang): Promise<SubmitResult> {

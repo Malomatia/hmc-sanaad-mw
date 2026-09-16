@@ -1210,3 +1210,67 @@ messages, and static/dev-bypass behavior remain unchanged.
 
 Regression checks from `HMC_BackEnd/`:
 `npm.cmd test -- --runInBand modules/auth core/audit` and `npm.cmd run build`.
+
+## Return-from-leave detail lookup submit value
+
+`GET /lookups/lov?lovname=RFL_LEAVE_DET_LOV` now returns `used_value` equal to
+its string `id` (`ABSENCE_ATTENDANCE_ID`), with `code` and `meaning` unchanged.
+This supersedes the earlier additive-id-only behavior for this lookup alone.
+The override is in `LovOracleRepository`, before caching, and applies to both
+languages. Rows without an id retain their existing value. Related-leave LOVs
+and the raw `/leave/lov/return-details` response remain unchanged.
+Regression check: `npm.cmd test -- --runInBand lookups` from `HMC_BackEnd/`.
+
+## Branded security-readiness PDF
+
+`Docs_Ai/Project Structure/.handover-build/render-readiness.mjs` renders the
+readiness-review Markdown using the supplied `malomatia-design/` assets and
+existing local Edge/Playwright/marked/pdfjs tooling (no installation or network
+required). Run `node "Docs_Ai/Project Structure/.handover-build/render-readiness.mjs"`
+from the workspace root; an optional first argument overrides the source Markdown
+path. Output is `HMC_Penetration_Test_Readiness_Malomatia.pdf` plus self-contained
+HTML at the workspace root. The source Markdown is not modified; YAML editor
+metadata is omitted. Verification compares all source text, PDF text, page bounds,
+contents page references, embedded assets and source hash; results and rendered
+page previews are stored as `readiness-*` inside `.handover-build/`. This formats
+an existing assessment; it does not rerun security tests or update findings.
+
+## Letters LOV cache bypass
+
+`GET /letters/lov` bypasses the shared LOV result cache for all seven lists in
+both languages. `LettersService.getLetterLovs` passes the internal
+`LovReadOptions.skipCache` flag, which goes directly to the normal scoped Oracle
+query without reading/writing the cache or coalescing pending requests. Every
+call fetches fresh rows; response mapping and caller scoping are unchanged.
+Other lookup callers, including generic reads of these same objects, retain
+`LOV_CACHE_TTL_MS` caching. No environment or request parameter is needed.
+Verification: `npm.cmd test -- --runInBand lookups modules/letters` (61 tests)
+and `npm.cmd run build` from `HMC_BackEnd/`.
+
+## SQL Server query reference
+
+`Docs_Ai/Database/sql-server-query-reference.md` preserves the user-supplied
+Users DB and MOTC SMS DB column lists and documents their diagnostics query APIs.
+Regenerate its matching PDF from the workspace root with
+`node "Docs_Ai/Project Structure/.handover-build/render-sql-reference.mjs"`.
+The renderer uses existing local Edge/marked/Playwright/pdfjs tooling, validates
+all 15 catalog objects and 156 supplied columns, checks JSON and complete SQL
+examples against the backend read-only guard without contacting a database,
+and verifies source-text preservation, page bounds, and contents links.
+Verification reports and page previews use `sql-reference-*` names inside
+`.handover-build/`. The attestation-key table's columns remain unconfirmed.
+
+## Leave duration request API
+
+`POST /api/v1/leave/calculate-duration` requires `Start_date` (capital S),
+`end_date`, and `absence_type`. Dates accept `yyyy-MM-dd` or `dd-Mon-yyyy`;
+invalid calendar dates and reversed ranges return 400 before Oracle. The
+username always comes from `CurrentUser`, never body/query identity fields.
+The endpoint reuses `XXHMC_SND_CALC_LEAV_DUR_PR` with native DATE inputs and all
+four documented OUT binds. Its read envelope contains `result.duration`,
+`successFlag`, and sanitized `errorMessage`; a null Oracle duration stays null,
+not zero. Existing `/leave/calculate` retains camelCase inputs and `days`.
+`leave_calculateDuration` audits as a read (`view`), not a leave submission.
+Regression checks: `npm.cmd test -- --runInBand modules/leave core/audit
+core/http/response.interceptor.spec.ts` and `npm.cmd run build` from
+`HMC_BackEnd/`. Tests mock Oracle; live procedure execution is not verified.

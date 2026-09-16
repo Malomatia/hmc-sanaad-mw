@@ -128,6 +128,7 @@ describe('Function access audit classification', () => {
       [
         'leave_apply',
         'leave_calculate',
+        'leave_calculateDuration',
         'leave_typesLov',
         'leave_reasonsLov',
         'leave_classesLov',
@@ -255,6 +256,7 @@ describe('Function access audit classification', () => {
 
   it.each([
     'leave_calculate',
+    'leave_calculateDuration',
     'auth_healthCheck',
     'appIntegrity_verifyAndroid',
     'diag_oracleSql',

@@ -5,7 +5,7 @@ import type { Lang as LangCode } from '@shared/domain/lang';
 import { CurrentUser } from '@core/auth/decorators/current-user.decorator';
 import { AuthenticatedUser } from '@core/auth/auth-user.interface';
 import { LangQueryDto } from '@shared/dto/lang-query.dto';
-import { ProfileQueryDto, LovUserQueryDto, LovScopedQueryDto } from '@shared/dto/common-query.dto';
+import { ProfileQueryDto, LovUserQueryDto } from '@shared/dto/common-query.dto';
 import { LovResponseDto } from '@shared/dto/lov-response.dto';
 import { SubmitResultDto } from '@shared/dto/submit-result.dto';
 import { ApiReadOkResponse } from '@shared/swagger/api-read-ok-response.decorator';
@@ -19,6 +19,7 @@ import {
   LeaveBalanceQueryDto,
   LeaveCalcRequestDto,
   LeaveCancelRequestDto,
+  LeaveDurationRequestDto,
   LeaveReasonsQueryDto,
   LeaveReturnRequestDto,
 } from './dto/leave.dto';
@@ -112,6 +113,28 @@ export class LeaveController {
     @Lang() lang: LangCode,
   ) {
     return this.service.calculate(dto.absenceType, dto.startDate, dto.endDate, user, lang);
+  }
+
+  @Post('calculate-duration')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Calculate leave duration for the authenticated user',
+    operationId: 'leave_calculateDuration',
+  })
+  @ApiBody({ type: LeaveDurationRequestDto })
+  @ApiReadOkResponse({
+    example: {
+      duration: LEAVE_CALCULATE_EXAMPLE.days,
+      successFlag: LEAVE_CALCULATE_EXAMPLE.successFlag,
+      errorMessage: LEAVE_CALCULATE_EXAMPLE.errorMessage,
+    },
+  })
+  calculateDuration(
+    @Body() dto: LeaveDurationRequestDto,
+    @CurrentUser() user: AuthenticatedUser,
+    @Lang() lang: LangCode,
+  ) {
+    return this.service.calculateDuration(dto.absence_type, dto.Start_date, dto.end_date, user, lang);
   }
 
   @Post('amend')

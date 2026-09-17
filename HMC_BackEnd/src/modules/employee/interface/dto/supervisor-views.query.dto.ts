@@ -16,3 +16,13 @@ export class SupervisorViewsQueryDto extends LovUserQueryDto {
   @IsString()
   searchKeyWord?: string;
 }
+
+export class SupervisorChangeQueryDto extends LovUserQueryDto {
+  @ApiPropertyOptional({
+    example: 'Hajar',
+    description: 'Case-insensitive substring filter on FULL_NAME in the supervisor table function.',
+  })
+  @IsOptional()
+  @IsString()
+  searchKeyWord?: string;
+}

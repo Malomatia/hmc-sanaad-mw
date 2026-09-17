@@ -1510,3 +1510,47 @@ core/database/confirmed-submit-contracts.spec.ts modules/profile modules/depende
 and `npm.cmd run build` from `HMC_BackEnd/`. Oracle calls are mocked. Semantic
 lint has a pre-existing unused `ATTACHMENT_EXAMPLE` import in
 `profile/interface/profile.examples.ts` (also reproduced against HEAD).
+
+## Supervisor-change candidates using the original table function
+
+`GET /employee/supervisor/change` restores the pre-`56b4651` lookup as a separate
+read endpoint. It requires `username`, accepts optional `lang` and `searchKeyWord`,
+and calls `TABLE(XXHMC_SND_SUPERVISOR_VIEW(:arg0, :arg1))` with the uppercased
+username and NULL. The shared table-function helper applies the optional bound
+`UPPER(FULL_NAME) LIKE :filterValue` before the fixed 2,000-row cap. No runtime
+metadata discovery or new Oracle contract is needed for this known positional call.
+
+`GET /employee/supervisor/views` still selects `XXHMC_SND_DELEGATE_EMP_V`, filtering
+`GLOBAL_NAME` and excluding the username through the existing `USER_NAME` column.
+`POST /employee/supervisor` remains the only supervisor-change submit. The new
+GET inherits the controller's bearer protection and normal read envelope; its
+`employee_supervisorChange` operation audits as `frmSupervisorChange` / `view`.
+Swagger and the maintained Employee Postman folder include the new route.
+
+Focused HTTP-to-SQL regressions are in `core/database/oracle-username-paths.spec.ts`:
+run `npm.cmd test -- --runInBand core/database/oracle-username-paths.spec.ts
+--testNamePattern="Supervisor change endpoint"`. The older tests in that file
+still have the documented `USERNAME` versus `USER_NAME` mismatch; they were not
+changed. Also run the shared base-repository/audit/notification tests and the
+backend build. Verification uses mocked Oracle, not a live function execution.
+Semantic lint retains three pre-existing unused `_lang` arguments in the employment
+read methods of `employee.oracle.repository.ts`, reproduced against HEAD.
+
+## Optional passport issue fields
+
+`POST /dependents/passport/apply` accepts omitted or null `p_date_of_issue` and
+`p_place_of_issue`. Supplied non-null values retain the non-empty string policy.
+Passport number, expiry date, passport type, and issuing country remain required.
+Swagger derives optional/nullable metadata from `PassportApplyRequestDto`.
+The Oracle signature is unchanged: absent issue date binds native DATE NULL,
+and absent issue place binds NULL. Regressions are in `oracle-submit.dto.spec.ts`
+and `confirmed-submit-contracts.spec.ts`; no live passport submission is made.
+
+## Optional add-dependent gender
+
+`POST /dependents` accepts an omitted or null `p_gender`; supplied non-null values
+retain the non-empty string policy. First name, last name, relationship, and date
+of birth remain required. Swagger marks gender optional/nullable. Missing gender
+binds SQL NULL; supplied gender is preserved. This changes add-request validation
+only, not the update DTO or Oracle procedure contract. Coverage is in the same
+submit DTO and confirmed-contract tests above, using mocked Oracle calls.

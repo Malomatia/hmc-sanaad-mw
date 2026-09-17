@@ -16,6 +16,7 @@ const FUNCTION_IDS: Readonly<Partial<Record<string, string>>> = {
   schoolFees_requestTypeLov: 'frmSchoolFees',
   schoolFees_children: 'frmSchoolFees',
   employee_supervisorViews: 'frmSupervisorChange',
+  employee_supervisorChange: 'frmSupervisorChange',
   employee_supervisorUpdate: 'frmSupervisorChange',
   approvals_myRequests: 'frmMyRequests',
   payslip_periods: 'frmPayslip',

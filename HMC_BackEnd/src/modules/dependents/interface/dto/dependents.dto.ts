@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
 import { LangQueryDto } from '@shared/dto/lang-query.dto';
 import {
   ATTACHMENT_FIELDS,
@@ -107,8 +107,11 @@ export class AddDependentRequestDto {
   @RequiredString('Child')
   p_relationship!: string;
 
-  @RequiredString('Male')
-  p_gender!: string;
+  @ApiPropertyOptional({ type: String, nullable: true, example: 'Male' })
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  p_gender?: string | null;
 
   @RequiredString('20150101')
   p_date_of_birth!: string;
@@ -340,8 +343,10 @@ export class PassportApplyRequestDto {
   @RequiredString('A498989')
   p_passport_number!: string;
 
-  @RequiredString('20260121')
-  p_date_of_issue!: string;
+  @ApiPropertyOptional({ type: String, nullable: true, example: '20260121' })
+  @IsOptional()
+  @IsString()
+  p_date_of_issue?: string | null;
 
   @RequiredString('20360121')
   p_date_of_expiry!: string;
@@ -349,8 +354,10 @@ export class PassportApplyRequestDto {
   @RequiredString('Normal')
   p_type_of_passport!: string;
 
-  @RequiredString('Doha')
-  p_place_of_issue!: string;
+  @ApiPropertyOptional({ type: String, nullable: true, example: 'Doha' })
+  @IsOptional()
+  @IsString()
+  p_place_of_issue?: string | null;
 
   @RequiredString('QA')
   p_country_of_issue!: string;

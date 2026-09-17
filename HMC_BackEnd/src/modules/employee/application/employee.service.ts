@@ -46,6 +46,10 @@ export class SupervisorService {
     return this.repo.getSupervisorViews(username, lang, searchKeyWord);
   }
 
+  changeViews(username: string, lang: Lang, searchKeyWord?: string): Promise<SupervisorView[]> {
+    return this.repo.getSupervisorChangeViews(username, lang, searchKeyWord);
+  }
+
   update(fields: Record<string, unknown>, user: AuthenticatedUser, lang: Lang): Promise<SubmitResult> {
     return this.repo.updateSupervisor({ username: user.username, lang, fields });
   }

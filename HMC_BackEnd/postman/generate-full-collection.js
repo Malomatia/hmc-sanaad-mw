@@ -119,6 +119,8 @@ const MODULES = [
         success: employeeEx.EMPLOYEE_PERFORMANCE_EXAMPLE, errors: [401, 404, 500] },
       { name: 'Supervisor view', method: 'GET', p: 'employee/supervisor/views', auth: 'bearer', roles: ['SUPERVISOR'], kind: 'read', query: { username: 'AIBRAHIM39', lang: 'en' },
         success: employeeEx.EMPLOYEE_SUPERVISOR_VIEWS_EXAMPLE, errors: [401, 403, 404, 500] },
+      { name: 'Supervisor change candidates (table function)', method: 'GET', p: 'employee/supervisor/change', auth: 'bearer', kind: 'read', query: { username: 'AIBRAHIM39', lang: 'en' },
+        success: [], errors: [400, 401, 500, 503] },
       { name: 'Supervisor update', method: 'POST', p: 'employee/supervisor', auth: 'bearer', roles: ['SUPERVISOR'], kind: 'action',
         body: { p_new_supervisor: '037915', p_reason: 'Team restructure' },
         success: employeeEx.EMPLOYEE_SUPERVISOR_UPDATE_EXAMPLE, errors: [400, 401, 403, 409, 500] },

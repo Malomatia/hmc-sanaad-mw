@@ -2,7 +2,7 @@ import * as oracledb from 'oracledb';
 import { ValidationPipe } from '@nestjs/common';
 import { LookupsService } from '@lookups/application/lookups.service';
 import { DependentService } from '@modules/dependents/application/dependents.service';
-import { AddDependentRequestDto } from '@modules/dependents/interface/dto/dependents.dto';
+import { AddDependentRequestDto, PassportApplyRequestDto } from '@modules/dependents/interface/dto/dependents.dto';
 import { UpdatePersonalRequestDto } from '@modules/profile/interface/dto/update-personal.request.dto';
 import { OracleService } from './oracle.service';
 import { OracleSchemaService } from './oracle-schema.service';
@@ -114,6 +114,30 @@ describe('Confirmed submit contracts (2026-09-14 export)', () => {
     expect(issued().binds.p_first_name).toBeNull();
   });
 
+  it.each([{}, { p_gender: null }, { p_gender: 'Male' }, { p_gender: 'Female' }])(
+    'ADD_DEPENDENT_PR preserves optional gender at the Oracle boundary: %j',
+    async (input) => {
+      const { ora, schema, issued } = make();
+      const pipe = new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true });
+      const fields = await pipe.transform(
+        {
+          p_first_name: 'Child',
+          p_last_name: 'Test',
+          p_relationship: 'Child',
+          p_date_of_birth: '20150101',
+          ...input,
+        },
+        { type: 'body', metatype: AddDependentRequestDto },
+      );
+      const service = new DependentService(new DependentOracleRepository(ora, schema), {} as LookupsService);
+      await expect(service.add(fields, { username: 'TESTUSER', roles: [] }, 'en')).resolves.toMatchObject({
+        successflag: 'S',
+      });
+      expect(issued().binds.p_gender).toBe(fields.p_gender ?? null);
+      expect(issued().binds.p_relationship).toBe('Child');
+    },
+  );
+
   it.each([{}, { p_phone_id: null }, { p_phone_id: ['324324'] }])(
     'accepts the add phone id without changing the confirmed Oracle signature: %j',
     async (input) => {
@@ -218,6 +242,29 @@ describe('Confirmed submit contracts (2026-09-14 export)', () => {
         expect(binds[param]).toBeNull();
         expect(sql).not.toContain("2026-09-16'); END; --");
       }
+    },
+  );
+
+  it.each([{}, { p_date_of_issue: null, p_place_of_issue: null }])(
+    'PASS_DTL_PR binds omitted/null issue fields as SQL NULL: %j',
+    async (input) => {
+      const { ora, schema, issued } = make();
+      const pipe = new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true });
+      const fields = await pipe.transform(
+        {
+          p_passport_number: 'A1',
+          p_date_of_expiry: '20360121',
+          p_type_of_passport: 'Normal',
+          p_country_of_issue: 'QA',
+          ...input,
+        },
+        { type: 'body', metatype: PassportApplyRequestDto },
+      );
+      await new PassportOracleRepository(ora, schema).apply({ username: 'TESTUSER', lang: 'en', fields });
+      const { binds } = issued();
+      expect(binds.p_date_of_issue).toEqual({ type: oracledb.DB_TYPE_DATE, val: null });
+      expect(binds.p_place_of_issue).toBeNull();
+      expect(binds.p_date_of_expiry).toEqual(DATE('2036-01-21'));
     },
   );
 

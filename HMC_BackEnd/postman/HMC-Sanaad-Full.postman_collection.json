@@ -2426,6 +2426,52 @@
           ]
         },
         {
+          "name": "GET /employee/supervisor/change",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/employee/supervisor/change?username=AIBRAHIM39&lang=en",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "employee",
+                "supervisor",
+                "change"
+              ],
+              "query": [
+                {
+                  "key": "username",
+                  "value": "AIBRAHIM39"
+                },
+                {
+                  "key": "lang",
+                  "value": "en"
+                },
+                {
+                  "key": "searchKeyWord",
+                  "value": "Hajar",
+                  "disabled": true,
+                  "description": "Optional case-insensitive substring filter on FULL_NAME, before the 2000-row cap."
+                }
+              ]
+            },
+            "description": "Read-only supervisor-change candidates from TABLE(XXHMC_SND_SUPERVISOR_VIEW(:username, NULL)). Requires Bearer authentication. Returns the normal result array envelope. This does not submit a supervisor change; POST /employee/supervisor remains the submit route. No live response has been captured for this new endpoint."
+          },
+          "response": []
+        },
+        {
           "name": "POST /employee/supervisor",
           "event": [
             {

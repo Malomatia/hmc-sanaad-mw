@@ -119,6 +119,19 @@ export class SupervisorOracleRepository
     );
   }
 
+  getSupervisorChangeViews(
+    username: string,
+    _lang: Lang,
+    searchKeyWord?: string,
+  ): Promise<SupervisorView[]> {
+    return this.queryTableFunction<SupervisorView>(
+      ORACLE_OBJECTS.SUPERVISOR_VIEW,
+      [username.toUpperCase(), null],
+      undefined,
+      searchKeyWord ? { column: 'FULL_NAME', value: searchKeyWord } : undefined,
+    );
+  }
+
   async updateSupervisor(cmd: SupervisorUpdateCommand): Promise<SubmitResult> {
     // SUPERVISOR_PR takes no p_language; its OUT contract is p_success_flag /
     // p_error_msg / p_error_msg_ar, bound directly with the BLOB attachments

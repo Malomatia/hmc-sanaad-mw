@@ -9,7 +9,7 @@ import { ApiReadOkResponse } from '@shared/swagger/api-read-ok-response.decorato
 import { ApiActionOkResponse } from '@shared/swagger/api-action-ok-response.decorator';
 import { EmployeeService, SupervisorService } from '../application/employee.service';
 import { SupervisorUpdateRequestDto } from './dto/supervisor-update.request.dto';
-import { SupervisorViewsQueryDto } from './dto/supervisor-views.query.dto';
+import { SupervisorChangeQueryDto, SupervisorViewsQueryDto } from './dto/supervisor-views.query.dto';
 import {
   EMPLOYEE_EMPLOYMENT_EXAMPLE,
   EMPLOYEE_EMPLOYMENT_INFO_EXAMPLE,
@@ -60,6 +60,19 @@ export class EmployeeController {
   @ApiReadOkResponse({ example: EMPLOYEE_SUPERVISOR_VIEWS_EXAMPLE })
   supervisorViews(@Query() q: SupervisorViewsQueryDto) {
     return this.supervisor.views(q.username, q.lang, q.searchKeyWord);
+  }
+
+  @Get('supervisor/change')
+  @ApiOperation({
+    summary: 'Supervisor change candidates (table function)',
+    operationId: 'employee_supervisorChange',
+  })
+  @ApiReadOkResponse({
+    example: EMPLOYEE_SUPERVISOR_VIEWS_EXAMPLE,
+    description: 'Read-only candidates from XXHMC_SND_SUPERVISOR_VIEW; does not submit a supervisor change.',
+  })
+  supervisorChange(@Query() q: SupervisorChangeQueryDto) {
+    return this.supervisor.changeViews(q.username, q.lang, q.searchKeyWord);
   }
 
   @Post('supervisor')

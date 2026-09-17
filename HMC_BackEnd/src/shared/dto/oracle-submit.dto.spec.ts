@@ -56,6 +56,43 @@ describe('Oracle submit DTOs', () => {
     });
   });
 
+  describe('add dependent gender', () => {
+    const payload = {
+      p_first_name: 'Testchild',
+      p_last_name: 'Ibrahim',
+      p_relationship: 'Child',
+      p_date_of_birth: '20150101',
+    };
+
+    it.each([{}, { p_gender: null }, { p_gender: 'Male' }, { p_gender: 'Female' }])(
+      'accepts omitted, null, or populated gender: %j',
+      async (fields) => {
+        expect(await validateDto(AddDependentRequestDto, { ...payload, ...fields })).toHaveLength(0);
+      },
+    );
+
+    it.each(['', 123, false, [], {}])('rejects invalid non-null gender: %j', async (value) => {
+      const errors = await validateDto(AddDependentRequestDto, { ...payload, p_gender: value });
+      expect(errors.map((error) => error.property)).toEqual(['p_gender']);
+    });
+
+    it('keeps the other business fields mandatory', async () => {
+      const errors = await validateDto(AddDependentRequestDto, {});
+      expect(errors.map((error) => error.property).sort()).toEqual(Object.keys(payload).sort());
+    });
+
+    it('still rejects unknown fields when gender is omitted', async () => {
+      const errors = await validateDto(AddDependentRequestDto, { ...payload, unknown: 'value' });
+      expect(errors.map((error) => error.property)).toEqual(['unknown']);
+    });
+
+    it('documents gender as optional and nullable', () => {
+      expect(
+        Reflect.getMetadata(DECORATORS.API_MODEL_PROPERTIES, AddDependentRequestDto.prototype, 'p_gender'),
+      ).toMatchObject({ required: false, nullable: true, type: String });
+    });
+  });
+
   describe('add dependent phone id', () => {
     const payload = {
       p_first_name: 'Testchild',
@@ -164,19 +201,46 @@ describe('Oracle submit DTOs', () => {
     expect(errors).toHaveLength(0);
   });
 
-  it('requires the passport business fields', async () => {
-    const errors = await validateDto(PassportApplyRequestDto, {
+  describe('passport application fields', () => {
+    const payload = {
       p_passport_number: 'A498989',
+      p_date_of_expiry: '20360121',
+      p_type_of_passport: 'Normal',
+      p_country_of_issue: 'QA',
+    };
+
+    it('keeps the remaining business fields mandatory', async () => {
+      const errors = await validateDto(PassportApplyRequestDto, {});
+      expect(errors.map((error) => error.property).sort()).toEqual(Object.keys(payload).sort());
     });
-    expect(errors.map((error) => error.property)).toEqual(
-      expect.arrayContaining([
-        'p_date_of_issue',
-        'p_date_of_expiry',
-        'p_type_of_passport',
-        'p_place_of_issue',
-        'p_country_of_issue',
-      ]),
-    );
+
+    it.each([
+      {},
+      { p_date_of_issue: null, p_place_of_issue: null },
+      { p_date_of_issue: '20260121' },
+      { p_place_of_issue: 'Doha' },
+      { p_date_of_issue: '20260121', p_place_of_issue: 'Doha' },
+    ])('accepts optional issue fields: %j', async (fields) => {
+      expect(await validateDto(PassportApplyRequestDto, { ...payload, ...fields })).toHaveLength(0);
+    });
+
+    describe.each(['p_date_of_issue', 'p_place_of_issue'])('%s', (field) => {
+      it.each(['', 123, false, [], {}])('rejects invalid non-null values: %j', async (value) => {
+        const errors = await validateDto(PassportApplyRequestDto, { ...payload, [field]: value });
+        expect(errors.map((error) => error.property)).toEqual([field]);
+      });
+
+      it('is documented as optional and nullable', () => {
+        expect(
+          Reflect.getMetadata(DECORATORS.API_MODEL_PROPERTIES, PassportApplyRequestDto.prototype, field),
+        ).toMatchObject({ required: false, nullable: true, type: String });
+      });
+    });
+
+    it('still rejects unknown fields', async () => {
+      const errors = await validateDto(PassportApplyRequestDto, { ...payload, unknown: 'value' });
+      expect(errors.map((error) => error.property)).toEqual(['unknown']);
+    });
   });
 
   it('accepts all ten leave-apply attachment slots and rejects unknown keys', async () => {

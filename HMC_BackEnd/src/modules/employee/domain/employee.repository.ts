@@ -28,6 +28,11 @@ export interface SupervisorRepository {
     lang: Lang,
     searchKeyWord?: string,
   ): Promise<SupervisorView[]>;
+  getSupervisorChangeViews(
+    username: string,
+    lang: Lang,
+    searchKeyWord?: string,
+  ): Promise<SupervisorView[]>;
   updateSupervisor(cmd: SupervisorUpdateCommand): Promise<SubmitResult>;
 }
 export const SUPERVISOR_REPOSITORY = Symbol('SUPERVISOR_REPOSITORY');

@@ -94,7 +94,7 @@ describe('Function access audit classification', () => {
         'schoolFees_children',
       ],
     ],
-    ['frmSupervisorChange', ['employee_supervisorViews', 'employee_supervisorUpdate']],
+    ['frmSupervisorChange', ['employee_supervisorViews', 'employee_supervisorChange', 'employee_supervisorUpdate']],
     ['frmMyRequests', ['approvals_myRequests']],
     ['frmPayslip', ['payslip_periods', 'payslip_count', 'payslip_generate']],
     [

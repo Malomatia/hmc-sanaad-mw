@@ -113,6 +113,13 @@ export class AddDependentRequestDto {
   @RequiredString('20150101')
   p_date_of_birth!: string;
 
+  @ApiPropertyOptional({
+    type: [String],
+    nullable: true,
+    description: 'Optional compatibility field; not used by the add-dependent Oracle procedure.',
+  })
+  p_phone_id?: string[] | null;
+
   [key: string]: unknown;
 }
 
@@ -121,7 +128,7 @@ export class AddDependentRequestDto {
 // p_phone_type[i] types p_phone_number[i]) — send arrays of strings.
 defineOptionalStringArrayFields(
   AddDependentRequestDto,
-  ['p_phone_type', 'p_phone_number'],
+  ['p_phone_id', 'p_phone_type', 'p_phone_number'],
   {
     p_phone_type: ['Qatar Mobile Number', 'Home'],
     p_phone_number: ['55512345', '44412345'],

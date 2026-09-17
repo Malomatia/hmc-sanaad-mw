@@ -1491,3 +1491,22 @@ Regression checks: `npm.cmd test -- --runInBand modules/notifications modules/ap
 core/http/response.interceptor.spec.ts` and `npm.cmd run build` from `HMC_BackEnd/`.
 Coverage includes explicit modes conflicting with actor identity, missing mode,
 missing participant data, unchanged success/failure behavior, and multi-device sends.
+
+## Nullable personal first name and add-dependent phone ID
+
+`POST /profile/personal` accepts an omitted or null `p_first_name`; either binds
+SQL NULL. A supplied non-null value must still be a non-empty string. The other
+required fields and strict request whitelist are unchanged. The request key is
+`p_first_name`, not bare `first_name`.
+
+`POST /dependents` accepts optional nullable `p_phone_id`, using the same
+string-array normalization as the update endpoint. This is a compatibility field:
+the confirmed ADD procedure has no phone-ID parameter, so it is not bound to
+Oracle. Non-null arrays still participate in the existing phone-length checks;
+null is treated as absent. Do not add a guessed parameter to the Oracle catalog.
+
+Regression checks: `npm.cmd test -- --runInBand shared/dto/oracle-submit.dto.spec.ts
+core/database/confirmed-submit-contracts.spec.ts modules/profile modules/dependents`
+and `npm.cmd run build` from `HMC_BackEnd/`. Oracle calls are mocked. Semantic
+lint has a pre-existing unused `ATTACHMENT_EXAMPLE` import in
+`profile/interface/profile.examples.ts` (also reproduced against HEAD).

@@ -1,4 +1,9 @@
 import * as oracledb from 'oracledb';
+import { ValidationPipe } from '@nestjs/common';
+import { LookupsService } from '@lookups/application/lookups.service';
+import { DependentService } from '@modules/dependents/application/dependents.service';
+import { AddDependentRequestDto } from '@modules/dependents/interface/dto/dependents.dto';
+import { UpdatePersonalRequestDto } from '@modules/profile/interface/dto/update-personal.request.dto';
 import { OracleService } from './oracle.service';
 import { OracleSchemaService } from './oracle-schema.service';
 import { OracleContractCatalog } from './oracle-contracts';
@@ -96,6 +101,39 @@ describe('Confirmed submit contracts (2026-09-14 export)', () => {
     expect(binds.p_address_id).toEqual({ type: oracledb.DB_TYPE_NUMBER, val: 1720617 });
     expect(binds.p_effective_date).toEqual(DATE('2026-09-14'));
   });
+
+  it.each([{}, { p_first_name: null }])('binds a missing/null personal first name as SQL NULL: %j', async (input) => {
+    const { ora, schema, issued } = make();
+    const pipe = new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true });
+    const fields = await pipe.transform({
+      p_effective_date: '01-Jan-2026', p_last_name: 'Test', p_marital_status: 'Married', ...input,
+    }, { type: 'body', metatype: UpdatePersonalRequestDto });
+    await new ProfileOracleRepository(ora, schema).updatePersonal({
+      username: 'TESTUSER', lang: 'en', fields,
+    });
+    expect(issued().binds.p_first_name).toBeNull();
+  });
+
+  it.each([{}, { p_phone_id: null }, { p_phone_id: ['324324'] }])(
+    'accepts the add phone id without changing the confirmed Oracle signature: %j',
+    async (input) => {
+      const { ora, schema, issued } = make();
+      const pipe = new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true });
+      const fields = await pipe.transform({
+        p_first_name: 'Child', p_last_name: 'Test', p_relationship: 'Child', p_gender: 'Male',
+        p_date_of_birth: '20150101', p_phone_type: ['Home'], p_phone_number: ['44412345'], ...input,
+      }, { type: 'body', metatype: AddDependentRequestDto });
+      const service = new DependentService(new DependentOracleRepository(ora, schema), {} as LookupsService);
+      await expect(service.add(fields, { username: 'TESTUSER', roles: [] }, 'en')).resolves.toMatchObject({
+        successflag: 'S',
+      });
+      const { sql, binds } = issued();
+      expect(sql).not.toContain('p_phone_id');
+      expect(binds).not.toHaveProperty('p_phone_id');
+      expect(binds).toMatchObject({ p_phone_type: 'Home', p_phone_number: '44412345' });
+      expect(Object.keys(binds)).toHaveLength(69);
+    },
+  );
 
   it('UPD_PERSONAL_INFO_PR: DATE effective date + ten BLOB slots, no p_language', async () => {
     const { ora, schema, issued } = make();

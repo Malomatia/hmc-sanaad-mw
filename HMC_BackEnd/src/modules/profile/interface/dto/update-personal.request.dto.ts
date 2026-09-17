@@ -1,3 +1,5 @@
+import { ApiPropertyOptional } from '@nestjs/swagger';
+import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
 import {
   ATTACHMENT_FIELDS,
   defineOptionalStringFields,
@@ -9,8 +11,11 @@ export class UpdatePersonalRequestDto {
   @RequiredString('01-Jan-2026')
   p_effective_date!: string;
 
-  @RequiredString('Amir')
-  p_first_name!: string;
+  @ApiPropertyOptional({ type: String, nullable: true, example: 'Amir' })
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  p_first_name?: string | null;
 
   @RequiredString('Ibrahim')
   p_last_name!: string;

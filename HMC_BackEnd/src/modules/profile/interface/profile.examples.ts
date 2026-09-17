@@ -215,10 +215,10 @@ export const PROFILE_UPDATE_PERSONAL_BODY = {
   description: 'Personal-details update payload (UPD_PERSONAL_INFO_PR `p_*` binds).',
   schema: {
     type: 'object',
-    required: ['p_effective_date', 'p_first_name', 'p_last_name', 'p_marital_status'],
+    required: ['p_effective_date', 'p_last_name', 'p_marital_status'],
     properties: {
       p_effective_date: { type: 'string', example: '01-Jan-2026', description: 'Effective date (DD-Mon-YYYY).' },
-      p_first_name: { type: 'string', example: 'Amir' },
+      p_first_name: { type: 'string', nullable: true, example: 'Amir' },
       p_middle_name: { type: 'string', example: 'Sami Samir' },
       p_last_name: { type: 'string', example: 'Ibrahim' },
       p_marital_status: { type: 'string', example: 'Married', description: 'Code from the marital-status LOV.' },

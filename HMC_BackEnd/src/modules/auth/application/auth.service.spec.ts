@@ -163,8 +163,14 @@ describe('AuthService Oracle user validation', () => {
   const restricted = functions.slice(1, 5);
   const restrictedClaims = ['frmHousing', 'frmSogha'];
 
-  it('validates the request username and preserves the full list for an Oracle user', async () => {
+  it('validates the request username and preserves the full list when Oracle returns YES', async () => {
     const { service, functionAccess, oracleUser, jwt } = makeService({}, 'resolved-user');
+    const ora = {
+      isConfigured: jest.fn().mockReturnValue(true),
+      call: jest.fn().mockResolvedValue({ p_is_valid: 'YES' }),
+    };
+    const repository = new OracleUserValidationRepository(ora as unknown as OracleService);
+    oracleUser.validate.mockImplementation((username) => repository.validate(username));
     jest.mocked(functionAccess.list).mockResolvedValue(functions);
 
     const response = await service.login(LOGIN);
@@ -181,13 +187,13 @@ describe('AuthService Oracle user validation', () => {
     }
   });
 
-  it.each(['false', 'unavailable', 'timeout', 'disabled'])('restricts the list and both JWTs when Oracle is %s', async (result) => {
+  it.each(['NO', 'unavailable', 'timeout', 'disabled'])('restricts the list and both JWTs when Oracle is %s', async (result) => {
     const { service, functionAccess, oracleUser, jwt } = makeService();
     const ora = {
       isConfigured: jest.fn().mockReturnValue(result !== 'disabled'),
       call: result === 'unavailable' || result === 'timeout'
         ? jest.fn().mockRejectedValue(new Error(result))
-        : jest.fn().mockResolvedValue({ p_is_valid: 'false' }),
+        : jest.fn().mockResolvedValue({ p_is_valid: 'NO' }),
     };
     const repository = new OracleUserValidationRepository(ora as unknown as OracleService);
     oracleUser.validate.mockImplementation((username) => repository.validate(username));

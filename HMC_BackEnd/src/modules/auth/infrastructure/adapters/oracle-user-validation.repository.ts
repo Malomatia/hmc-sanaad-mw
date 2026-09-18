@@ -22,7 +22,7 @@ export class OracleUserValidationRepository implements OracleUserValidationPort 
           p_is_valid: { dir: oracledb.BIND_OUT, type: oracledb.STRING, maxSize: 4000 },
         },
       );
-      return out.p_is_valid?.trim().toLowerCase() === 'true';
+      return out.p_is_valid?.trim().toUpperCase() === 'YES';
     } catch {
       this.logger.warn(`${ORACLE_OBJECTS.USER_VALIDATE_PRC} failed; restricting login functions.`);
       return false;

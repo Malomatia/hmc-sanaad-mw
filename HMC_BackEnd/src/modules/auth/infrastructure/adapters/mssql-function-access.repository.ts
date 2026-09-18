@@ -88,8 +88,8 @@ export class MssqlFunctionAccessRepository implements FunctionAccessPort {
       // The exact legacy query from the client's service mapping.
       rows = await this.db.query<Record<string, unknown>>(
         `SELECT A.FunctionName, A.FunctionCode, A.Description, A.StatusCode
-           FROM ${this.view} A WHERE A.AppID = @appId`,
-        { appId: this.appId },
+           FROM ${this.view} A WHERE A.AppID = @appId AND A.StatusCode = @StatusCode`,
+        { appId: this.appId , StatusCode:1},
       );
     } catch (err) {
       this.logger.warn(

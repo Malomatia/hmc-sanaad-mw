@@ -29,6 +29,12 @@ import {
 } from '../interface/dto/auth.dto';
 import { DEV_FUNCTION_ACCESS, devIdentity } from './dev-fallback';
 import { STATIC_FUNCTION_ACCESS, STATIC_LOGIN_IDENTITY } from './static-login.data';
+import {
+  ORACLE_USER_VALIDATION_PORT,
+  OracleUserValidationPort,
+} from '../domain/ports/oracle-user-validation.port';
+
+const NON_ORACLE_FUNCTION_CODES = new Set(['frmHousing', 'frmStaffclinic', 'frmSogha', 'flxbanner']);
 
 /**
  * API-5 Login + current-identity. Verifies the MPIN (MpinStorePort), resolves the
@@ -60,6 +66,7 @@ export class AuthService {
     @Inject(FUNCTION_ACCESS_PORT) private readonly functionAccess: FunctionAccessPort,
     @Inject(DEVICE_REGISTRY_PORT) private readonly devices: DeviceRegistryPort,
     @Inject(LOGIN_EMPLOYMENT_PORT) private readonly employment: LoginEmploymentPort,
+    @Inject(ORACLE_USER_VALIDATION_PORT) private readonly oracleUser: OracleUserValidationPort,
     private readonly audit: AuditService,
     private readonly revocation: TokenRevocationService,
     config: ConfigService,
@@ -81,6 +88,7 @@ export class AuthService {
 
     let identity: EmployeeIdentity;
     let functionList: FunctionAccess[];
+    let isOrcaleUser = true;
     let employment: LoginEmploymentDetails = {};
 
     if (this.staticLogin) {
@@ -111,14 +119,21 @@ export class AuthService {
         imei: dto.imeinumber,
         platform: dto.platform,
       });
-      functionList = await this.functionAccess.list(identity.employeeNumber ?? dto.username);
-      employment = await this.employment.resolve(identity);
+      [functionList, isOrcaleUser, employment] = await Promise.all([
+        this.functionAccess.list(identity.employeeNumber ?? dto.username),
+        this.oracleUser.validate(dto.username),
+        this.employment.resolve(identity),
+      ]);
 
       // Stamp the device registration's LastActive. A side effect of an
       // already-successful login: best-effort, never fails the request.
       this.devices.touch(dto.username, dto.imeinumber).catch((err: Error) => {
         this.logger.warn(`Could not update LastActive for "${dto.username}": ${err.message}`);
       });
+    }
+
+    if (!isOrcaleUser) {
+      functionList = functionList.filter((f) => NON_ORACLE_FUNCTION_CODES.has(f.functioncode));
     }
 
     const roles = (identity.roles as Role[] | undefined) ?? [Role.EMPLOYEE];
@@ -149,6 +164,7 @@ export class AuthService {
           employeenamear: identity.employeeNameAr,
           employeedepartment: identity.department,
           employeecompany: identity.company,
+          isOrcaleUser,
           functionaccesslist: functionList,
         },
       }),
@@ -173,6 +189,7 @@ export class AuthService {
       organization_name_ar: employment.organizationNameAr,
       employeedepartment: identity.department,
       employeecompany: identity.company,
+      isOrcaleUser,
       functionaccesslist: functionList,
     };
   }

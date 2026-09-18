@@ -1,4 +1,4 @@
-import { ExecutionContext, INestApplication, ValidationPipe } from '@nestjs/common';
+import { ExecutionContext, INestApplication, ServiceUnavailableException, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Reflector } from '@nestjs/core';
 import { Test } from '@nestjs/testing';
@@ -13,7 +13,7 @@ import {
   ApprovalsService,
   WorklistService,
 } from '@modules/approvals/application/approvals.service';
-import { APPROVALS_REPOSITORY } from '@modules/approvals/domain/approvals.repository';
+import { APPROVALS_REPOSITORY, WORKLIST_REPOSITORY } from '@modules/approvals/domain/approvals.repository';
 import { ApprovalsController } from '@modules/approvals/interface/approvals.controller';
 import { LettersService } from '@modules/letters/application/letters.service';
 import { LettersController } from '@modules/letters/interface/letters.controller';
@@ -122,6 +122,9 @@ describe('successful submit messages', () => {
 describe('letters and approvals HTTP responses', () => {
   let app: INestApplication;
   const submit = jest.fn();
+  const requestInfo = jest.fn();
+  const reassign = jest.fn();
+  const decide = jest.fn();
   const getSummary = jest.fn();
   const record = jest.fn();
   const writer = { write: jest.fn() };
@@ -144,8 +147,9 @@ describe('letters and approvals HTTP responses', () => {
       controllers: [LettersController, ApprovalsController],
       providers: [
         ApprovalsService,
-        { provide: APPROVALS_REPOSITORY, useValue: { getSummary } },
-        { provide: WorklistService, useValue: {} },
+        { provide: APPROVALS_REPOSITORY, useValue: { getSummary, requestInfo, decide } },
+        WorklistService,
+        { provide: WORKLIST_REPOSITORY, useValue: { reassign } },
         { provide: LettersService, useValue: { submit } },
         { provide: ConfigService, useValue: new ConfigService({ app: { nodeEnv: 'production' } }) },
       ],
@@ -172,6 +176,9 @@ describe('letters and approvals HTTP responses', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     submit.mockResolvedValue(successResult());
+    requestInfo.mockResolvedValue(successResult());
+    reassign.mockResolvedValue(successResult());
+    decide.mockResolvedValue(successResult());
     getSummary.mockResolvedValue({
       approvals: [{ SUBJECT: '  Leave   request for 037400    - Employee  ' }],
       pendingQid: [],
@@ -216,6 +223,140 @@ describe('letters and approvals HTTP responses', () => {
       .send(body)
       .expect(200)
       .expect(({ body: response }) => expect(response.message).toBe('Success'));
+  });
+
+  describe.each([
+    {
+      action: 'QUESTION',
+      route: 'request-info',
+      payload: { itemKey: 'item-1', mode: 'QUESTION', comment: 'Please clarify.' },
+      handler: requestInfo,
+      success: { en: 'Request for More Information Processed', ar: 'تمت معالجة طلب مزيد من المعلومات' },
+      failure: { en: 'Request for More Information Not Processed', ar: 'تعذرت معالجة طلب مزيد من المعلومات' },
+    },
+    {
+      action: 'ANSWER',
+      route: 'request-info',
+      payload: { itemKey: 'item-1', mode: 'ANSWER', comment: 'Here are the details.' },
+      handler: requestInfo,
+      success: { en: 'Answer for More Information Processed', ar: 'تمت معالجة الرد على طلب مزيد من المعلومات' },
+      failure: { en: 'Answer for More Information Not Processed', ar: 'تعذرت معالجة الرد على طلب مزيد من المعلومات' },
+    },
+    {
+      action: 'REASSIGN',
+      route: 'reassign',
+      payload: { assignTo: 'OTHER.USER', type: 'TRANSFER', comment: 'Please review.' },
+      handler: reassign,
+      success: { en: 'Re-Assign Approval Processed', ar: 'تمت معالجة إعادة إسناد الموافقة' },
+      failure: { en: 'Re-Assign Approval Not Processed', ar: 'تعذرت معالجة إعادة إسناد الموافقة' },
+    },
+  ])('$action business messages', ({ route, payload, handler, success, failure }) => {
+    it.each([
+      [true, 'en', undefined, 'en'],
+      [true, 'ar', undefined, 'ar'],
+      [false, 'en', undefined, 'en'],
+      [false, 'ar', undefined, 'ar'],
+      [true, undefined, 'ar', 'ar'],
+      [false, undefined, 'ar', 'ar'],
+      [true, 'en', 'ar', 'en'],
+      [false, 'en', 'ar', 'en'],
+      [true, 'ar', 'en', 'ar'],
+      [false, 'ar', 'en', 'ar'],
+      [true, undefined, undefined, 'en'],
+      [false, undefined, undefined, 'en'],
+      [true, 'unsupported', 'ar', 'en'],
+      [false, 'unsupported', 'ar', 'en'],
+    ] as const)(
+      'returns the exact text for success=%s query=%s header=%s',
+      async (succeeded, queryLang, headerLang, expectedLang) => {
+        const source = Object.freeze({
+          ...(succeeded ? successResult('Procedure success') : failureResult('Procedure failure')),
+          errormessageAr: 'نص الإجراء',
+          result: { notificationId: '123' },
+        });
+        handler.mockResolvedValueOnce(source);
+        const req = request(app.getHttpServer()).post(`/api/v1/approvals/123/${route}`);
+        if (queryLang !== undefined) req.query({ lang: queryLang });
+        if (headerLang !== undefined) req.set('lang', headerLang);
+
+        const response = await req.send(payload).expect(200);
+
+        expect(response.body).toEqual({
+          status: source.status,
+          successflag: source.successflag,
+          message: (succeeded ? success : failure)[expectedLang],
+          httpStatusCode: 200,
+          result: source.result,
+        });
+        expect(handler).toHaveBeenCalledTimes(1);
+        expect(handler).toHaveBeenCalledWith(expect.objectContaining({
+          ...payload,
+          username: user.username,
+          approvalId: '123',
+          lang: expectedLang,
+        }));
+        expect(source.errormessage).toBe(succeeded ? 'Procedure success' : 'Procedure failure');
+        expect(source.errormessageAr).toBe('نص الإجراء');
+        expect(record).toHaveBeenCalledWith(
+          expect.objectContaining({ responseSummary: expect.objectContaining(response.body) }),
+        );
+      },
+    );
+
+    it('preserves exception status rather than converting a thrown error into a business response', async () => {
+      handler.mockRejectedValueOnce(new ServiceUnavailableException('Oracle unavailable'));
+
+      await request(app.getHttpServer())
+        .post(`/api/v1/approvals/123/${route}`)
+        .send(payload)
+        .expect(503);
+    });
+
+    it('preserves request validation and does not call the procedure for an invalid body', async () => {
+      await request(app.getHttpServer())
+        .post(`/api/v1/approvals/123/${route}`)
+        .send({})
+        .expect(400);
+
+      expect(handler).not.toHaveBeenCalled();
+    });
+  });
+
+  it.each([undefined, null])('defaults request-info mode %s to QUESTION', async (mode) => {
+    requestInfo.mockResolvedValueOnce(failureResult('Procedure failure'));
+
+    await request(app.getHttpServer())
+      .post('/api/v1/approvals/123/request-info')
+      .set('lang', 'ar')
+      .send({ itemKey: 'item-1', comment: 'Please clarify.', mode })
+      .expect(200)
+      .expect(({ body: response }) => {
+        expect(response.message).toBe('تعذرت معالجة طلب مزيد من المعلومات');
+      });
+    expect(requestInfo).toHaveBeenCalledWith(expect.objectContaining({ mode: 'QUESTION' }));
+  });
+
+  it('retains the default DELEGATE type for reassign', async () => {
+    await request(app.getHttpServer())
+      .post('/api/v1/approvals/123/reassign')
+      .send({ assignTo: 'OTHER.USER' })
+      .expect(200)
+      .expect(({ body: response }) => expect(response.message).toBe('Re-Assign Approval Processed'));
+
+    expect(reassign).toHaveBeenCalledWith(expect.objectContaining({ type: 'DELEGATE' }));
+  });
+
+  it.each([
+    [true, 'تم الأرسال'],
+    [false, 'رسالة الرفض'],
+  ] as const)('does not change decision messages for success=%s', async (succeeded, message) => {
+    decide.mockResolvedValueOnce(succeeded ? successResult() : failureResult('Rejected', message));
+
+    await request(app.getHttpServer())
+      .post('/api/v1/approvals/123/decision?lang=ar')
+      .send({ itemKey: 'item-1', decision: 'APPROVE' })
+      .expect(200)
+      .expect(({ body: response }) => expect(response.message).toBe(message));
   });
 
   it('normalizes SUBJECT on the requested approvals endpoint without changing its caller filter', async () => {

@@ -22,6 +22,9 @@ export const SkipEnvelope = () => SetMetadata(SKIP_ENVELOPE, true);
 export const PRESERVE_AR_TWINS = 'preserveArTwins';
 export const PreserveArTwins = (...baseKeys: string[]) => SetMetadata(PRESERVE_AR_TWINS, baseKeys);
 
+export const PRESERVE_SUBMIT_MESSAGES = 'preserveSubmitMessages';
+export const PreserveSubmitMessages = () => SetMetadata(PRESERVE_SUBMIT_MESSAGES, true);
+
 /**
  * Standardizes success responses into the Sanaad envelope. Action results
  * (SubmitResult from `_PR`/`_PKG`) get the action envelope; everything else the
@@ -44,6 +47,10 @@ export class ResponseInterceptor implements NestInterceptor<unknown, SanaadEnvel
         context.getHandler(),
         context.getClass(),
       ]) ?? [];
+    const preserveSubmitMessages = this.reflector.getAllAndOverride<boolean>(PRESERVE_SUBMIT_MESSAGES, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
 
     const http = context.switchToHttp();
     const res = http.getResponse<{ statusCode?: number }>();
@@ -65,10 +72,11 @@ export class ResponseInterceptor implements NestInterceptor<unknown, SanaadEnvel
           // one isn't set.
           const header = req?.headers?.lang;
           const successLang = toLang(req?.query?.lang ?? (Array.isArray(header) ? header[0] : header));
+          const messageLang = preserveSubmitMessages ? successLang : lang;
           const message =
-            data.status === 'success' && data.successflag === 'S'
+            data.status === 'success' && data.successflag === 'S' && !preserveSubmitMessages
               ? SUCCESS_MESSAGES[successLang]
-              : lang === 'ar'
+              : messageLang === 'ar'
                 ? (data.errormessageAr ?? data.errormessage)
                 : data.errormessage;
           return {

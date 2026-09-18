@@ -1554,3 +1554,52 @@ of birth remain required. Swagger marks gender optional/nullable. Missing gender
 binds SQL NULL; supplied gender is preserved. This changes add-request validation
 only, not the update DTO or Oracle procedure contract. Coverage is in the same
 submit DTO and confirmed-contract tests above, using mocked Oracle calls.
+
+## Login Oracle-user function access
+
+Normal login calls `XXHMC_SND_USER_VALIDATE_PRC` with the request username in
+`p_user_name` (uppercase at the Oracle boundary) and a VARCHAR2 OUT bind
+`p_is_valid`. `OracleUserValidationPort` uses the existing Oracle pool and the
+explicit two-parameter contract; no dictionary discovery or new config is needed.
+Only trimmed, case-insensitive `true` enables the full function list. False,
+missing/unexpected output, disabled Oracle, and procedure errors return boolean
+`isOrcaleUser: false` and retain only `frmHousing`, `frmStaffclinic`, `frmSogha`,
+and `flxbanner` from the existing list, without changing their fields/statuses.
+
+The list is supplied by `MssqlFunctionAccessRepository` from the Users DB
+`HMC_Sanad_AppMaster_VW` (the earlier 501-stub note is obsolete). Both access and
+refresh JWT function claims are derived after filtering; refresh retains that
+restriction. Oracle validation and employment-label lookup run concurrently.
+Invalid MPIN still stops before these reads. Existing `AUTH_STATIC_LOGIN` and
+`AUTH_DISABLED` test bypasses remain database-free and simulate `isOrcaleUser:
+true` with their unchanged fixture lists. The response spelling `isOrcaleUser`
+is intentional. The gateway forwards it unchanged.
+
+Verification: `npm.cmd test -- --runInBand modules/auth core/audit
+core/database/oracle-username.util.spec.ts` and `npm.cmd run build` from
+`HMC_BackEnd/`. Automated tests mock Oracle; deployed procedure access still
+requires staging verification.
+
+## Approval request-info and reassign response messages
+
+Only `POST /approvals/:id/request-info` and `POST /approvals/:id/reassign` opt in
+with `PreserveSubmitMessages`. Their services replace the SubmitResult's English
+and Arabic message pair with the client's fixed Processed/Not Processed wording;
+request-info selects QUESTION versus ANSWER from the mode (missing/null mode
+still defaults to QUESTION in the controller). Success requires both
+`status === 'success'` and `successflag === 'S'`; status, flag, result, and HTTP
+200 business-outcome conventions are unchanged. Procedure calls/inputs and push
+notification messages are unaffected.
+
+For these opt-in messages, query `lang` takes precedence over the `lang` header,
+with English as default, for success AND failure. Other submits retain the
+existing global Success text and existing failure-message behavior. Exceptions,
+auth failures, and invalid request bodies retain their normal HTTP error handling;
+they are not converted into processed/not-processed business results.
+
+Regression checks: `npm.cmd test -- --runInBand core/http modules/approvals
+modules/notifications core/audit modules/auth --silent` and `npm.cmd run build`
+from `HMC_BackEnd/`. HTTP tests use real services/controllers with mocked Oracle
+repositories and check the messages recorded by the response logger as well.
+Semantic lint retains two pre-existing unused controller imports (`Role` and
+`ApprovalDetailQueryDto`), reproduced against HEAD; the other changed files pass.

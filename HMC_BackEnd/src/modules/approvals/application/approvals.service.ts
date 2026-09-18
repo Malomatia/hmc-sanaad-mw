@@ -21,6 +21,39 @@ import {
 } from '../domain/approvals.repository';
 import { RequestField, buildRequestFields, requestTypeKeyOf } from '../domain/request-fields';
 
+const APPROVAL_MESSAGES = {
+  QUESTION: {
+    success: {
+      en: 'Request for More Information Processed',
+      ar: 'تمت معالجة طلب مزيد من المعلومات',
+    },
+    failure: {
+      en: 'Request for More Information Not Processed',
+      ar: 'تعذرت معالجة طلب مزيد من المعلومات',
+    },
+  },
+  ANSWER: {
+    success: {
+      en: 'Answer for More Information Processed',
+      ar: 'تمت معالجة الرد على طلب مزيد من المعلومات',
+    },
+    failure: {
+      en: 'Answer for More Information Not Processed',
+      ar: 'تعذرت معالجة الرد على طلب مزيد من المعلومات',
+    },
+  },
+  REASSIGN: {
+    success: {
+      en: 'Re-Assign Approval Processed',
+      ar: 'تمت معالجة إعادة إسناد الموافقة',
+    },
+    failure: {
+      en: 'Re-Assign Approval Not Processed',
+      ar: 'تعذرت معالجة إعادة إسناد الموافقة',
+    },
+  },
+} as const;
+
 /** Controller-facing shape of the RFMI submit (route carries the notification id). */
 export interface RequestInfoDto {
   itemType: string;
@@ -202,13 +235,15 @@ export class ApprovalsService {
     return this.repo.decide({ username: user.username, lang, approvalId, ...dto });
   }
 
-  requestInfo(
+  async requestInfo(
     approvalId: string,
     dto: RequestInfoDto,
     user: AuthenticatedUser,
     lang: Lang,
   ): Promise<SubmitResult> {
-    return this.repo.requestInfo({ username: user.username, lang, approvalId, ...dto });
+    const result = await this.repo.requestInfo({ username: user.username, lang, approvalId, ...dto });
+    const action = dto.mode.trim().toUpperCase() === 'ANSWER' ? 'ANSWER' : 'QUESTION';
+    return withApprovalMessage(result, action);
   }
 
   /**
@@ -240,12 +275,22 @@ export class WorklistService {
     return this.repo.getActionHistory(itemKey, lang, itemType);
   }
 
-  reassign(
+  async reassign(
     approvalId: string,
     dto: { assignTo: string; type: ReassignType; comment?: string },
     user: AuthenticatedUser,
     lang: Lang,
   ): Promise<SubmitResult> {
-    return this.repo.reassign({ username: user.username, lang, approvalId, ...dto });
+    const result = await this.repo.reassign({ username: user.username, lang, approvalId, ...dto });
+    return withApprovalMessage(result, 'REASSIGN');
   }
+}
+
+function withApprovalMessage(
+  result: SubmitResult,
+  action: keyof typeof APPROVAL_MESSAGES,
+): SubmitResult {
+  const outcome = result.status === 'success' && result.successflag === 'S' ? 'success' : 'failure';
+  const message = APPROVAL_MESSAGES[action][outcome];
+  return { ...result, errormessage: message.en, errormessageAr: message.ar };
 }

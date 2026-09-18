@@ -89,9 +89,14 @@ describe('AuthController', () => {
   });
 
   describe('POST /auth/login', () => {
-    it.each(['en', 'ar'])(
-      'preserves both languages with lang=%s instead of collapsing Arabic twins',
-      async (lang) => {
+    it.each([
+      ['en', true],
+      ['ar', true],
+      ['en', false],
+      ['ar', false],
+    ] as const)(
+      'preserves both languages and the Oracle flag with lang=%s and isOrcaleUser=%s',
+      async (lang, isOrcaleUser) => {
         const response = {
           status: 'success',
           employeeusername: 'HMC1',
@@ -102,6 +107,7 @@ describe('AuthController', () => {
           job_title_ar: 'المسمى الوظيفي',
           organization_name: 'Oracle organization',
           organization_name_ar: 'المؤسسة',
+          isOrcaleUser,
         };
         auth.login.mockResolvedValueOnce(response);
         const loginBody = { ...body, mpin: 'client-hashed-test-value' };

@@ -20,6 +20,11 @@ import { DeviceRegistryPort } from '../domain/ports/device-registry.port';
 import { LoginEmploymentPort } from '../domain/ports/login-employment.port';
 import { OracleService } from '@core/database/oracle.service';
 import { OracleLoginEmploymentRepository } from '../infrastructure/adapters/oracle-login-employment.repository';
+import { FunctionAccess, FunctionStatus } from '../domain/auth-identity';
+import { DEV_FUNCTION_ACCESS } from './dev-fallback';
+import { STATIC_FUNCTION_ACCESS } from './static-login.data';
+import { OracleUserValidationPort } from '../domain/ports/oracle-user-validation.port';
+import { OracleUserValidationRepository } from '../infrastructure/adapters/oracle-user-validation.repository';
 
 const AUTH_CFG = {
   jwtSecret: 'test_secret_test_secret_test_secret_12',
@@ -60,6 +65,9 @@ function makeService(overrides: Partial<typeof AUTH_CFG> = {}, identityUsername 
   const employment: jest.Mocked<LoginEmploymentPort> = {
     resolve: jest.fn().mockResolvedValue({}),
   };
+  const oracleUser: jest.Mocked<OracleUserValidationPort> = {
+    validate: jest.fn().mockResolvedValue(true),
+  };
   const audit = { lifecycle: jest.fn() } as unknown as AuditService;
   const revocation = new TokenRevocationService();
   const config = {
@@ -75,11 +83,12 @@ function makeService(overrides: Partial<typeof AUTH_CFG> = {}, identityUsername 
     functionAccess,
     devices,
     employment,
+    oracleUser,
     audit,
     revocation,
     config,
   );
-  return { service, jwt, revocation, devices, ldap, mpinStore, employment };
+  return { service, jwt, revocation, devices, ldap, mpinStore, employment, functionAccess, oracleUser };
 }
 
 const LOGIN = {
@@ -140,6 +149,104 @@ describe('Login invalid-credentials language over HTTP', () => {
       await req.send(LOGIN).expect(200).expect({ status: 'error', message });
     },
   );
+});
+
+describe('AuthService Oracle user validation', () => {
+  const functions: FunctionAccess[] = [
+    { functionname: 'Payslip', functioncode: 'frmPayslip', status: FunctionStatus.ENABLED },
+    { functionname: 'Housing', functioncode: 'frmHousing', remarks: 'Housing', status: FunctionStatus.ENABLED },
+    { functionname: 'Staff clinic', functioncode: 'frmStaffclinic', status: FunctionStatus.DISABLED },
+    { functionname: 'Sogha', functioncode: 'frmSogha', status: FunctionStatus.ENABLED },
+    { functionname: 'Banner', functioncode: 'flxbanner', status: FunctionStatus.COMING_SOON },
+    { functionname: 'Approvals', functioncode: 'frmApprovals', status: FunctionStatus.ENABLED },
+  ];
+  const restricted = functions.slice(1, 5);
+  const restrictedClaims = ['frmHousing', 'frmSogha'];
+
+  it('validates the request username and preserves the full list for an Oracle user', async () => {
+    const { service, functionAccess, oracleUser, jwt } = makeService({}, 'resolved-user');
+    jest.mocked(functionAccess.list).mockResolvedValue(functions);
+
+    const response = await service.login(LOGIN);
+
+    expect(response).toMatchObject({ status: 'success', isOrcaleUser: true });
+    expect(response.functionaccesslist).toBe(functions);
+    expect(oracleUser.validate).toHaveBeenCalledTimes(1);
+    expect(oracleUser.validate).toHaveBeenCalledWith(LOGIN.username);
+    expect(functionAccess.list).toHaveBeenCalledWith('037400');
+    for (const token of [response.token!, response.refreshtoken!]) {
+      expect(jwt.verify(token)).toMatchObject({
+        functions: ['frmPayslip', ...restrictedClaims, 'frmApprovals'],
+      });
+    }
+  });
+
+  it.each(['false', 'unavailable', 'timeout', 'disabled'])('restricts the list and both JWTs when Oracle is %s', async (result) => {
+    const { service, functionAccess, oracleUser, jwt } = makeService();
+    const ora = {
+      isConfigured: jest.fn().mockReturnValue(result !== 'disabled'),
+      call: result === 'unavailable' || result === 'timeout'
+        ? jest.fn().mockRejectedValue(new Error(result))
+        : jest.fn().mockResolvedValue({ p_is_valid: 'false' }),
+    };
+    const repository = new OracleUserValidationRepository(ora as unknown as OracleService);
+    oracleUser.validate.mockImplementation((username) => repository.validate(username));
+    jest.mocked(functionAccess.list).mockResolvedValue(functions);
+
+    const response = await service.login(LOGIN);
+
+    expect(response).toMatchObject({
+      status: 'success',
+      isOrcaleUser: false,
+      functionaccesslist: restricted,
+    });
+    expect(functions).toHaveLength(6);
+    for (const token of [response.token!, response.refreshtoken!]) {
+      expect(jwt.verify(token)).toMatchObject({ functions: restrictedClaims });
+    }
+    const refreshed = await service.refresh({ refreshtoken: response.refreshtoken! });
+    for (const token of [refreshed.token!, refreshed.refreshtoken!]) {
+      expect(jwt.verify(token)).toMatchObject({ functions: restrictedClaims });
+    }
+  });
+
+  it('does not synthesize missing functions for a non-Oracle user', async () => {
+    const { service, oracleUser } = makeService();
+    oracleUser.validate.mockResolvedValue(false);
+
+    await expect(service.login(LOGIN)).resolves.toMatchObject({
+      status: 'success',
+      isOrcaleUser: false,
+      functionaccesslist: [],
+    });
+  });
+
+  it('does not validate Oracle or read function access after an invalid MPIN', async () => {
+    const { service, mpinStore, oracleUser, functionAccess } = makeService();
+    jest.mocked(mpinStore.verify).mockResolvedValue(false);
+
+    await expect(service.login(LOGIN)).resolves.toEqual({
+      status: 'error',
+      message: 'Invalid credentials.',
+    });
+    expect(oracleUser.validate).not.toHaveBeenCalled();
+    expect(functionAccess.list).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [{ disabled: true }, DEV_FUNCTION_ACCESS],
+    [{ staticLogin: true }, STATIC_FUNCTION_ACCESS],
+  ] as const)('preserves database-free test bypass %j', async (overrides, expected) => {
+    const { service, oracleUser, functionAccess } = makeService(overrides);
+
+    await expect(service.login(LOGIN)).resolves.toMatchObject({
+      status: 'success',
+      isOrcaleUser: true,
+      functionaccesslist: expected,
+    });
+    expect(oracleUser.validate).not.toHaveBeenCalled();
+    expect(functionAccess.list).not.toHaveBeenCalled();
+  });
 });
 
 describe('AuthService login employeeusername casing', () => {

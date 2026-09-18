@@ -15,6 +15,8 @@ import { MPIN_STORE_PORT } from './domain/ports/mpin-store.port';
 import { DEVICE_REGISTRY_PORT } from './domain/ports/device-registry.port';
 import { FUNCTION_ACCESS_PORT } from './domain/ports/function-access.port';
 import { LOGIN_EMPLOYMENT_PORT } from './domain/ports/login-employment.port';
+import { ORACLE_USER_VALIDATION_PORT } from './domain/ports/oracle-user-validation.port';
+import { OracleUserValidationRepository } from './infrastructure/adapters/oracle-user-validation.repository';
 import { LdapUserRepository } from './infrastructure/adapters/ldap-user.repository';
 import { EntraGraphUserRepository } from './infrastructure/adapters/entra-graph-user.repository';
 import { MssqlOtpRepository } from './infrastructure/adapters/mssql-otp.repository';
@@ -105,6 +107,7 @@ import { OracleLoginEmploymentRepository } from './infrastructure/adapters/oracl
     { provide: DEVICE_REGISTRY_PORT, useClass: MssqlDeviceRegistryRepository },
     { provide: FUNCTION_ACCESS_PORT, useClass: MssqlFunctionAccessRepository },
     { provide: LOGIN_EMPLOYMENT_PORT, useClass: OracleLoginEmploymentRepository },
+    { provide: ORACLE_USER_VALIDATION_PORT, useClass: OracleUserValidationRepository },
   ],
 })
 export class AuthModule {}

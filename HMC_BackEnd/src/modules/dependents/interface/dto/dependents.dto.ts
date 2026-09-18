@@ -110,7 +110,6 @@ export class AddDependentRequestDto {
   @ApiPropertyOptional({ type: String, nullable: true, example: 'Male' })
   @IsOptional()
   @IsString()
-  @IsNotEmpty()
   p_gender?: string | null;
 
   @RequiredString('20150101')

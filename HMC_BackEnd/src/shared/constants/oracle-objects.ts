@@ -146,6 +146,7 @@ export const ORACLE_OBJECTS = {
   UPD_ADDRESS_PR: o('UPD_ADDRESS_PR'),
   UPD_PERSONAL_INFO_PR: o('UPD_PERSONAL_INFO_PR'),
   UPDATE_DEPENDENT_PR: o('UPDATE_DEPENDENT_PR'),
+  USER_VALIDATE_PRC: o('USER_VALIDATE_PRC'),
 
   // ── Other (proc / func / table) ──────────────────────────
   CHK_PAYROLL_CNT: o('CHK_PAYROLL_CNT'),

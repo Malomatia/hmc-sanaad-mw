@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Param, Post, Query, HttpCode, Res } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
-import { SkipEnvelope } from '@core/http/response.interceptor';
+import { PreserveSubmitMessages, SkipEnvelope } from '@core/http/response.interceptor';
 import { Lang } from '@core/i18n/lang.decorator';
 import type { Lang as LangCode } from '@shared/domain/lang';
 import { CurrentUser } from '@core/auth/decorators/current-user.decorator';
@@ -217,6 +217,7 @@ export class ApprovalsController {
   /** `id` is the notification id, like the decision route. */
   @Post(':id/request-info')
   @HttpCode(200)
+  @PreserveSubmitMessages()
   @ApiOperation({
     summary: 'RFMI — Request more information (HR_RFMI_PR)',
     operationId: 'approvals_requestInfo',
@@ -255,6 +256,7 @@ export class ApprovalsController {
 
   @Post(':id/reassign')
   @HttpCode(200)
+  @PreserveSubmitMessages()
   @ApiOperation({ summary: 'op 71 — Reassign approval', operationId: 'approvals_reassign' })
   @ApiOkResponse({ type: SubmitResultDto })
   @VerifiedBody(

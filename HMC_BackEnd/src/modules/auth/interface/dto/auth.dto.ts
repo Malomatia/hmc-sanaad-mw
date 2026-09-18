@@ -75,6 +75,13 @@ export class LoginResponseDto {
   @ApiPropertyOptional({ example: 'Health Information and Communication Technology' })
   employeecompany?: string;
 
+  @ApiPropertyOptional({
+    type: Boolean,
+    description: 'Oracle user validation result; false when Oracle validation fails or is unavailable.',
+    example: true,
+  })
+  isOrcaleUser?: boolean;
+
   @ApiPropertyOptional({ type: [FunctionAccessItemDto] })
   functionaccesslist?: FunctionAccessItemDto[];
 

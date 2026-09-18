@@ -1,4 +1,4 @@
-import { ArgumentsHost, Catch, ExceptionFilter, Logger } from '@nestjs/common';
+import { ArgumentsHost, Catch, ExceptionFilter, HttpException, Logger } from '@nestjs/common';
 import { Response } from 'express';
 import { SanaadErrorEnvelope } from '@shared/interfaces/sanaad-response.interface';
 import { toLang } from '@shared/domain/lang';
@@ -33,6 +33,13 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     const classified = classifyException(exception);
     this.logInternal(exception, classified, req);
+    if (exception instanceof HttpException && exception.getStatus() === 429) {
+      const detail = exception.getResponse();
+      const retry = typeof detail === 'object' ? (detail as { retryAfterSeconds?: number }).retryAfterSeconds : undefined;
+      if (typeof retry === 'number' && Number.isFinite(retry) && retry > 0) {
+        res.setHeader('Retry-After', String(Math.ceil(retry)));
+      }
+    }
 
     // Safety net for a schema mismatch that escaped uncaught (see
     // SchemaColumnNotFoundException): never surface it as a failure — respond

@@ -107,6 +107,7 @@ export class DevConsoleService {
 
   /** Flip write mode for this process. Logged loudly — it lets statements commit. */
   setWriteMode(on: boolean) {
+    if (on && !this.cfg.allowWrite) throw new BadRequestException('Console writes are disabled by server policy.');
     this.writeMode = on;
     if (on) {
       this.logger.warn(

@@ -19,6 +19,7 @@ describe('AuthController', () => {
   const onboarding = {
     validateUser: jest.fn().mockResolvedValue({ status: 'success' }),
     sendOtp: jest.fn().mockResolvedValue({ status: 'success' }),
+    validateOtp: jest.fn(),
   };
   const mpin = {
     forgotInitiate: jest.fn().mockResolvedValue({ status: 'initiated successfully' }),
@@ -59,33 +60,22 @@ describe('AuthController', () => {
     await app?.close();
   });
 
-  it('returns original initiate contacts on the wire but redacts both log sinks', async () => {
-    const response = {
-      status: 'success',
-      vflag: 'Exist',
-      email: 'VP********@hamad.qa',
-      employeephonenumber: 'XXXXXXXXXX654',
-      emailunmasked: 'VP12345678@hamad.qa',
-      employeephonenumberunmasked: '0097454321654',
-    };
-    onboarding.validateUser.mockResolvedValueOnce(response);
+  it('returns enrollment proof on the wire but redacts it from both log sinks', async () => {
+    const response = { status: 'success', message: 'OTP Validated successfully',
+      enrollmenttoken: 'g'.repeat(43), expiresinseconds: 300 };
+    onboarding.validateOtp.mockResolvedValueOnce(response);
 
     await request(app.getHttpServer())
-      .post('/api/v1/auth/initiate')
-      .send(body)
+      .post('/api/v1/auth/otp/validate')
+      .send({ ...body, requestid: 'r'.repeat(43), otp: '012345' })
       .expect(200)
       .expect(response);
 
     expect(record).toHaveBeenCalledTimes(1);
     const entry = record.mock.calls[0][0];
-    expect(entry.responseSummary).toEqual({
-      ...response,
-      emailunmasked: '******',
-      employeephonenumberunmasked: '******',
-    });
+    expect(entry.responseSummary).toEqual({ ...response, enrollmenttoken: '******' });
     expect(writer.write).toHaveBeenCalledWith(entry);
-    expect(JSON.stringify(entry)).not.toContain(response.emailunmasked);
-    expect(JSON.stringify(entry)).not.toContain(response.employeephonenumberunmasked);
+    expect(JSON.stringify(entry)).not.toContain(response.enrollmenttoken);
   });
 
   describe('POST /auth/login', () => {
@@ -125,11 +115,21 @@ describe('AuthController', () => {
   });
 
   describe('POST /auth/mpin/update', () => {
+    it('rejects enrollment without OTP authorization before calling the service', async () => {
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/mpin/update')
+        .send({ ...body, mpin: 'client-hashed-test-value' })
+        .expect(400);
+
+      expect(mpin.setMpin).not.toHaveBeenCalled();
+    });
+
     it('accepts an opaque client hash with the required user/device context', async () => {
       const requestBody = {
         username: body.username,
         imeinumber: body.imeinumber,
         mpin: 'client-hashed-test-value+/=',
+        enrollmenttoken: 'e'.repeat(43),
       };
 
       await request(app.getHttpServer())

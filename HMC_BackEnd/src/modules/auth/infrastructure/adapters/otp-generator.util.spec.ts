@@ -65,11 +65,11 @@ describe('OTP_IN_RESPONSE configuration', () => {
   });
 
   it('validates boolean values and defaults to false', () => {
-    const schema = envValidationSchema.extract('OTP_IN_RESPONSE');
-    expect(schema.validate(undefined).value).toBe(false);
-    expect(schema.validate('true').value).toBe(true);
-    expect(schema.validate('false').value).toBe(false);
-    expect(schema.validate('yes').error).toBeDefined();
+    const validate = (value?: string) => envValidationSchema.validate({ NODE_ENV: 'test', OTP_IN_RESPONSE: value });
+    expect(validate().value.OTP_IN_RESPONSE).toBe(false);
+    expect(validate('true').value.OTP_IN_RESPONSE).toBe(true);
+    expect(validate('false').value.OTP_IN_RESPONSE).toBe(false);
+    expect(validate('yes').error).toBeDefined();
   });
 });
 

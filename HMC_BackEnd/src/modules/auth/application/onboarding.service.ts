@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { randomUUID } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
+import { AuthStateService, ENROLLMENT_TTL_SECONDS } from '@core/auth/auth-state.service';
 import { AuditService } from '@core/audit/audit.service';
 import { AuthLifecycleEvent } from '@core/audit/audit-event';
 import { LDAP_USER_PORT, LdapUserPort } from '../domain/ports/ldap-user.port';
@@ -17,8 +18,8 @@ import {
   UserValidateRequestDto,
   UserValidateResponseDto,
   ValidateOtpRequestDto,
+  ValidateOtpResponseDto,
 } from '../interface/dto/onboarding.dto';
-import { StatusMessageDto } from '../interface/dto/auth.dto';
 import { devIdentity } from './dev-fallback';
 import { maskEmail, maskPhone } from './mask.util';
 import { DEFAULT_LANG, Lang } from '@shared/domain/lang';
@@ -63,7 +64,8 @@ export class OnboardingService {
     @Inject(OTP_PORT) private readonly otp: OtpPort,
     @Inject(DEVICE_REGISTRY_PORT) private readonly devices: DeviceRegistryPort,
     private readonly audit: AuditService,
-    config: ConfigService,
+    private readonly config: ConfigService,
+    private readonly state: AuthStateService,
   ) {
     this.devBypass = config.get<boolean>('auth.disabled', false);
     this.otpTtlSeconds = config.get<number>('otp.ttlSeconds', 300);
@@ -75,6 +77,30 @@ export class OnboardingService {
   async validateUser(
     dto: UserValidateRequestDto,
     lang: Lang = DEFAULT_LANG,
+  ): Promise<SendOtpResponseDto> {
+    if (!this.devBypass) {
+      await this.state.limit(
+        'otp-send',
+        dto.username.trim().toUpperCase(),
+        1,
+        this.config.get<number>('otp.resendWindowSeconds', 60),
+      );
+    }
+    const result = await this.validateUserInternal(dto, lang);
+    return {
+      status: 'success',
+      message:
+        lang === 'ar'
+          ? 'إذا كنت مؤهلاً، فسيتم إرسال رمز التحقق إلى وسيلة الاتصال المسجلة.'
+          : 'If eligible, a verification code will be sent to your registered contact.',
+      requestid: result.requestid ?? randomBytes(32).toString('base64url'),
+      ...this.otpResponse(result.otp),
+    };
+  }
+
+  private async validateUserInternal(
+    dto: UserValidateRequestDto,
+    lang: Lang,
   ): Promise<UserValidateResponseDto> {
     const ctx = {
       username: dto.username,
@@ -139,7 +165,7 @@ export class OnboardingService {
     // (vflag=Pending, same requestid).
     const sent: SendOtpResult = this.devBypass
       ? {
-          requestId: randomUUID().replace(/-/g, '').toUpperCase(),
+          requestId: randomBytes(32).toString('base64url'),
           status: 'NEW' as const,
           mode: 'SMS' as const,
           validForSeconds: this.otpTtlSeconds,
@@ -202,37 +228,14 @@ export class OnboardingService {
    * /auth/otp/validate.
    */
   async sendOtp(dto: SendOtpRequestDto, lang: Lang = DEFAULT_LANG): Promise<SendOtpResponseDto> {
-    const ctx = {
-      username: dto.username,
-      deviceImei: dto.imeinumber,
-      platform: dto.platform,
-      appVersion: dto.version,
-    };
-
-    const sent: Pick<SendOtpResult, 'requestId' | 'otp'> = this.devBypass
-      ? { requestId: randomUUID().replace(/-/g, '').toUpperCase() }
-      : await this.otp.send({
-          username: dto.username,
-          phoneNumber: dto.phonenumber,
-          email: dto.email,
-          imei: dto.imeinumber,
-          purpose: 'ONBOARDING',
-          lang,
-          smsTemplate: 'forget',
-          appName: dto.appname,
-          appVersion: dto.version,
-          appDatetime: dto.sysdate,
-        });
-
-    this.audit.lifecycle(AuthLifecycleEvent.OTP_SENT, ctx);
-    return { status: 'success', requestid: sent.requestId, ...this.otpResponse(sent.otp) };
+    return this.validateUser(dto, lang);
   }
 
   private otpResponse(otp: string | undefined): { otp?: string } {
     return this.otpInResponse && otp ? { otp } : {};
   }
 
-  async validateOtp(dto: ValidateOtpRequestDto): Promise<StatusMessageDto> {
+  async validateOtp(dto: ValidateOtpRequestDto): Promise<ValidateOtpResponseDto> {
     const ctx = {
       username: dto.username,
       deviceImei: dto.imeinumber,
@@ -247,6 +250,7 @@ export class OnboardingService {
           imei: dto.imeinumber,
           requestId: dto.requestid,
           otp: dto.otp,
+          purpose: 'ONBOARDING',
         });
 
     this.audit.lifecycle(ok ? AuthLifecycleEvent.OTP_VALIDATED : AuthLifecycleEvent.OTP_FAILED, {
@@ -254,9 +258,15 @@ export class OnboardingService {
       status: ok ? 'success' : 'error',
     });
 
-    return ok
-      ? { status: 'success', message: 'OTP Validated successfully' }
-      : { status: 'error', message: 'Invalid OTP' };
+    if (!ok) return { status: 'error', message: 'Invalid OTP' };
+    const enrollmenttoken = this.devBypass
+      ? randomBytes(32).toString('base64url')
+      : await this.state.issueEnrollment(dto.username, dto.imeinumber);
+    return {
+      status: 'success',
+      message: 'OTP Validated successfully',
+      enrollmenttoken,
+      expiresinseconds: ENROLLMENT_TTL_SECONDS,
+    };
   }
-
 }

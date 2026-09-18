@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { randomUUID } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
+import { AuthStateService } from '@core/auth/auth-state.service';
 import { AuditService } from '@core/audit/audit.service';
 import { AuthLifecycleEvent } from '@core/audit/audit-event';
 import { MpinConfig } from '@core/config/configuration';
@@ -36,7 +37,8 @@ export class MpinService {
     @Inject(DEVICE_REGISTRY_PORT) private readonly devices: DeviceRegistryPort,
     @Inject(LDAP_USER_PORT) private readonly ldap: LdapUserPort,
     private readonly audit: AuditService,
-    config: ConfigService,
+    private readonly config: ConfigService,
+    private readonly state: AuthStateService,
   ) {
     this.devBypass = config.get<boolean>('auth.disabled', false);
     this.mpin = config.getOrThrow<MpinConfig>('mpin');
@@ -44,16 +46,30 @@ export class MpinService {
 
   async setMpin(dto: SetMpinRequestDto): Promise<StatusMessageDto> {
     const ctx = this.ctx(dto);
-
+    if (!/^[A-Za-z0-9_-]{43}$/.test(dto.enrollmenttoken ?? '') || !this.isValidMpin(dto.mpin)) {
+      return { status: 'error', message: 'Invalid or expired enrollment authorization.' };
+    }
     if (this.devBypass) {
       this.logger.warn(`DEV bypass: MPIN set for "${dto.username}" not persisted.`);
     } else {
-      await this.devices.bind({
+      await this.state.limit(
+        'mpin-enrollment',
+        dto.username.trim().toUpperCase(),
+        this.mpin.maxAttempts,
+        300,
+      );
+      const identity = await this.ldap.validate({
         username: dto.username,
         imei: dto.imeinumber,
         platform: dto.platform,
       });
-      await this.store.set({ username: dto.username, imei: dto.imeinumber, mpin: dto.mpin });
+      if (
+        !identity.isEmployee ||
+        (await this.store.exists(dto.username, dto.imeinumber)) ||
+        !(await this.state.enroll(dto.username, dto.imeinumber, dto.mpin, dto.enrollmenttoken))
+      ) {
+        return { status: 'error', message: 'Invalid or expired enrollment authorization.' };
+      }
     }
 
     this.audit.lifecycle(AuthLifecycleEvent.MPIN_SET, { ...ctx, status: 'success' });
@@ -65,16 +81,17 @@ export class MpinService {
     lang: Lang = DEFAULT_LANG,
   ): Promise<ForgotMpinInitResponseDto> {
     const ctx = this.ctx(dto);
-    let requestid: string;
-    if (this.devBypass) {
-      requestid = randomUUID().replace(/-/g, '').toUpperCase();
-    } else {
+    let requestid = randomBytes(32).toString('base64url');
+    if (!this.devBypass) {
+      await this.state.limit(
+        'otp-send',
+        dto.username.trim().toUpperCase(),
+        1,
+        this.config.get<number>('otp.resendWindowSeconds', 60),
+      );
       // Legacy forgetMPIN semantics: the device must already be registered for
       // this user (SELECT DeviceID ... WHERE IMEINumber AND LoginID).
-      if (!(await this.devices.isBound(dto.username, dto.imeinumber))) {
-        this.audit.lifecycle(AuthLifecycleEvent.OTP_FAILED, { ...ctx, status: 'error' });
-        return { status: 'error', message: 'Device is not registered for this user.' };
-      }
+      const bound = await this.devices.isBound(dto.username, dto.imeinumber);
       // Phone number for the OTP SMS comes from the corporate directory
       // (LDAP/Entra) — the same identity source API-2 uses. Email is the
       // fallback channel when the directory has no mobile for the user.
@@ -83,26 +100,37 @@ export class MpinService {
         imei: dto.imeinumber,
         platform: dto.platform,
       });
-      requestid = (
-        await this.otp.send({
-          username: dto.username,
-          phoneNumber: identity.phoneNumber,
-          email: identity.email,
-          imei: dto.imeinumber,
-          purpose: 'FORGOT_MPIN',
-          lang,
-          appName: dto.appname,
-          appVersion: dto.version,
-          appDatetime: dto.sysdate,
-        })
-      ).requestId;
+      if (bound && identity.isEmployee) {
+        requestid = (
+          await this.otp.send({
+            username: dto.username,
+            phoneNumber: identity.phoneNumber,
+            email: identity.email,
+            imei: dto.imeinumber,
+            purpose: 'FORGOT_MPIN',
+            smsTemplate: 'forget',
+            lang,
+            appName: dto.appname,
+            appVersion: dto.version,
+            appDatetime: dto.sysdate,
+          })
+        ).requestId;
+      }
     }
     this.audit.lifecycle(AuthLifecycleEvent.OTP_SENT, ctx);
-    return { status: 'initiated successfully', requestid };
+    return {
+      status: 'initiated successfully',
+      requestid,
+      message:
+        lang === 'ar'
+          ? 'إذا كنت مؤهلاً، فسيتم إرسال رمز التحقق إلى وسيلة الاتصال المسجلة.'
+          : 'If eligible, a verification code will be sent to your registered contact.',
+    };
   }
 
   async resetMpin(dto: ResetMpinRequestDto): Promise<StatusMessageDto> {
     const ctx = this.ctx(dto);
+    if (!this.isValidMpin(dto.newmpin)) return this.policyError();
     const otpOk = this.devBypass
       ? /^\d{4,8}$/.test(dto.otp)
       : await this.otp.verify({
@@ -110,18 +138,27 @@ export class MpinService {
           imei: dto.imeinumber,
           requestId: dto.requestid,
           otp: dto.otp,
+          purpose: 'FORGOT_MPIN',
         });
 
     if (!otpOk) {
       this.audit.lifecycle(AuthLifecycleEvent.OTP_FAILED, { ...ctx, status: 'error' });
       return { status: 'error', message: 'Invalid OTP' };
     }
-    if (!this.isValidMpin(dto.newmpin)) return this.policyError();
-
     if (this.devBypass) {
       this.logger.warn(`DEV bypass: MPIN reset for "${dto.username}" not persisted.`);
     } else {
-      await this.store.set({ username: dto.username, imei: dto.imeinumber, mpin: dto.newmpin });
+      const identity = await this.ldap.validate({
+        username: dto.username,
+        imei: dto.imeinumber,
+        platform: dto.platform,
+      });
+      if (
+        !identity.isEmployee ||
+        !(await this.state.resetMpin(dto.username, dto.imeinumber, dto.newmpin))
+      ) {
+        return { status: 'error', message: 'Invalid OTP' };
+      }
     }
 
     this.audit.lifecycle(AuthLifecycleEvent.MPIN_RESET, { ...ctx, status: 'success' });
@@ -138,13 +175,13 @@ export class MpinService {
   }
 
   private isValidMpin(mpin: string): boolean {
-    return new RegExp(`^\\d{${this.mpin.minLength},${this.mpin.maxLength}}$`).test(mpin);
+    return typeof mpin === 'string' && mpin.trim().length > 0 && mpin.length <= 1024;
   }
 
   private policyError(): StatusMessageDto {
     return {
       status: 'error',
-      message: `MPIN must be ${this.mpin.minLength}-${this.mpin.maxLength} digits.`,
+      message: 'MPIN must be a non-empty client-hashed value of at most 1024 characters.',
     };
   }
 }

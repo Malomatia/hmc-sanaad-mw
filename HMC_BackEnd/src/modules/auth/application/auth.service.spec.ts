@@ -1,4 +1,5 @@
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication, UnauthorizedException, ValidationPipe } from '@nestjs/common';
+import { AuthStateService, SessionState } from '@core/auth/auth-state.service';
 import { ConfigService } from '@nestjs/config';
 import { Reflector } from '@nestjs/core';
 import { Test } from '@nestjs/testing';
@@ -76,6 +77,25 @@ function makeService(overrides: Partial<typeof AUTH_CFG> = {}, identityUsername 
     ),
     getOrThrow: jest.fn(() => authCfg),
   } as unknown as ConfigService;
+  const sessions = new Map<string, SessionState>();
+  const state = {
+    limit: jest.fn().mockResolvedValue(undefined),
+    newSession: AuthStateService.prototype.newSession,
+    createSession: jest.fn(async (session: SessionState) => {
+      sessions.set(session.sid, { ...session });
+    }),
+    sessionActive: jest.fn(async (sid: string) => sessions.has(sid)),
+    rotateSession: jest.fn(async (session: SessionState, previous: string) => {
+      if (sessions.get(session.sid)?.refreshId !== previous) {
+        sessions.delete(session.sid);
+        throw new UnauthorizedException('Revoked session');
+      }
+      sessions.set(session.sid, { ...session });
+    }),
+    revokeSession: jest.fn(async (sid: string) => {
+      sessions.delete(sid);
+    }),
+  } as unknown as jest.Mocked<AuthStateService>;
   const service = new AuthService(
     jwt,
     mpinStore,
@@ -87,8 +107,20 @@ function makeService(overrides: Partial<typeof AUTH_CFG> = {}, identityUsername 
     audit,
     revocation,
     config,
+    state,
   );
-  return { service, jwt, revocation, devices, ldap, mpinStore, employment, functionAccess, oracleUser };
+  return {
+    service,
+    jwt,
+    revocation,
+    state,
+    devices,
+    ldap,
+    mpinStore,
+    employment,
+    functionAccess,
+    oracleUser,
+  };
 }
 
 const LOGIN = {
@@ -154,8 +186,17 @@ describe('Login invalid-credentials language over HTTP', () => {
 describe('AuthService Oracle user validation', () => {
   const functions: FunctionAccess[] = [
     { functionname: 'Payslip', functioncode: 'frmPayslip', status: FunctionStatus.ENABLED },
-    { functionname: 'Housing', functioncode: 'frmHousing', remarks: 'Housing', status: FunctionStatus.ENABLED },
-    { functionname: 'Staff clinic', functioncode: 'frmStaffclinic', status: FunctionStatus.DISABLED },
+    {
+      functionname: 'Housing',
+      functioncode: 'frmHousing',
+      remarks: 'Housing',
+      status: FunctionStatus.ENABLED,
+    },
+    {
+      functionname: 'Staff clinic',
+      functioncode: 'frmStaffclinic',
+      status: FunctionStatus.DISABLED,
+    },
     { functionname: 'Sogha', functioncode: 'frmSogha', status: FunctionStatus.ENABLED },
     { functionname: 'Banner', functioncode: 'flxbanner', status: FunctionStatus.COMING_SOON },
     { functionname: 'Approvals', functioncode: 'frmApprovals', status: FunctionStatus.ENABLED },
@@ -181,34 +222,38 @@ describe('AuthService Oracle user validation', () => {
     }
   });
 
-  it.each(['false', 'unavailable', 'timeout', 'disabled'])('restricts the list and both JWTs when Oracle is %s', async (result) => {
-    const { service, functionAccess, oracleUser, jwt } = makeService();
-    const ora = {
-      isConfigured: jest.fn().mockReturnValue(result !== 'disabled'),
-      call: result === 'unavailable' || result === 'timeout'
-        ? jest.fn().mockRejectedValue(new Error(result))
-        : jest.fn().mockResolvedValue({ p_is_valid: 'false' }),
-    };
-    const repository = new OracleUserValidationRepository(ora as unknown as OracleService);
-    oracleUser.validate.mockImplementation((username) => repository.validate(username));
-    jest.mocked(functionAccess.list).mockResolvedValue(functions);
+  it.each(['false', 'unavailable', 'timeout', 'disabled'])(
+    'restricts the list and both JWTs when Oracle is %s',
+    async (result) => {
+      const { service, functionAccess, oracleUser, jwt } = makeService();
+      const ora = {
+        isConfigured: jest.fn().mockReturnValue(result !== 'disabled'),
+        call:
+          result === 'unavailable' || result === 'timeout'
+            ? jest.fn().mockRejectedValue(new Error(result))
+            : jest.fn().mockResolvedValue({ p_is_valid: 'false' }),
+      };
+      const repository = new OracleUserValidationRepository(ora as unknown as OracleService);
+      oracleUser.validate.mockImplementation((username) => repository.validate(username));
+      jest.mocked(functionAccess.list).mockResolvedValue(functions);
 
-    const response = await service.login(LOGIN);
+      const response = await service.login(LOGIN);
 
-    expect(response).toMatchObject({
-      status: 'success',
-      isOrcaleUser: false,
-      functionaccesslist: restricted,
-    });
-    expect(functions).toHaveLength(6);
-    for (const token of [response.token!, response.refreshtoken!]) {
-      expect(jwt.verify(token)).toMatchObject({ functions: restrictedClaims });
-    }
-    const refreshed = await service.refresh({ refreshtoken: response.refreshtoken! });
-    for (const token of [refreshed.token!, refreshed.refreshtoken!]) {
-      expect(jwt.verify(token)).toMatchObject({ functions: restrictedClaims });
-    }
-  });
+      expect(response).toMatchObject({
+        status: 'success',
+        isOrcaleUser: false,
+        functionaccesslist: restricted,
+      });
+      expect(functions).toHaveLength(6);
+      for (const token of [response.token!, response.refreshtoken!]) {
+        expect(jwt.verify(token)).toMatchObject({ functions: restrictedClaims });
+      }
+      const refreshed = await service.refresh({ refreshtoken: response.refreshtoken! });
+      for (const token of [refreshed.token!, refreshed.refreshtoken!]) {
+        expect(jwt.verify(token)).toMatchObject({ functions: restrictedClaims });
+      }
+    },
+  );
 
   it('does not synthesize missing functions for a non-Oracle user', async () => {
     const { service, oracleUser } = makeService();
@@ -409,7 +454,9 @@ describe('AuthService refresh + logout', () => {
     const access = jwt.decode<Record<string, unknown>>(res.token!);
     const refresh = jwt.decode<Record<string, unknown>>(res.refreshtoken!);
     expect(access.jti).toBeDefined();
-    expect(access.typ).toBeUndefined();
+    expect(access.typ).toBe('access');
+    expect(access.sid).toBe(refresh.sid);
+    expect(access).toMatchObject({ iss: 'sanaad', aud: 'sanaad-b2e' });
     expect(refresh.typ).toBe('refresh');
     expect(refresh.jti).toBeDefined();
     expect(refresh.jti).not.toBe(access.jti);
@@ -474,6 +521,39 @@ describe('AuthService refresh + logout', () => {
     expect(res.status).toBe('success');
     expect(revocation.isRevoked(access.jti)).toBe(true);
     expect(revocation.isRevoked(refresh.jti)).toBe(true);
+  });
+
+  it('logout revokes the persisted session family without a supplied refresh token', async () => {
+    const { service, jwt, state } = makeService();
+    const login = await service.login(LOGIN);
+    const claims = jwt.decode<Record<string, unknown>>(login.token!);
+    await service.logout({ username: 'hmc1', roles: [Role.EMPLOYEE], claims }, {});
+    expect(state.revokeSession).toHaveBeenCalledWith(claims.sid, 'hmc1');
+    await expect(service.refresh({ refreshtoken: login.refreshtoken! })).resolves.toMatchObject({
+      status: 'error',
+    });
+  });
+
+  it('refuses a non-employee after MPIN verification and before issuing a session', async () => {
+    const { service, ldap, state } = makeService();
+    jest
+      .mocked(ldap.validate)
+      .mockResolvedValue({ username: 'hmc1', isEmployee: false, isNewUser: false });
+    await expect(service.login(LOGIN)).resolves.toMatchObject({ status: 'error' });
+    expect(state.createSession).not.toHaveBeenCalled();
+  });
+
+  it('rechecks employee eligibility before rotating a refresh token', async () => {
+    const { service, ldap, state } = makeService();
+    const login = await service.login(LOGIN);
+    jest
+      .mocked(ldap.validate)
+      .mockResolvedValue({ username: 'hmc1', isEmployee: false, isNewUser: false });
+    await expect(service.refresh({ refreshtoken: login.refreshtoken! })).resolves.toMatchObject({
+      status: 'error',
+    });
+    expect(state.rotateSession).not.toHaveBeenCalled();
+    expect(state.revokeSession).toHaveBeenCalled();
   });
 
   it('logout succeeds even without claims or refresh token', async () => {

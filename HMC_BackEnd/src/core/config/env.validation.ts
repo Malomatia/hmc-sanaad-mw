@@ -100,15 +100,18 @@ export const envValidationSchema = Joi.object({
   EMAIL_MESSAGE_TEMPLATE_AR: Joi.string().default('رمز التحقق لتسجيل الدخول في تطبيق سند هو {otp}'),
 
   // Auth
-  JWT_SECRET: Joi.string().min(8).default('dev-only-secret-change-me'),
+  JWT_SECRET: Joi.string().when('NODE_ENV', {
+    is: 'production', then: Joi.string().min(32).invalid('dev-only-secret-change-me', 'replace_with_a_long_random_secret').required(),
+    otherwise: Joi.string().min(8).default('dev-only-secret-change-me'),
+  }),
   JWT_ISSUER: Joi.string().default('sanaad'),
   JWT_AUDIENCE: Joi.string().default('sanaad-b2e'),
   JWT_EXPIRES_IN: Joi.string().default('1h'),
   JWT_REFRESH_EXPIRES_IN: Joi.string().default('7d'),
-  AUTH_DISABLED: Joi.boolean().default(false),
+  AUTH_DISABLED: Joi.boolean().when('NODE_ENV', { is: 'production', then: Joi.valid(false) }).default(false),
   // TESTING ONLY: static /auth/login payload with full user data embedded in
   // the JWT (`userdata` claim). Never enable in production.
-  AUTH_STATIC_LOGIN: Joi.boolean().default(false),
+  AUTH_STATIC_LOGIN: Joi.boolean().when('NODE_ENV', { is: 'production', then: Joi.valid(false) }).default(false),
 
   // Cerner
   CERNER_BASE_URL: Joi.string().uri().allow('').default(''),
@@ -125,21 +128,21 @@ export const envValidationSchema = Joi.object({
   // Auth framework — MPIN policy
   MPIN_MIN_LENGTH: Joi.number().default(4),
   MPIN_MAX_LENGTH: Joi.number().default(6),
-  MPIN_MAX_ATTEMPTS: Joi.number().default(5),
-  MPIN_LOCKOUT_MINUTES: Joi.number().default(15),
+  MPIN_MAX_ATTEMPTS: Joi.number().integer().min(1).max(20).default(5),
+  MPIN_LOCKOUT_MINUTES: Joi.number().integer().min(1).default(15),
 
   // Auth framework — OTP policy
-  OTP_LENGTH: Joi.number().default(6),
-  OTP_TTL_SECONDS: Joi.number().default(300),
-  OTP_MAX_ATTEMPTS: Joi.number().default(5),
-  OTP_RESEND_WINDOW_SECONDS: Joi.number().default(60),
-  OTP_IN_RESPONSE: Joi.boolean().default(false),
+  OTP_LENGTH: Joi.number().integer().min(6).max(12).default(6),
+  OTP_TTL_SECONDS: Joi.number().integer().min(30).max(900).default(300),
+  OTP_MAX_ATTEMPTS: Joi.number().integer().min(1).max(20).default(5),
+  OTP_RESEND_WINDOW_SECONDS: Joi.number().integer().min(30).default(60),
+  OTP_IN_RESPONSE: Joi.boolean().when('NODE_ENV', { is: 'production', then: Joi.valid(false) }).default(false),
   // OTP store/validation: legacy Users-DB table (default) or the MOTC push table.
   OTP_STORE: Joi.string().valid('motc', 'legacy').default('legacy'),
   // Delivery when OTP_STORE=legacy: MOTC push table (default) or the HTTP SMS adapter.
   OTP_DELIVERY: Joi.string().valid('motc', 'http').default('motc'),
   // TESTING: non-empty pins every OTP to this value (e.g. 123456). Empty = random.
-  OTP_STATIC_VALUE: Joi.string().allow('').default(''),
+  OTP_STATIC_VALUE: Joi.string().allow('').when('NODE_ENV', { is: 'production', then: Joi.valid('') }).default(''),
   // OTP alphabet: digits only (default) or unambiguous uppercase letters + digits.
   OTP_CHARSET: Joi.string().valid('numeric', 'alphanumeric').default('numeric'),
 
@@ -178,12 +181,12 @@ export const envValidationSchema = Joi.object({
 
   // Master switch for /diagnostics/*, /api-logs/* and the /health/db,
   // /health/users-db, /health/motc-sms-db connection tests (404 when false).
-  DIAGNOSTICS_ENABLED: Joi.boolean().default(true),
+  DIAGNOSTICS_ENABLED: Joi.boolean().default(false),
 
   // Internal dev console (SQL worksheet + API tester) — hidden from Swagger.
   // Works with no configuration: ON by default and READ-ONLY until the UI
   // switch is flipped. Set DEV_CONSOLE_ENABLED=false to remove the routes.
-  DEV_CONSOLE_ENABLED: Joi.boolean().default(true),
+  DEV_CONSOLE_ENABLED: Joi.boolean().default(false),
   DEV_CONSOLE_TOKEN: Joi.string().allow('').default(''),
   DEV_CONSOLE_ALLOW_WRITE: Joi.boolean().default(false),
   DEV_CONSOLE_MAX_ROWS: Joi.number().min(1).max(10000).default(500),

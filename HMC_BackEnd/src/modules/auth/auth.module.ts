@@ -8,7 +8,7 @@ import { OnboardingService } from './application/onboarding.service';
 import { MpinService } from './application/mpin.service';
 import { HealthCheckService } from './application/healthcheck.service';
 import { LDAP_USER_PORT, LdapUserPort } from './domain/ports/ldap-user.port';
-import { OTP_PORT, OtpPort } from './domain/ports/otp.port';
+import { OTP_PORT } from './domain/ports/otp.port';
 import { OTP_DELIVERY_PORT } from './domain/ports/otp-delivery.port';
 import { OTP_EMAIL_DELIVERY_PORT } from './domain/ports/otp-email-delivery.port';
 import { MPIN_STORE_PORT } from './domain/ports/mpin-store.port';
@@ -19,8 +19,7 @@ import { ORACLE_USER_VALIDATION_PORT } from './domain/ports/oracle-user-validati
 import { OracleUserValidationRepository } from './infrastructure/adapters/oracle-user-validation.repository';
 import { LdapUserRepository } from './infrastructure/adapters/ldap-user.repository';
 import { EntraGraphUserRepository } from './infrastructure/adapters/entra-graph-user.repository';
-import { MssqlOtpRepository } from './infrastructure/adapters/mssql-otp.repository';
-import { MotcSmsOtpRepository } from './infrastructure/adapters/motc-sms-otp.repository';
+import { SecureOtpRepository } from './infrastructure/adapters/secure-otp.repository';
 import { MssqlMpinStoreRepository } from './infrastructure/adapters/mssql-mpin-store.repository';
 import { MssqlDeviceRegistryRepository } from './infrastructure/adapters/mssql-device-registry.repository';
 import { SmsOtpDeliveryAdapter } from './infrastructure/adapters/sms-otp-delivery.adapter';
@@ -90,19 +89,9 @@ import { OracleLoginEmploymentRepository } from './infrastructure/adapters/oracl
         config: ConfigService,
         motc: MotcPushOtpDeliveryAdapter,
         http: SmsOtpDeliveryAdapter,
-      ) => (config.get<string>('otp.delivery') === 'http' ? http : motc),
+      ) => (config.get<string>('otp.store') !== 'motc' && config.get<string>('otp.delivery') === 'http' ? http : motc),
     },
-    MssqlOtpRepository,
-    MotcSmsOtpRepository,
-    {
-      provide: OTP_PORT,
-      inject: [ConfigService, MotcSmsOtpRepository, MssqlOtpRepository],
-      useFactory: (
-        config: ConfigService,
-        motc: MotcSmsOtpRepository,
-        legacy: MssqlOtpRepository,
-      ): OtpPort => (config.get<string>('otp.store') === 'motc' ? motc : legacy),
-    },
+    { provide: OTP_PORT, useClass: SecureOtpRepository },
     { provide: MPIN_STORE_PORT, useClass: MssqlMpinStoreRepository },
     { provide: DEVICE_REGISTRY_PORT, useClass: MssqlDeviceRegistryRepository },
     { provide: FUNCTION_ACCESS_PORT, useClass: MssqlFunctionAccessRepository },

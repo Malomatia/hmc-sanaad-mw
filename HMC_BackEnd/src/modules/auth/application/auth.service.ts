@@ -1,7 +1,8 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService, JwtSignOptions } from '@nestjs/jwt';
-import { randomUUID } from 'node:crypto';
+import { AuthStateService } from '@core/auth/auth-state.service';
+import { assertSessionClaims, SessionClaims } from '@core/auth/jwt-claims';
 import { AuthConfig } from '@core/config/configuration';
 import { AuthenticatedUser, Role } from '@core/auth/auth-user.interface';
 import { TokenRevocationService } from '@core/auth/token-revocation.service';
@@ -34,7 +35,12 @@ import {
   OracleUserValidationPort,
 } from '../domain/ports/oracle-user-validation.port';
 
-const NON_ORACLE_FUNCTION_CODES = new Set(['frmHousing', 'frmStaffclinic', 'frmSogha', 'flxbanner']);
+const NON_ORACLE_FUNCTION_CODES = new Set([
+  'frmHousing',
+  'frmStaffclinic',
+  'frmSogha',
+  'flxbanner',
+]);
 
 /**
  * API-5 Login + current-identity. Verifies the MPIN (MpinStorePort), resolves the
@@ -58,6 +64,7 @@ export class AuthService {
   private readonly staticLogin: boolean;
   private readonly expiresIn: string;
   private readonly refreshExpiresIn: string;
+  private readonly authConfig: AuthConfig;
 
   constructor(
     private readonly jwt: JwtService,
@@ -69,10 +76,12 @@ export class AuthService {
     @Inject(ORACLE_USER_VALIDATION_PORT) private readonly oracleUser: OracleUserValidationPort,
     private readonly audit: AuditService,
     private readonly revocation: TokenRevocationService,
-    config: ConfigService,
+    private readonly config: ConfigService,
+    private readonly state: AuthStateService,
   ) {
     this.devBypass = config.get<boolean>('auth.disabled', false);
     const auth = config.getOrThrow<AuthConfig>('auth');
+    this.authConfig = auth;
     this.staticLogin = auth.staticLogin;
     this.expiresIn = auth.jwtExpiresIn;
     this.refreshExpiresIn = auth.jwtRefreshExpiresIn;
@@ -102,6 +111,12 @@ export class AuthService {
       identity = devIdentity(dto.username);
       functionList = DEV_FUNCTION_ACCESS;
     } else {
+      await this.state.limit(
+        'mpin-login',
+        dto.username.trim().toUpperCase(),
+        this.config.get<number>('mpin.maxAttempts', 5),
+        this.config.get<number>('mpin.lockoutMinutes', 15) * 60,
+      );
       const ok = await this.mpinStore.verify({
         username: dto.username,
         imei: dto.imeinumber,
@@ -119,6 +134,13 @@ export class AuthService {
         imei: dto.imeinumber,
         platform: dto.platform,
       });
+      if (!identity.isEmployee) {
+        this.audit.lifecycle(AuthLifecycleEvent.LOGIN_FAILURE, { ...ctx, status: 'error' });
+        return {
+          status: 'error',
+          message: lang === 'ar' ? 'البيانات المدخله غير صحيحه.' : 'Invalid credentials.',
+        };
+      }
       [functionList, isOrcaleUser, employment] = await Promise.all([
         this.functionAccess.list(identity.employeeNumber ?? dto.username),
         this.oracleUser.validate(dto.username),
@@ -169,7 +191,7 @@ export class AuthService {
         },
       }),
     };
-    const { token, refreshtoken } = await this.issueTokenPair(baseClaims);
+    const { token, refreshtoken } = await this.issueTokenPair(baseClaims, undefined, dto.mpin);
 
     this.audit.lifecycle(AuthLifecycleEvent.LOGIN_SUCCESS, { ...ctx, status: 'success' });
 
@@ -201,30 +223,87 @@ export class AuthService {
    * status=error on failure (like login's invalid-credentials response).
    */
   async refresh(dto: RefreshTokenRequestDto): Promise<RefreshTokenResponseDto> {
-    let payload: Record<string, unknown>;
+    let payload: SessionClaims;
     try {
-      payload = await this.jwt.verifyAsync<Record<string, unknown>>(dto.refreshtoken);
+      const verified = await this.jwt.verifyAsync<Record<string, unknown>>(dto.refreshtoken, {
+        algorithms: ['HS256'],
+        issuer: this.authConfig.jwtIssuer,
+        audience: this.authConfig.jwtAudience,
+      });
+      if (verified.typ !== 'refresh') return { status: 'error', message: 'Not a refresh token.' };
+      assertSessionClaims(verified, 'refresh');
+      payload = verified;
     } catch {
       return { status: 'error', message: 'Invalid or expired refresh token.' };
     }
-    if (payload.typ !== 'refresh') {
-      return { status: 'error', message: 'Not a refresh token.' };
-    }
-    const jti = payload.jti as string | undefined;
-    if (jti && this.revocation.isRevoked(jti)) {
+    const { jti } = payload;
+    if ((this.devBypass || this.staticLogin) && this.revocation.isRevoked(jti)) {
       this.logger.warn(`Refresh token ${jti} reused after rotation/logout — rejected.`);
       return { status: 'error', message: 'This refresh token has been revoked.' };
     }
 
     // Rotate: the used refresh token dies with this exchange.
-    if (jti) this.revocation.revoke(jti, payload.exp as number | undefined);
+    if (this.devBypass || this.staticLogin) this.revocation.revoke(jti, payload.exp);
 
     // Re-mint from the refresh token's own identity claims (registered claims stripped).
-    const { exp, iat, nbf, jti: _jti, typ, ...baseClaims } = payload;
-    void exp; void iat; void nbf; void _jti; void typ;
-    const { token, refreshtoken } = await this.issueTokenPair(baseClaims);
-    this.logger.log(`Token refreshed for "${String(baseClaims.username ?? baseClaims.sub)}".`);
-    return { status: 'success', token, tokenType: 'Bearer', expiresIn: this.expiresIn, refreshtoken };
+    const { exp, iat, nbf, jti: _jti, typ, iss, aud, ...baseClaims } = payload;
+    void exp;
+    void iat;
+    void nbf;
+    void _jti;
+    void typ;
+    void iss;
+    void aud;
+    if (!this.devBypass && !this.staticLogin) {
+      if (!(await this.state.sessionActive(payload.sid, payload.username, payload.deviceImei))) {
+        return {
+          status: 'error',
+          message: 'This session is no longer valid. Please log in again.',
+        };
+      }
+      const identity = await this.ldap.validate({
+        username: payload.username,
+        imei: payload.deviceImei,
+      });
+      if (!identity.isEmployee) {
+        await this.state.revokeSession(payload.sid, payload.username);
+        return {
+          status: 'error',
+          message: 'This session is no longer valid. Please log in again.',
+        };
+      }
+      const [functions, oracleUser] = await Promise.all([
+        this.functionAccess.list(identity.employeeNumber ?? identity.username),
+        this.oracleUser.validate(identity.username),
+      ]);
+      baseClaims.functions = functions
+        .filter(
+          (f) =>
+            f.status === FunctionStatus.ENABLED &&
+            (oracleUser || NON_ORACLE_FUNCTION_CODES.has(f.functioncode)),
+        )
+        .map((f) => f.functioncode);
+      baseClaims.roles = (identity.roles as Role[] | undefined) ?? [Role.EMPLOYEE];
+    }
+    try {
+      const { token, refreshtoken } = await this.issueTokenPair(baseClaims, jti);
+      this.logger.log(`Token refreshed for "${String(baseClaims.username ?? baseClaims.sub)}".`);
+      return {
+        status: 'success',
+        token,
+        tokenType: 'Bearer',
+        expiresIn: this.expiresIn,
+        refreshtoken,
+      };
+    } catch (err) {
+      if (err instanceof UnauthorizedException) {
+        return {
+          status: 'error',
+          message: 'This session is no longer valid. Please log in again.',
+        };
+      }
+      throw err;
+    }
   }
 
   /**
@@ -234,12 +313,17 @@ export class AuthService {
    * still discard both tokens locally.
    */
   async logout(user: AuthenticatedUser, dto: LogoutRequestDto): Promise<StatusMessageDto> {
-    const claims = (user.claims ?? {}) as { jti?: string; exp?: number };
+    const claims = (user.claims ?? {}) as { jti?: string; exp?: number; sid?: string };
+    if (!this.devBypass && !this.staticLogin && claims.sid) {
+      await this.state.revokeSession(claims.sid, user.username);
+    }
     if (claims.jti) this.revocation.revoke(claims.jti, claims.exp);
 
     if (dto.refreshtoken) {
       try {
-        const payload = await this.jwt.verifyAsync<{ jti?: string; exp?: number }>(dto.refreshtoken);
+        const payload = await this.jwt.verifyAsync<{ jti?: string; exp?: number }>(
+          dto.refreshtoken,
+        );
         if (payload.jti) this.revocation.revoke(payload.jti, payload.exp);
       } catch {
         // An invalid/expired refresh token needs no revocation.
@@ -253,12 +337,33 @@ export class AuthService {
   /** Sign an access + refresh token pair from shared identity claims. */
   private async issueTokenPair(
     baseClaims: Record<string, unknown>,
+    previousRefreshId?: string,
+    mpin?: string,
   ): Promise<{ token: string; refreshtoken: string }> {
-    const token = await this.jwt.signAsync({ ...baseClaims, jti: randomUUID() });
-    const refreshtoken = await this.jwt.signAsync(
-      { ...baseClaims, typ: 'refresh', jti: randomUUID() },
-      { expiresIn: this.refreshExpiresIn as JwtSignOptions['expiresIn'] },
+    const session = this.state.newSession(
+      String(baseClaims.username),
+      String(baseClaims.deviceImei),
+      new Date(),
     );
+    if (previousRefreshId) session.sid = String(baseClaims.sid);
+    const options: JwtSignOptions = {
+      algorithm: 'HS256',
+      issuer: this.authConfig.jwtIssuer,
+      audience: this.authConfig.jwtAudience,
+    };
+    const token = await this.jwt.signAsync(
+      { ...baseClaims, sid: session.sid, typ: 'access', jti: session.accessId },
+      options,
+    );
+    const refreshtoken = await this.jwt.signAsync(
+      { ...baseClaims, sid: session.sid, typ: 'refresh', jti: session.refreshId },
+      { ...options, expiresIn: this.refreshExpiresIn as JwtSignOptions['expiresIn'] },
+    );
+    session.expiresAt = new Date(this.jwt.decode<SessionClaims>(refreshtoken).exp * 1000);
+    if (!this.devBypass && !this.staticLogin) {
+      if (previousRefreshId) await this.state.rotateSession(session, previousRefreshId);
+      else await this.state.createSession(session, mpin!);
+    }
     return { token, refreshtoken };
   }
 

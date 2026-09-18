@@ -6,6 +6,7 @@ import { Test } from '@nestjs/testing';
 import { Role } from '@core/auth/auth-user.interface';
 import { JwtAuthGuard } from '@core/auth/jwt-auth.guard';
 import { JwtStrategy } from '@core/auth/jwt.strategy';
+import { AuthStateService } from '@core/auth/auth-state.service';
 import { TokenRevocationService } from '@core/auth/token-revocation.service';
 import { ResponseInterceptor } from '@core/http/response.interceptor';
 import { LookupsService } from '@lookups/application/lookups.service';
@@ -337,11 +338,12 @@ describe('POST /leave/calculate-duration', () => {
         JwtAuthGuard,
         JwtStrategy,
         TokenRevocationService,
+        { provide: AuthStateService, useValue: { sessionActive: jest.fn().mockResolvedValue(true) } },
         {
           provide: ConfigService,
           useValue: {
             get: (_key: string, fallback: unknown) => fallback,
-            getOrThrow: () => ({ jwtSecret: secret }),
+            getOrThrow: () => ({ jwtSecret: secret, jwtIssuer: 'sanaad', jwtAudience: 'sanaad-b2e' }),
           },
         },
         { provide: LookupsService, useValue: {} },
@@ -362,7 +364,8 @@ describe('POST /leave/calculate-duration', () => {
     app.useGlobalGuards(app.get(JwtAuthGuard));
     app.useGlobalInterceptors(new ResponseInterceptor(new Reflector()));
     await app.init();
-    token = new JwtService({ secret }).sign({
+    token = new JwtService({ secret, signOptions: { expiresIn: '1h', issuer: 'sanaad', audience: 'sanaad-b2e', algorithm: 'HS256' } }).sign({
+      sub: '123456', sid: 'test-session', jti: 'test-access', deviceImei: 'test-device', typ: 'access',
       username: 'TESTUSER',
       employeeNumber: '123456',
       roles: [Role.EMPLOYEE],

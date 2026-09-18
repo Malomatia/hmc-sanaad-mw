@@ -605,7 +605,7 @@ export default (): RootConfig => ({
   },
   devConsole: {
     // Default ON so the console needs no environment setup anywhere.
-    enabled: toBool(process.env.DEV_CONSOLE_ENABLED ?? 'true'),
+    enabled: toBool(process.env.DEV_CONSOLE_ENABLED ?? 'false'),
     token: process.env.DEV_CONSOLE_TOKEN ?? '',
     allowWrite: toBool(process.env.DEV_CONSOLE_ALLOW_WRITE),
     maxRows: Number(process.env.DEV_CONSOLE_MAX_ROWS ?? 500),
@@ -614,7 +614,7 @@ export default (): RootConfig => ({
   diagnostics: {
     // Default ON (matches current behavior); set false to hide the whole
     // diagnostics/logs/db-test surface.
-    enabled: toBool(process.env.DIAGNOSTICS_ENABLED ?? 'true'),
+    enabled: toBool(process.env.DIAGNOSTICS_ENABLED ?? 'false'),
   },
   usersDb: {
     host: process.env.USERS_DB_HOST ?? '',

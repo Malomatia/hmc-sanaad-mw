@@ -5,6 +5,8 @@ import { ExtractJwt, Strategy } from 'passport-jwt';
 import { AuthConfig } from '../config/configuration';
 import { AuthenticatedUser, Role } from './auth-user.interface';
 import { TokenRevocationService } from './token-revocation.service';
+import { AuthStateService } from './auth-state.service';
+import { assertSessionClaims } from './jwt-claims';
 
 interface JwtPayload {
   sub?: string;
@@ -32,19 +34,30 @@ interface JwtPayload {
  */
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
+  private readonly localBypass: boolean;
+
   constructor(
     config: ConfigService,
     private readonly revocation: TokenRevocationService,
+    private readonly state: AuthStateService,
   ) {
     const auth = config.getOrThrow<AuthConfig>('auth');
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
       secretOrKey: auth.jwtSecret,
+      algorithms: ['HS256'],
+      issuer: auth.jwtIssuer,
+      audience: auth.jwtAudience,
     });
+    this.localBypass = config.get<string>('app.nodeEnv') !== 'production' && (auth.disabled || auth.staticLogin);
   }
 
-  validate(payload: JwtPayload): AuthenticatedUser {
+  async validate(payload: JwtPayload): Promise<AuthenticatedUser> {
+    assertSessionClaims(payload, 'access');
+    if (!this.localBypass && !(await this.state.sessionActive(payload.sid, payload.username, payload.deviceImei, payload.jti))) {
+      throw new UnauthorizedException('This session is no longer valid. Please log in again.');
+    }
     if (payload.typ === 'refresh') {
       throw new UnauthorizedException('A refresh token cannot be used to access the API.');
     }
@@ -53,7 +66,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     }
     return {
       username: payload.username ?? payload.sub ?? 'unknown',
-      employeeNumber: payload.employeeNumber ?? payload.enum ?? payload.sub,
+      employeeNumber: payload.employeeNumber,
       roles: payload.roles ?? [Role.EMPLOYEE],
       functions: payload.functions,
       employeeName: payload.name,

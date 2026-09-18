@@ -618,6 +618,7 @@ const collection = {
   item: folders,
 };
 
+require('./auth-security-contract').applyAuthSecurity(collection);
 fs.writeFileSync(path.join(outDir, 'HMC-Sanaad-Full.postman_collection.json'), JSON.stringify(collection, null, 2) + '\n');
 
 const environment = {
@@ -636,6 +637,7 @@ const environment = {
   _postman_variable_scope: 'environment',
 };
 
+require('./auth-security-contract').applyAuthEnvironment(environment);
 fs.writeFileSync(path.join(outDir, 'HMC-Sanaad-Full.postman_environment.json'), JSON.stringify(environment, null, 2) + '\n');
 
 console.log(`Modules: ${MODULES.length}`);

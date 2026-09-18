@@ -47,7 +47,7 @@ export class MssqlMpinStoreRepository implements MpinStorePort {
     const rows = await this.db.query(
       `SELECT DeviceID
          FROM HMC_Sanad_DeviceRegn_tbl
-        WHERE IMEINumber = @imei AND LoginID = @username AND MPIN = @mpin`,
+        WHERE IMEINumber COLLATE Latin1_General_100_BIN2 = @imei AND LoginID = @username AND MPIN = @mpin AND Status = 'Active'`,
       { username: query.username, imei: query.imei, mpin: query.mpin },
     );
     return rows.length > 0;

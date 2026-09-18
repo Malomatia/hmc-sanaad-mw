@@ -21,6 +21,13 @@ const BASE = { username: 'AIBRAHIM39', platform: 'android', appname: 'Sanaad', v
 const DEVICE_ID = 'a5b3d106-8d16-482f-bd4e-8c080a5da203';
 
 describe('device-identifier alias (deviceid)', () => {
+  it('normalizes username padding before authentication and attempt budgeting', async () => {
+    const instance = plainToInstance(ClientContextDto, { ...BASE, username: '  TestUser  ', deviceid: DEVICE_ID });
+    expect(instance.username).toBe('TestUser');
+    expect(await validate(instance)).toHaveLength(0);
+    expect(await validateDto(ClientContextDto, { ...BASE, username: '   ', deviceid: DEVICE_ID })).not.toHaveLength(0);
+  });
+
   it('accepts deviceid alone and mirrors it to imeinumber', async () => {
     const instance = plainToInstance(ClientContextDto, { ...BASE, deviceid: DEVICE_ID });
     expect(instance.imeinumber).toBe(DEVICE_ID);

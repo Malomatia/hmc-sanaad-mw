@@ -1,155 +1,197 @@
 import { ConfigService } from '@nestjs/config';
+import { AuthStateService } from '@core/auth/auth-state.service';
 import { AuditService } from '@core/audit/audit.service';
 import { MpinService } from './mpin.service';
 import { MpinStorePort } from '../domain/ports/mpin-store.port';
 import { OtpPort } from '../domain/ports/otp.port';
 import { DeviceRegistryPort } from '../domain/ports/device-registry.port';
 import { LdapUserPort } from '../domain/ports/ldap-user.port';
-import { EmployeeIdentity } from '../domain/auth-identity';
 
-const IDENTITY: EmployeeIdentity = {
-  username: 'hmc1',
-  employeeName: 'Jane Doe',
+const DTO = { username: 'hmc1', imeinumber: 'device-1', platform: 'Android' };
+const GRANT = 'g'.repeat(43);
+const REQUEST_ID = 'r'.repeat(43);
+const IDENTITY = {
+  username: DTO.username,
+  employeeName: 'Test Employee',
   phoneNumber: '77861234',
+  email: 'employee@example.test',
   isEmployee: true,
   isNewUser: false,
 };
 
-function makeService({ authDisabled = false } = {}) {
-  const store: jest.Mocked<MpinStorePort> = {
-    set: jest.fn().mockResolvedValue(undefined),
+function makeService(authDisabled = false) {
+  const store = {
+    set: jest.fn(),
+    exists: jest.fn().mockResolvedValue(false),
     verify: jest.fn(),
-    exists: jest.fn(),
-  };
-  const otp: jest.Mocked<OtpPort> = {
-    send: jest
-      .fn()
-      .mockResolvedValue({ requestId: '42', status: 'NEW', mode: 'SMS', validForSeconds: 300 }),
+  } as jest.Mocked<MpinStorePort>;
+  const otp = {
+    send: jest.fn().mockResolvedValue({ requestId: REQUEST_ID }),
     verify: jest.fn().mockResolvedValue(true),
-  };
-  const devices: jest.Mocked<DeviceRegistryPort> = {
-    bind: jest.fn().mockResolvedValue(undefined),
+  } as jest.Mocked<OtpPort>;
+  const devices = {
+    bind: jest.fn(),
+    find: jest.fn(),
+    touch: jest.fn(),
     isBound: jest.fn().mockResolvedValue(true),
-    find: jest.fn().mockResolvedValue(undefined),
-    touch: jest.fn().mockResolvedValue(undefined),
-  };
-  const ldap: jest.Mocked<LdapUserPort> = {
+  } as jest.Mocked<DeviceRegistryPort>;
+  const ldap = {
     validate: jest.fn().mockResolvedValue(IDENTITY),
     authenticate: jest.fn(),
-  };
-  const audit = { lifecycle: jest.fn() } as unknown as AuditService;
+  } as jest.Mocked<LdapUserPort>;
+  const state = {
+    limit: jest.fn().mockResolvedValue(undefined),
+    enroll: jest.fn().mockResolvedValue(true),
+    resetMpin: jest.fn().mockResolvedValue(true),
+  } as unknown as jest.Mocked<AuthStateService>;
   const config = {
-    get: jest.fn((key: string, def?: unknown) => {
-      if (key === 'auth.disabled') return authDisabled;
-      return def;
-    }),
-    getOrThrow: jest
-      .fn()
-      .mockReturnValue({ minLength: 4, maxLength: 6, maxAttempts: 5, lockoutMinutes: 15 }),
+    get: (key: string, fallback: unknown) => (key === 'auth.disabled' ? authDisabled : fallback),
+    getOrThrow: () => ({ minLength: 4, maxLength: 6, maxAttempts: 5, lockoutMinutes: 15 }),
   } as unknown as ConfigService;
-  const service = new MpinService(store, otp, devices, ldap, audit, config);
-  return { service, store, otp, devices, ldap };
+  const audit = { lifecycle: jest.fn() } as unknown as AuditService;
+  return {
+    service: new MpinService(store, otp, devices, ldap, audit, config, state),
+    store,
+    otp,
+    devices,
+    ldap,
+    state,
+  };
 }
 
-const DTO = { username: 'hmc1', imeinumber: 'imei-1', platform: 'Android' };
+describe('First MPIN enrollment', () => {
+  it.each(['client-hashed-test-value+/=', '1', '1234567890'])(
+    'preserves a client MPIN value after proof: %s',
+    async (mpin) => {
+      const { service, state, store, devices } = makeService();
+      await expect(
+        service.setMpin({ ...DTO, mpin, enrollmenttoken: GRANT }),
+      ).resolves.toMatchObject({ status: 'success' });
+      expect(state.enroll).toHaveBeenCalledWith(DTO.username, DTO.imeinumber, mpin, GRANT);
+      expect(store.set).not.toHaveBeenCalled();
+      expect(devices.bind).not.toHaveBeenCalled();
+    },
+  );
 
-describe('MpinService.setMpin (API-4)', () => {
-  it.each([
-    { label: 'client-hashed value', mpin: 'client-hashed-test-value+/=' },
-    { label: 'short string', mpin: '1' },
-    { label: 'long numeric string', mpin: '1234567890' },
-  ])('passes a $label to the store unchanged', async ({ mpin }) => {
-    const { service, store, devices } = makeService();
+  it.each(['', 'invalid'])(
+    'refuses missing/malformed authorization: %s',
+    async (enrollmenttoken) => {
+      const { service, state } = makeService();
+      await expect(
+        service.setMpin({ ...DTO, mpin: 'hash', enrollmenttoken }),
+      ).resolves.toMatchObject({ status: 'error' });
+      expect(state.enroll).not.toHaveBeenCalled();
+    },
+  );
 
-    await expect(service.setMpin({ ...DTO, mpin })).resolves.toEqual({
-      status: 'success',
-      message: 'MPIN updated successfully',
-    });
-
-    expect(devices.bind).toHaveBeenCalledWith({
-      username: DTO.username,
-      imei: DTO.imeinumber,
-      platform: DTO.platform,
-    });
-    expect(store.set).toHaveBeenCalledWith({
-      username: DTO.username,
-      imei: DTO.imeinumber,
-      mpin,
-    });
+  it('refuses expired/reused/wrong-user proof when the atomic store rejects it', async () => {
+    const { service, state } = makeService();
+    state.enroll.mockResolvedValue(false);
+    await expect(
+      service.setMpin({ ...DTO, mpin: 'hash', enrollmenttoken: GRANT }),
+    ).resolves.toMatchObject({ status: 'error' });
   });
 
-  it('accepts a client hash in dev bypass without persisting it', async () => {
-    const { service, store, devices } = makeService({ authDisabled: true });
-
+  it('does not overwrite an existing MPIN through enrollment', async () => {
+    const { service, store, state } = makeService();
+    store.exists.mockResolvedValue(true);
     await expect(
-      service.setMpin({ ...DTO, mpin: 'client-hashed-test-value+/=' }),
-    ).resolves.toMatchObject({ status: 'success' });
+      service.setMpin({ ...DTO, mpin: 'hash', enrollmenttoken: GRANT }),
+    ).resolves.toMatchObject({ status: 'error' });
+    expect(state.enroll).not.toHaveBeenCalled();
+  });
 
-    expect(store.set).not.toHaveBeenCalled();
-    expect(devices.bind).not.toHaveBeenCalled();
+  it('rechecks employee eligibility', async () => {
+    const { service, ldap, state } = makeService();
+    ldap.validate.mockResolvedValue({ ...IDENTITY, isEmployee: false });
+    await expect(
+      service.setMpin({ ...DTO, mpin: 'hash', enrollmenttoken: GRANT }),
+    ).resolves.toMatchObject({ status: 'error' });
+    expect(state.enroll).not.toHaveBeenCalled();
+  });
+
+  it('keeps explicitly configured local bypass database-free', async () => {
+    const { service, state } = makeService(true);
+    await expect(
+      service.setMpin({ ...DTO, mpin: 'hash', enrollmenttoken: GRANT }),
+    ).resolves.toMatchObject({ status: 'success' });
+    expect(state.enroll).not.toHaveBeenCalled();
   });
 });
 
-describe('MpinService.forgotInitiate (API-6)', () => {
-  it('requires the device to be registered for the user (legacy forgetMPIN check)', async () => {
+describe('Forgot MPIN', () => {
+  it.each([true, false])('returns a generic response when registered=%s', async (registered) => {
     const { service, devices, otp } = makeService();
-    devices.isBound.mockResolvedValue(false);
-
+    devices.isBound.mockResolvedValue(registered);
     const result = await service.forgotInitiate(DTO);
-
-    expect(result.status).toBe('error');
-    expect(result.requestid).toBeUndefined();
-    expect(otp.send).not.toHaveBeenCalled();
-  });
-
-  it('resolves the phone from the directory and sends the OTP', async () => {
-    const { service, otp, ldap } = makeService();
-
-    const result = await service.forgotInitiate(DTO);
-
-    expect(ldap.validate).toHaveBeenCalledWith({
-      username: 'hmc1',
-      imei: 'imei-1',
-      platform: 'Android',
+    expect(result).toEqual({
+      status: 'initiated successfully',
+      requestid: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/),
+      message: 'If eligible, a verification code will be sent to your registered contact.',
     });
-    expect(otp.send).toHaveBeenCalledWith(
-      expect.objectContaining({
-        username: 'hmc1',
-        phoneNumber: '77861234',
-        imei: 'imei-1',
-        purpose: 'FORGOT_MPIN',
-      }),
-    );
-    expect(result).toMatchObject({ status: 'initiated successfully', requestid: '42' });
+    expect(otp.send).toHaveBeenCalledTimes(registered ? 1 : 0);
   });
 
   it.each(['en', 'ar', undefined] as const)(
-    'passes lang=%s to OTP delivery for the email fallback',
+    'uses directory contacts, recovery purpose and lang=%s',
     async (lang) => {
-      const { service, otp, ldap } = makeService();
-      ldap.validate.mockResolvedValue({
-        ...IDENTITY,
-        phoneNumber: undefined,
-        email: 'hmc1@hamad.qa',
-      });
-
+      const { service, otp } = makeService();
       await service.forgotInitiate(DTO, lang);
-
       expect(otp.send).toHaveBeenCalledWith(
-        expect.objectContaining({ email: 'hmc1@hamad.qa', lang: lang ?? 'en' }),
+        expect.objectContaining({
+          phoneNumber: IDENTITY.phoneNumber,
+          email: IDENTITY.email,
+          purpose: 'FORGOT_MPIN',
+          smsTemplate: 'forget',
+          lang: lang ?? 'en',
+        }),
       );
     },
   );
 
-  it('keeps the dev bypass: no DB/directory/OTP calls when AUTH_DISABLED=true', async () => {
-    const { service, otp, devices, ldap } = makeService({ authDisabled: true });
-
-    const result = await service.forgotInitiate(DTO);
-
-    expect(result.status).toBe('initiated successfully');
-    expect(result.requestid).toEqual(expect.any(String));
-    expect(devices.isBound).not.toHaveBeenCalled();
-    expect(ldap.validate).not.toHaveBeenCalled();
+  it('does not send a recovery OTP for an ineligible employee', async () => {
+    const { service, ldap, otp } = makeService();
+    ldap.validate.mockResolvedValue({ ...IDENTITY, isEmployee: false });
+    await service.forgotInitiate(DTO);
     expect(otp.send).not.toHaveBeenCalled();
+  });
+});
+
+describe('MPIN reset', () => {
+  const reset = { ...DTO, newmpin: 'opaque-client-hash+/=', requestid: REQUEST_ID, otp: '012345' };
+
+  it('requires a recovery OTP and delegates the MPIN update/session invalidation atomically', async () => {
+    const { service, otp, state, store } = makeService();
+    await expect(service.resetMpin(reset)).resolves.toMatchObject({ status: 'success' });
+    expect(otp.verify).toHaveBeenCalledWith({
+      username: DTO.username,
+      imei: DTO.imeinumber,
+      requestId: REQUEST_ID,
+      otp: '012345',
+      purpose: 'FORGOT_MPIN',
+    });
+    expect(state.resetMpin).toHaveBeenCalledWith(DTO.username, DTO.imeinumber, reset.newmpin);
+    expect(store.set).not.toHaveBeenCalled();
+  });
+
+  it('rejects invalid input before spending an OTP', async () => {
+    const { service, otp } = makeService();
+    await expect(service.resetMpin({ ...reset, newmpin: '' })).resolves.toMatchObject({
+      status: 'error',
+    });
+    expect(otp.verify).not.toHaveBeenCalled();
+  });
+
+  it('never writes an MPIN after failed OTP verification', async () => {
+    const { service, otp, state } = makeService();
+    otp.verify.mockResolvedValue(false);
+    await expect(service.resetMpin(reset)).resolves.toMatchObject({ status: 'error' });
+    expect(state.resetMpin).not.toHaveBeenCalled();
+  });
+
+  it('does not report success when the registration is inactive or missing', async () => {
+    const { service, state } = makeService();
+    state.resetMpin.mockResolvedValue(false);
+    await expect(service.resetMpin(reset)).resolves.toMatchObject({ status: 'error' });
   });
 });

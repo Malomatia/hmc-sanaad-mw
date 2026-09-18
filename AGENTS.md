@@ -1603,3 +1603,81 @@ from `HMC_BackEnd/`. HTTP tests use real services/controllers with mocked Oracle
 repositories and check the messages recorded by the response logger as well.
 Semantic lint retains two pre-existing unused controller imports (`Role` and
 `ApprovalDetailQueryDto`), reproduced against HEAD; the other changed files pass.
+
+## Authentication security phase (2026-09-18)
+
+This supersedes the earlier pre-auth contact disclosure, OTP verification/store,
+MPIN-reset numeric policy, JWT/revocation, and operational-console access notes.
+It is an authentication-focused remediation phase, NOT closure of all ten
+penetration-readiness findings. No live migrations, OTP delivery, or business
+submissions were performed during implementation.
+
+- Apply `HMC_BackEnd/tools/auth-security-schema.sql` through the DBA BEFORE
+  deployment. It creates four additive Users DB security-state tables for OTP
+  challenges, enrollment grants, sessions, and attempt budgets. The app needs
+  SELECT/INSERT/UPDATE/DELETE on them. Never automatically apply this script at
+  boot or substitute an in-memory fallback. Atomic SQL and concurrency still
+  require SQL Server-backed UAT verification with the actual permissions/schema.
+- `OTP_PORT` now always binds `SecureOtpRepository`. Both legacy `OTP_STORE`
+  settings use the new authoritative Users DB challenge store; the former
+  adapters remain in source but are NOT registered providers. `OTP_STORE=motc`
+  retains MOTC delivery; otherwise `OTP_DELIVERY` selects MOTC or HTTP. SMTP is
+  still the no-mobile fallback. No authentication verification reads SMS bodies
+  or `HMC_RHAP_OTP_tbl` anymore. OTP hashes use a request-bound HMAC; rotating
+  JWT_SECRET also invalidates outstanding OTP challenges.
+- `/auth/initiate` and `/auth/send-otp` return only a generic status/message and
+  opaque 43-character requestid (plus explicitly enabled non-production test
+  OTP). No employee/contact data or registration/channel flags. Existing users
+  with an MPIN are not sent an enrollment OTP; they should use login or recovery.
+  Caller-selected phone/email fields are accepted for compatibility but ignored.
+  Send-OTP is enrollment/resend, not recovery; use `/auth/mpin/forgot` for that.
+- `/auth/otp/validate` consumes ONBOARDING challenges only and returns
+  `enrollmenttoken` plus `expiresinseconds: 300`. `/auth/mpin/update` REQUIRES
+  that proof and can update only one inactive registration with NULL MPIN.
+  Proof consumption and MPIN update are one transaction. The mobile must retain
+  the proof temporarily and send it; there is no unprotected legacy fallback.
+- Recovery sends a FORGOT_MPIN challenge. Submit OTP/requestid/newmpin directly
+  to `/auth/mpin/update/reset`, not via enrollment validation. Client-hashed
+  values remain unchanged; reset no longer incorrectly requires numeric hashes.
+  Successful reset revokes all of that user's sessions and enrollment grants.
+- Access and refresh JWTs have explicit typ, sid, jti, iat, exp, issuer/audience;
+  both services pin HS256. Backend protected requests check shared session state
+  and active device status. Refresh rotation compares the previous refresh ID
+  atomically; replay revokes the family, and refresh rechecks employee/functions.
+  Logout revokes the family without needing a refresh token in the body.
+  External directory removal is checked at login/refresh, not on every request;
+  immediate directory-driven deactivation needs a separate integration/policy.
+- Shared account attempt budgets cover login, OTP send/verify, and enrollment.
+  Username whitespace is trimmed by auth DTOs and budget keys are uppercased.
+  Gateway initiate and MPIN enrollment are now throttled too. Backend 429s carry
+  Retry-After, forwarded by the gateway. Distributed ingress/IP controls remain
+  infrastructure work. Expired security-state rows are pruned in bounded batches
+  of 500 per table every five minutes; no legacy/business tables are deleted.
+- Production configuration rejects auth/static-login bypasses, static/testing
+  OTP responses and weak/default JWT keys. Console and diagnostics default off;
+  their guards always refuse production. Explicitly enabled non-production
+  access requires a >=32-byte x-console-token header, never a query token.
+  The console UI cannot enable writes when server allowWrite is false.
+- Deploy backend/gateway/mobile together; existing JWTs require re-login. The
+  collection retains /api/v1. Do not assume the old notes about /api/v2 apply to
+  this checkout. Ownership/action authorization (F4/F5), upload policy/scanning
+  (F9), full abuse coverage, attestation binding, and infrastructure/mobile
+  verification remain outstanding; uniform pre-auth bodies do not establish
+  resistance to timing-based enumeration without UAT measurements.
+
+Postman: run `node postman/auth-security-contract.js` from HMC_BackEnd to update
+ONLY the Auth contracts/negative checks in the maintained collection and add
+missing environment variables. It preserves other folders and labels prior
+Auth captures historical; new examples are expected fixtures, not live captures.
+Do NOT regenerate the full collection over curated responses. Offline checks:
+`node --test postman/auth-security-contract.test.js`. The generator also invokes
+the same contract helper for future newly generated collections.
+
+Verification: backend auth/core-auth tests, operational-access tests, both
+builds, gateway unit/E2E tests, Postman checks, and semantic lint of changed
+files. Tests mint complete signed session claims and mock AuthStateService in
+business HTTP harnesses; never weaken JWT validation to satisfy old fixtures.
+The full backend run on this date has 1,692 passing tests and nine failures in
+unchanged suites: the six documented USERNAME/USER_NAME supervisor expectations,
+and three empty-string assertions for optional dependent gender/passport issue
+fields. These business DTOs/tests were not changed by the auth-security phase.

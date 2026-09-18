@@ -7,6 +7,7 @@ import { JwtStrategy } from './jwt.strategy';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { RolesGuard } from './roles.guard';
 import { TokenRevocationService } from './token-revocation.service';
+import { AuthStateService } from './auth-state.service';
 
 /**
  * Global auth building blocks: JWT verification, JwtAuthGuard, RolesGuard.
@@ -23,12 +24,14 @@ import { TokenRevocationService } from './token-revocation.service';
         const auth = config.getOrThrow<AuthConfig>('auth');
         return {
           secret: auth.jwtSecret,
-          signOptions: { expiresIn: auth.jwtExpiresIn as JwtSignOptions['expiresIn'] },
+          signOptions: { expiresIn: auth.jwtExpiresIn as JwtSignOptions['expiresIn'],
+            algorithm: 'HS256', issuer: auth.jwtIssuer, audience: auth.jwtAudience },
+          verifyOptions: { algorithms: ['HS256'], issuer: auth.jwtIssuer, audience: auth.jwtAudience },
         };
       },
     }),
   ],
-  providers: [JwtStrategy, JwtAuthGuard, RolesGuard, TokenRevocationService],
-  exports: [JwtModule, PassportModule, JwtAuthGuard, RolesGuard, TokenRevocationService],
+  providers: [JwtStrategy, JwtAuthGuard, RolesGuard, TokenRevocationService, AuthStateService],
+  exports: [JwtModule, PassportModule, JwtAuthGuard, RolesGuard, TokenRevocationService, AuthStateService],
 })
 export class AuthModule {}

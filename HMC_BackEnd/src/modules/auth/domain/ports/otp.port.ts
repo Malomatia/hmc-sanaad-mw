@@ -41,6 +41,7 @@ export interface SendOtpResult {
 }
 
 export interface VerifyOtpCommand {
+  purpose?: OtpPurpose;
   username: string;
   imei: string;
   requestId: string;

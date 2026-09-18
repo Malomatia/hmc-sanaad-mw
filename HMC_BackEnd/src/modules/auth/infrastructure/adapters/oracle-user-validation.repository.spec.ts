@@ -9,7 +9,7 @@ const SQL =
 function makeRepository() {
   const ora = {
     isConfigured: jest.fn().mockReturnValue(true),
-    call: jest.fn().mockResolvedValue({ p_is_valid: 'true' }),
+    call: jest.fn().mockResolvedValue({ p_is_valid: 'YES' }),
   };
   const repository = new OracleUserValidationRepository(ora as unknown as OracleService);
   return { ora, repository };
@@ -31,12 +31,15 @@ describe('OracleUserValidationRepository', () => {
   });
 
   it.each([
-    ['true', true],
-    ['TRUE', true],
-    [' True ', true],
+    ['YES', true],
+    ['yes', true],
+    [' Yes ', true],
+    ['NO', false],
+    ['no', false],
+    [' No ', false],
+    ['true', false],
+    ['TRUE', false],
     ['false', false],
-    ['FALSE', false],
-    [' False ', false],
     ['', false],
     [null, false],
     [undefined, false],

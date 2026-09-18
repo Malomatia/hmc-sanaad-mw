@@ -1561,8 +1561,10 @@ Normal login calls `XXHMC_SND_USER_VALIDATE_PRC` with the request username in
 `p_user_name` (uppercase at the Oracle boundary) and a VARCHAR2 OUT bind
 `p_is_valid`. `OracleUserValidationPort` uses the existing Oracle pool and the
 explicit two-parameter contract; no dictionary discovery or new config is needed.
-Only trimmed, case-insensitive `true` enables the full function list. False,
-missing/unexpected output, disabled Oracle, and procedure errors return boolean
+The confirmed VARCHAR2 output is `YES` / `NO`, not `true` / `false`.
+Only trimmed, case-insensitive `YES` enables the full function list and returns
+boolean `isOrcaleUser: true`. `NO`, missing/unexpected output (including `true`),
+disabled Oracle, and procedure errors return boolean
 `isOrcaleUser: false` and retain only `frmHousing`, `frmStaffclinic`, `frmSogha`,
 and `flxbanner` from the existing list, without changing their fields/statuses.
 

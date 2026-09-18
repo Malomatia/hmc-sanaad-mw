@@ -1,6 +1,8 @@
 import { ConfigService } from '@nestjs/config';
+import { createHash } from 'node:crypto';
 import { AuthStateService } from '@core/auth/auth-state.service';
 import { MssqlService } from '@core/database/mssql.service';
+import { safePreview } from '@core/logging/sensitive-data.util';
 import { SecureOtpRepository } from './secure-otp.repository';
 import { VerifyOtpCommand } from '../../domain/ports/otp.port';
 
@@ -18,6 +20,8 @@ const VERIFY: VerifyOtpCommand = {
   otp: '012345',
   purpose: 'ONBOARDING',
 };
+const storedId = (value: string) =>
+  createHash('sha256').update(value).digest('hex').slice(0, 32).toUpperCase();
 
 function makeRepository() {
   const db = {
@@ -30,7 +34,6 @@ function makeRepository() {
   const delivery = { sendOtpSms: jest.fn().mockResolvedValue(undefined) };
   const email = { sendOtpEmail: jest.fn().mockResolvedValue(undefined) };
   const config = new ConfigService({
-    auth: { jwtSecret: 'test-only-secret-material-at-least-32-bytes' },
     otp: {
       length: 6,
       ttlSeconds: 300,
@@ -50,24 +53,38 @@ function makeRepository() {
   };
 }
 
-describe('Secure OTP state', () => {
-  it('uses an opaque fresh request ID, stores only a keyed digest, and invalidates older same-purpose challenges', async () => {
+function assertExistingOtpSql(db: jest.Mocked<MssqlService>) {
+  for (const [sql] of [...db.query.mock.calls, ...db.execute.mock.calls]) {
+    expect(sql).toContain('HMC_RHAP_OTP_tbl');
+    expect(sql).not.toMatch(
+      /HMC_Sanad_(Auth\w*|EnrollmentGrant)_tbl|\b(CREATE|ALTER|DELETE|DROP)\b/i,
+    );
+    expect(sql).not.toMatch(/OtpHash|DeliveredAt|ConsumedAt|\bPurpose\b|\bExpiresAt\b/);
+  }
+}
+
+describe('Existing-table secure OTP state', () => {
+  it('keeps opaque wire IDs and maps them into the existing 32-character RequestId representation', async () => {
     const { repository, db, delivery } = makeRepository();
     const first = await repository.send(SEND);
     const second = await repository.send(SEND);
     expect(first.requestId).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(second.requestId).not.toBe(first.requestId);
     const [sql, params] = db.execute.mock.calls[0];
-    expect(sql).toContain('WITH (UPDLOCK, HOLDLOCK)');
-    expect(sql).toContain('Purpose = @purpose');
-    expect(sql).toContain('ROLLBACK');
     expect(params).toMatchObject({
       username: 'TESTUSER',
       imei: SEND.imei,
-      purpose: 'ONBOARDING',
-      otpHash: expect.stringMatching(/^[0-9a-f]{64}$/),
+      requestType: 'USER_REG',
+      requestId: storedId(first.requestId),
+      otp: '012345',
+      sendMode: 'SMS',
     });
-    expect(params).not.toHaveProperty('otp');
+    expect(String(params!.requestId)).toMatch(/^[0-9A-F]{32}$/);
+    expect(sql).toContain('WITH (UPDLOCK, HOLDLOCK)');
+    expect(sql).toContain('MAX(SeqNo)');
+    expect(sql).toContain("OTPStatus = '0'");
+    expect(sql).toContain('ROLLBACK');
+    expect(safePreview(params)).toHaveProperty('otp', '******');
     expect(first).not.toHaveProperty('otp');
     expect(delivery.sendOtpSms).toHaveBeenCalledWith(
       '55550000',
@@ -76,17 +93,31 @@ describe('Secure OTP state', () => {
       'en',
       undefined,
     );
-    expect(db.execute.mock.calls[1][0]).toContain('DeliveredAt = SYSUTCDATETIME()');
+    expect(db.execute.mock.calls[1][0]).toContain("SET OTPStatus = '1'");
+    expect(db.execute.mock.calls[1][1]).toMatchObject({
+      requestId: storedId(first.requestId),
+      requestType: 'USER_REG',
+    });
+    assertExistingOtpSql(db);
   });
 
-  it('does not activate a challenge when delivery fails', async () => {
+  it('leaves the OTP unusable if delivery fails', async () => {
     const { repository, db, delivery } = makeRepository();
     delivery.sendOtpSms.mockRejectedValue(new Error('Delivery failed'));
     await expect(repository.send(SEND)).rejects.toThrow('Delivery failed');
     expect(db.execute).toHaveBeenCalledTimes(1);
+    expect(db.execute.mock.calls[0][0]).toContain("OTPStatus = '0'");
   });
 
-  it('uses email only when the directory has no phone', async () => {
+  it('does not activate an older request after another send has replaced it', async () => {
+    const { repository, db } = makeRepository();
+    db.execute
+      .mockResolvedValueOnce({ rowsAffected: 1, rows: [] })
+      .mockResolvedValueOnce({ rowsAffected: 0, rows: [] });
+    await expect(repository.send(SEND)).rejects.toMatchObject({ status: 409 });
+  });
+
+  it('uses directory email when no phone exists', async () => {
     const { repository, email, delivery } = makeRepository();
     await expect(
       repository.send({
@@ -105,7 +136,7 @@ describe('Secure OTP state', () => {
     expect(delivery.sendOtpSms).not.toHaveBeenCalled();
   });
 
-  it('returns an indistinguishable opaque ID without recording a usable OTP if no destination exists', async () => {
+  it('returns a dummy opaque ID without a usable row when no contact exists', async () => {
     const { repository, db, delivery, email } = makeRepository();
     await expect(repository.send({ ...SEND, phoneNumber: undefined })).resolves.toMatchObject({
       requestId: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/),
@@ -115,60 +146,71 @@ describe('Secure OTP state', () => {
     expect(email.sendOtpEmail).not.toHaveBeenCalled();
   });
 
-  it('checks user, device, purpose, delivery, expiry, attempts and consumption in one conditional update', async () => {
-    const { repository, db, state } = makeRepository();
-    await expect(repository.verify(VERIFY)).resolves.toBe(true);
-    const [sql, params] = db.query.mock.calls[0];
-    for (const predicate of [
-      'LoginID = @username',
-      'DeviceIMEI = @imei',
-      'Purpose = @purpose',
-      'ExpiresAt > SYSUTCDATETIME()',
-      'DeliveredAt IS NOT NULL',
-      'ConsumedAt IS NULL',
-      'Attempts < @maximum',
-    ]) {
-      expect(sql).toContain(predicate);
-    }
-    expect(sql).toContain('Attempts = Attempts + 1');
-    expect(sql).not.toContain('NOLOCK');
-    expect(params).toMatchObject({
-      requestId: REQUEST_ID,
-      username: 'TESTUSER',
-      purpose: 'ONBOARDING',
-      maximum: 5,
-    });
-    expect(state.limit).toHaveBeenCalledWith('otp-verify', 'TESTUSER', 5, 300);
-  });
-
-  it.each([{ rows: [] }, { rows: [{ Verified: 0 }] }])(
-    'rejects when the authoritative update returns $rows',
-    async ({ rows }) => {
-      const { repository, db } = makeRepository();
-      db.query.mockResolvedValue(rows);
-      await expect(repository.verify(VERIFY)).resolves.toBe(false);
+  it.each([
+    ['ONBOARDING', 'USER_REG'],
+    ['FORGOT_MPIN', 'FORGET_MPIN'],
+  ] as const)(
+    'verifies %s through existing purpose/status/attempt/time columns',
+    async (purpose, requestType) => {
+      const { repository, db, state } = makeRepository();
+      await expect(repository.verify({ ...VERIFY, purpose })).resolves.toBe(true);
+      const [sql, params] = db.query.mock.calls[0];
+      for (const predicate of [
+        'LoginID = @username',
+        'DeviceIMEINumber COLLATE Latin1_General_100_BIN2 = @imei',
+        'RequestType = @requestType',
+        "OTPStatus = '1'",
+        'ISNULL(OTPValidationAttemptCount, 0) < @maximum',
+        'OTPSentDateTime <= GETDATE()',
+        'OTPSentDateTime > DATEADD(SECOND, -@ttl, GETDATE())',
+      ])
+        expect(sql).toContain(predicate);
+      expect(sql).toContain('OTPValidationAttemptCount = ISNULL(OTPValidationAttemptCount, 0) + 1');
+      expect(sql).toContain("THEN '0' ELSE OTPStatus END");
+      expect(sql).not.toContain('NOLOCK');
+      expect(params).toMatchObject({
+        requestId: storedId(REQUEST_ID),
+        username: 'TESTUSER',
+        requestType,
+        maximum: 5,
+        ttl: 300,
+        otp: '012345',
+      });
+      expect(state.limit).toHaveBeenCalledWith('otp-verify', 'TESTUSER', 5, 300);
+      assertExistingOtpSql(db);
     },
   );
 
-  it('requires purpose and a fresh opaque ID before querying verification state', async () => {
+  it.each([
+    { rows: [] },
+    { rows: [{ Verified: 0 }] },
+    { rows: [{ Verified: 1 }, { Verified: 1 }] },
+  ])('rejects a missing, failed or ambiguous verification update: $rows', async ({ rows }) => {
+    const { repository, db } = makeRepository();
+    db.query.mockResolvedValue(rows);
+    await expect(repository.verify(VERIFY)).resolves.toBe(false);
+  });
+
+  it('does not accept missing purpose or the old SeqNo as a request ID', async () => {
     const { repository, db } = makeRepository();
     await expect(repository.verify({ ...VERIFY, purpose: undefined })).resolves.toBe(false);
     await expect(repository.verify({ ...VERIFY, requestId: '42' })).resolves.toBe(false);
     expect(db.query).not.toHaveBeenCalled();
   });
 
-  it('does not treat unavailable persistence as a successful verification', async () => {
+  it('propagates unavailable persistence rather than reporting verification success', async () => {
     const { repository, db } = makeRepository();
     db.query.mockRejectedValue(new Error('Unavailable'));
     await expect(repository.verify(VERIFY)).rejects.toThrow('Unavailable');
   });
 
-  it('consults durable state again after a process restart instead of a local consumed set', async () => {
+  it('consults the durable OTP row again on another instance or after restart', async () => {
     const { repository, db, state, delivery, email, config } = makeRepository();
     await expect(repository.verify(VERIFY)).resolves.toBe(true);
     db.query.mockResolvedValue([]);
-    const restarted = new SecureOtpRepository(db, state, delivery, email, config);
-    await expect(restarted.verify(VERIFY)).resolves.toBe(false);
+    await expect(
+      new SecureOtpRepository(db, state, delivery, email, config).verify(VERIFY),
+    ).resolves.toBe(false);
     expect(db.query).toHaveBeenCalledTimes(2);
   });
 });

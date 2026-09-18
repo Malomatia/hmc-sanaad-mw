@@ -1,8 +1,8 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { ConflictException, Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { createHmac, randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { AuthStateService } from '@core/auth/auth-state.service';
-import { AuthConfig, OtpConfig } from '@core/config/configuration';
+import { OtpConfig } from '@core/config/configuration';
 import { MssqlService } from '@core/database/mssql.service';
 import {
   OtpPort,
@@ -20,7 +20,6 @@ import { generateOtp } from './otp-generator.util';
 @Injectable()
 export class SecureOtpRepository implements OtpPort {
   private readonly cfg: OtpConfig;
-  private readonly secret: string;
 
   constructor(
     private readonly db: MssqlService,
@@ -30,7 +29,6 @@ export class SecureOtpRepository implements OtpPort {
     config: ConfigService,
   ) {
     this.cfg = config.getOrThrow<OtpConfig>('otp');
-    this.secret = config.getOrThrow<AuthConfig>('auth').jwtSecret;
   }
 
   async send(cmd: SendOtpCommand): Promise<SendOtpResult> {
@@ -40,15 +38,28 @@ export class SecureOtpRepository implements OtpPort {
     }
     const otp = generateOtp(this.cfg);
     const username = cmd.username.trim().toUpperCase();
+    const requestType = cmd.purpose === 'ONBOARDING' ? 'USER_REG' : 'FORGET_MPIN';
+    const scope = { requestId: this.storageId(requestId), username, imei: cmd.imei, requestType };
+    const suppliedDate = cmd.appDatetime ? new Date(cmd.appDatetime) : new Date();
     await this.db.execute(
       `SET XACT_ABORT ON;
        BEGIN TRANSACTION;
        BEGIN TRY
-         UPDATE HMC_Sanad_AuthChallenge_tbl WITH (UPDLOCK, HOLDLOCK) SET ConsumedAt = SYSUTCDATETIME()
-          WHERE LoginID = @username AND DeviceIMEI = @imei AND Purpose = @purpose AND ConsumedAt IS NULL;
-         INSERT INTO HMC_Sanad_AuthChallenge_tbl
-           (RequestId, LoginID, DeviceIMEI, Purpose, OtpHash, ExpiresAt)
-         VALUES (@requestId, @username, @imei, @purpose, @otpHash, DATEADD(SECOND, @ttl, SYSUTCDATETIME()));
+         DECLARE @seqNo bigint;
+         SELECT @seqNo = MAX(SeqNo) FROM HMC_RHAP_OTP_tbl WITH (UPDLOCK, HOLDLOCK)
+          WHERE LoginID = @username AND DeviceIMEINumber COLLATE Latin1_General_100_BIN2 = @imei;
+         IF @seqNo IS NULL
+           INSERT INTO HMC_RHAP_OTP_tbl
+             (LoginID, DeviceIMEINumber, OTPValue, OTPSentDateTime, RequestId,
+              AppName, AppVersion, AppDatetime, OTPValidationAttemptCount, RequestType, OTPStatus, OTPSendMode)
+           VALUES (@username, @imei, @otp, GETDATE(), @requestId,
+                   @appName, @appVersion, @appDatetime, 0, @requestType, '0', @sendMode);
+         ELSE
+           UPDATE HMC_RHAP_OTP_tbl
+              SET OTPValue = @otp, OTPSentDateTime = GETDATE(), RequestId = @requestId,
+                  AppName = @appName, AppVersion = @appVersion, AppDatetime = @appDatetime,
+                  OTPValidationAttemptCount = 0, RequestType = @requestType, OTPStatus = '0', OTPSendMode = @sendMode
+            WHERE SeqNo = @seqNo;
          COMMIT;
        END TRY
        BEGIN CATCH
@@ -56,12 +67,12 @@ export class SecureOtpRepository implements OtpPort {
          THROW;
        END CATCH;`,
       {
-        requestId,
-        username,
-        imei: cmd.imei,
-        purpose: cmd.purpose,
-        otpHash: this.otpHash(requestId, otp),
-        ttl: this.cfg.ttlSeconds,
+        ...scope,
+        otp,
+        appName: cmd.appName || 'Sanaad',
+        appVersion: cmd.appVersion || '1.0.0',
+        appDatetime: Number.isNaN(suppliedDate.getTime()) ? new Date() : suppliedDate,
+        sendMode: cmd.phoneNumber ? 'SMS' : 'Email',
       },
     );
     if (cmd.phoneNumber) {
@@ -75,11 +86,17 @@ export class SecureOtpRepository implements OtpPort {
     } else {
       await this.email.sendOtpEmail(cmd.email!, otp, cmd.purpose, cmd.lang ?? 'en');
     }
-    await this.db.execute(
-      `UPDATE HMC_Sanad_AuthChallenge_tbl SET DeliveredAt = SYSUTCDATETIME()
-        WHERE RequestId = @requestId AND ConsumedAt IS NULL`,
-      { requestId },
+    const activated = await this.db.execute(
+      `UPDATE HMC_RHAP_OTP_tbl SET OTPStatus = '1'
+        WHERE RequestId COLLATE Latin1_General_100_BIN2 = @requestId AND LoginID = @username
+          AND DeviceIMEINumber COLLATE Latin1_General_100_BIN2 = @imei AND RequestType = @requestType
+          AND OTPStatus = '0' AND OTPSentDateTime > DATEADD(SECOND, -@ttl, GETDATE())`,
+      { ...scope, ttl: this.cfg.ttlSeconds },
     );
+    if (activated.rowsAffected !== 1)
+      throw new ConflictException(
+        'The verification request is no longer valid. Please request a new code.',
+      );
     return {
       requestId,
       status: 'NEW',
@@ -90,7 +107,12 @@ export class SecureOtpRepository implements OtpPort {
   }
 
   async verify(cmd: VerifyOtpCommand): Promise<boolean> {
-    if (!cmd.purpose || !/^[A-Za-z0-9_-]{43}$/.test(cmd.requestId) || !cmd.otp) return false;
+    if (
+      !['ONBOARDING', 'FORGOT_MPIN'].includes(cmd.purpose ?? '') ||
+      !/^[A-Za-z0-9_-]{43}$/.test(cmd.requestId) ||
+      !cmd.otp
+    )
+      return false;
     await this.state.limit(
       'otp-verify',
       cmd.username.trim().toUpperCase(),
@@ -98,28 +120,29 @@ export class SecureOtpRepository implements OtpPort {
       this.cfg.ttlSeconds,
     );
     const rows = await this.db.query<{ Verified: number }>(
-      `UPDATE HMC_Sanad_AuthChallenge_tbl
-          SET Attempts = Attempts + 1,
-              ConsumedAt = CASE WHEN OtpHash = @otpHash THEN SYSUTCDATETIME() ELSE NULL END
-        OUTPUT CASE WHEN INSERTED.ConsumedAt IS NOT NULL THEN 1 ELSE 0 END AS Verified
-        WHERE RequestId = @requestId AND LoginID = @username AND DeviceIMEI = @imei
-          AND Purpose = @purpose AND ExpiresAt > SYSUTCDATETIME() AND DeliveredAt IS NOT NULL
-          AND ConsumedAt IS NULL AND Attempts < @maximum`,
+      `UPDATE HMC_RHAP_OTP_tbl
+          SET OTPValidationAttemptCount = ISNULL(OTPValidationAttemptCount, 0) + 1,
+              OTPStatus = CASE WHEN LTRIM(RTRIM(CONVERT(nvarchar(256), OTPValue))) COLLATE Latin1_General_100_BIN2 = @otp
+                               THEN '0' ELSE OTPStatus END
+        OUTPUT CASE WHEN INSERTED.OTPStatus = '0' THEN 1 ELSE 0 END AS Verified
+        WHERE RequestId COLLATE Latin1_General_100_BIN2 = @requestId AND LoginID = @username
+          AND DeviceIMEINumber COLLATE Latin1_General_100_BIN2 = @imei AND RequestType = @requestType
+          AND OTPStatus = '1' AND ISNULL(OTPValidationAttemptCount, 0) < @maximum
+          AND OTPSentDateTime <= GETDATE() AND OTPSentDateTime > DATEADD(SECOND, -@ttl, GETDATE())`,
       {
-        requestId: cmd.requestId,
+        requestId: this.storageId(cmd.requestId),
         username: cmd.username.trim().toUpperCase(),
         imei: cmd.imei,
-        purpose: cmd.purpose,
-        otpHash: this.otpHash(cmd.requestId, cmd.otp),
+        requestType: cmd.purpose === 'ONBOARDING' ? 'USER_REG' : 'FORGET_MPIN',
+        otp: cmd.otp.trim(),
         maximum: this.cfg.maxAttempts,
+        ttl: this.cfg.ttlSeconds,
       },
     );
-    return rows[0]?.Verified === 1;
+    return rows.length === 1 && rows[0].Verified === 1;
   }
 
-  private otpHash(requestId: string, otp: string): string {
-    return createHmac('sha256', this.secret)
-      .update(`sanaad-otp\0${requestId}\0${otp}`)
-      .digest('hex');
+  private storageId(requestId: string): string {
+    return createHash('sha256').update(requestId).digest('hex').slice(0, 32).toUpperCase();
   }
 }

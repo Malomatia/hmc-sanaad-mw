@@ -79,13 +79,18 @@ export class MssqlChallengeStore extends GuardedStore implements ChallengeStoreP
   }
 
   async consume(value: string): Promise<boolean> {
+    if (
+      !/^[A-Za-z0-9+/]{43}=$/.test(value) ||
+      Buffer.from(value, 'base64').toString('base64') !== value
+    )
+      return false;
     // One statement: marking it used IS the check, so a challenge cannot be
     // spent twice by two requests arriving together.
     const result = await this.guard(CHALLENGE_TABLE, 'consume', () =>
       this.db.execute(
         `UPDATE ${CHALLENGE_TABLE}
             SET UsedAt = GETDATE()
-          WHERE Challenge = @value AND UsedAt IS NULL AND ExpiresAt > GETDATE()`,
+          WHERE Challenge = @value AND Challenge COLLATE Latin1_General_100_BIN2 = @value AND UsedAt IS NULL AND ExpiresAt > GETDATE()`,
         { value },
       ),
     );

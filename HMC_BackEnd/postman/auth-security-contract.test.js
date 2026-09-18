@@ -119,4 +119,8 @@ test('maintained collection and environment contain the new contract without emb
   assert.equal(JSON.parse(itemFor(collection, 'auth/mpin/update').request.body.raw).enrollmenttoken, '{{enrollmenttoken}}');
   assert.equal(environment.values.find((value) => value.key === 'enrollmenttoken').value, '');
   assert.ok(collection.item.some((folder) => folder.name === 'Auth security negative checks'));
+  const description = collection.item.find((folder) => folder.name === 'Auth').description;
+  assert.match(description, /No new tables or columns are required/);
+  assert.match(description, /HMC_Sanad_AttestChallenge_tbl/);
+  assert.doesNotMatch(description, /apply tools\/auth-security-schema/);
 });

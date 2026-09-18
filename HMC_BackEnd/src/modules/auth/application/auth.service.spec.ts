@@ -20,6 +20,7 @@ import { FunctionAccessPort } from '../domain/ports/function-access.port';
 import { DeviceRegistryPort } from '../domain/ports/device-registry.port';
 import { LoginEmploymentPort } from '../domain/ports/login-employment.port';
 import { OracleService } from '@core/database/oracle.service';
+import { MssqlService } from '@core/database/mssql.service';
 import { OracleLoginEmploymentRepository } from '../infrastructure/adapters/oracle-login-employment.repository';
 import { FunctionAccess, FunctionStatus } from '../domain/auth-identity';
 import { DEV_FUNCTION_ACCESS } from './dev-fallback';
@@ -78,9 +79,10 @@ function makeService(overrides: Partial<typeof AUTH_CFG> = {}, identityUsername 
     getOrThrow: jest.fn(() => authCfg),
   } as unknown as ConfigService;
   const sessions = new Map<string, SessionState>();
+  const sessionKeys = new AuthStateService({} as MssqlService, config);
   const state = {
     limit: jest.fn().mockResolvedValue(undefined),
-    newSession: AuthStateService.prototype.newSession,
+    newSession: sessionKeys.newSession.bind(sessionKeys),
     createSession: jest.fn(async (session: SessionState) => {
       sessions.set(session.sid, { ...session });
     }),
@@ -534,7 +536,7 @@ describe('AuthService refresh + logout', () => {
     const login = await service.login(LOGIN);
     const claims = jwt.decode<Record<string, unknown>>(login.token!);
     await service.logout({ username: 'hmc1', roles: [Role.EMPLOYEE], claims }, {});
-    expect(state.revokeSession).toHaveBeenCalledWith(claims.sid, 'hmc1');
+    expect(state.revokeSession).toHaveBeenCalledWith(claims.sid, 'hmc1', 'imei-1');
     await expect(service.refresh({ refreshtoken: login.refreshtoken! })).resolves.toMatchObject({
       status: 'error',
     });

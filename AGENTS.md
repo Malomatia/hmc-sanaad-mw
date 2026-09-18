@@ -1614,19 +1614,36 @@ It is an authentication-focused remediation phase, NOT closure of all ten
 penetration-readiness findings. No live migrations, OTP delivery, or business
 submissions were performed during implementation.
 
-- Apply `HMC_BackEnd/tools/auth-security-schema.sql` through the DBA BEFORE
-  deployment. It creates four additive Users DB security-state tables for OTP
-  challenges, enrollment grants, sessions, and attempt budgets. The app needs
-  SELECT/INSERT/UPDATE/DELETE on them. Never automatically apply this script at
-  boot or substitute an in-memory fallback. Atomic SQL and concurrency still
-  require SQL Server-backed UAT verification with the actual permissions/schema.
-- `OTP_PORT` now always binds `SecureOtpRepository`. Both legacy `OTP_STORE`
-  settings use the new authoritative Users DB challenge store; the former
-  adapters remain in source but are NOT registered providers. `OTP_STORE=motc`
-  retains MOTC delivery; otherwise `OTP_DELIVERY` selects MOTC or HTTP. SMTP is
-  still the no-mobile fallback. No authentication verification reads SMS bodies
-  or `HMC_RHAP_OTP_tbl` anymore. OTP hashes use a request-bound HMAC; rotating
-  JWT_SECRET also invalidates outstanding OTP challenges.
+- **No new tables or columns.** The client has multiple backend instances,
+  no shared cache, and no CREATE permission. They explicitly confirmed that
+  `HMC_Sanad_AttestChallenge_tbl` exists and approved reusing it for shared
+  authentication nonces with SELECT/INSERT/UPDATE. Its existing columns are
+  ChallengeID, Challenge, LoginID, IssuedAt, ExpiresAt and UsedAt. The earlier
+  four-table migration is obsolete and now refuses execution without DDL.
+  No authentication path calls those four new tables; do not restore them or
+  substitute process-local session state. SQL concurrency/permissions still
+  need live UAT verification; automated tests use mocked database calls.
+- Shared records are namespaced 43-character HMAC keys: hB. for rate tickets,
+  hG. for enrollment, hF. for session families, hA. for access tokens and hR.
+  for refresh tokens. They fit within the existing 44-character App Attest
+  challenge representation. All replicas must share JWT_SECRET. App Attest
+  consumption accepts only its original canonical 32-byte base64 challenges
+  and uses binary comparison; it cannot consume an authentication nonce.
+  Authentication writes only its own namespaces and never modifies attestation
+  keys. No table/column creation or background DELETE calls are required.
+- `OTP_PORT` still binds `SecureOtpRepository`, but verification now uses the
+  existing `HMC_RHAP_OTP_tbl`: RequestId, LoginID, DeviceIMEINumber, RequestType,
+  OTPValue, OTPSentDateTime, OTPValidationAttemptCount, OTPStatus and OTPSendMode,
+  plus the legacy app-context columns. RequestType remains USER_REG/FORGET_MPIN.
+  Status 0 is unusable; status 1 is activated only after successful delivery
+  queuing. Verification increments attempts and consumes a matching code in one
+  conditional UPDATE with purpose/identity/request/expiry predicates. OTPValue
+  retains the legacy stored-code representation, NOT a new digest column;
+  sensitive logging remains masked. The opaque wire requestid stays 43 chars;
+  its SHA-256 prefix maps to the existing 32-hex-character RequestId format.
+  Sending reuses the newest user/device row under transaction locks and replaces
+  its correlation ID. OTP_STORE=motc retains MOTC delivery; otherwise OTP_DELIVERY
+  selects MOTC or HTTP. SMTP remains the no-mobile fallback.
 - `/auth/initiate` and `/auth/send-otp` return only a generic status/message and
   opaque 43-character requestid (plus explicitly enabled non-production test
   OTP). No employee/contact data or registration/channel flags. Existing users
@@ -1653,8 +1670,12 @@ submissions were performed during implementation.
   Username whitespace is trimmed by auth DTOs and budget keys are uppercased.
   Gateway initiate and MPIN enrollment are now throttled too. Backend 429s carry
   Retry-After, forwarded by the gateway. Distributed ingress/IP controls remain
-  infrastructure work. Expired security-state rows are pruned in bounded batches
-  of 500 per table every five minutes; no legacy/business tables are deleted.
+  infrastructure work. Budgets are now shared rolling-window tickets in the
+  approved challenge table, not a new counter table. Authentication performs no
+  background cleanup/deletion: existing DB maintenance must retain unexpired
+  authentication records (session expiry can be seven days or renewed on refresh),
+  rather than treating every row as a five-minute App Attest nonce. Review table
+  retention, indexes and capacity with the DB owner before load testing.
 - Production configuration rejects auth/static-login bypasses, static/testing
   OTP responses and weak/default JWT keys. Console and diagnostics default off;
   their guards always refuse production. Explicitly enabled non-production

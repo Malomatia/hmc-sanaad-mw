@@ -266,7 +266,7 @@ export class AuthService {
         imei: payload.deviceImei,
       });
       if (!identity.isEmployee) {
-        await this.state.revokeSession(payload.sid, payload.username);
+        await this.state.revokeSession(payload.sid, payload.username, payload.deviceImei);
         return {
           status: 'error',
           message: 'This session is no longer valid. Please log in again.',
@@ -313,9 +313,14 @@ export class AuthService {
    * still discard both tokens locally.
    */
   async logout(user: AuthenticatedUser, dto: LogoutRequestDto): Promise<StatusMessageDto> {
-    const claims = (user.claims ?? {}) as { jti?: string; exp?: number; sid?: string };
-    if (!this.devBypass && !this.staticLogin && claims.sid) {
-      await this.state.revokeSession(claims.sid, user.username);
+    const claims = (user.claims ?? {}) as {
+      jti?: string;
+      exp?: number;
+      sid?: string;
+      deviceImei?: string;
+    };
+    if (!this.devBypass && !this.staticLogin && claims.sid && claims.deviceImei) {
+      await this.state.revokeSession(claims.sid, user.username, claims.deviceImei);
     }
     if (claims.jti) this.revocation.revoke(claims.jti, claims.exp);
 

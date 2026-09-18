@@ -63,7 +63,7 @@ function applyAuthSecurity(collection) {
       collection.variable.push({ key, value: key === 'platform' ? 'Android' : '', type: 'string' });
     }
   }
-  auth.description = 'Security-aware authentication contracts. Use dedicated authorized UAT accounts, apply tools/auth-security-schema.sql through the DBA first, and deploy backend/gateway together. Do not run this folder wholesale: registration/recovery send OTPs and MPIN operations mutate credentials. Run the chosen journey manually and enter its delivered OTP. Android/iOS must implement enrollmenttoken. Legacy saved captures are retained and labeled historical; they are NOT the new contract. Normal signing and state checks require AUTH_DISABLED=false and AUTH_STATIC_LOGIN=false.';
+  auth.description = 'Security-aware authentication contracts. Use dedicated authorized UAT accounts and deploy backend/gateway together. No new tables or columns are required: authentication reuses HMC_RHAP_OTP_tbl, HMC_Sanad_DeviceRegn_tbl and the approved HMC_Sanad_AttestChallenge_tbl. Shared nonce records support multiple backend instances; all instances must use the same JWT settings. Do not run the obsolete auth-security-schema.sql migration. Do not run this folder wholesale: registration/recovery send OTPs and MPIN operations mutate credentials. Run the chosen journey manually and enter its delivered OTP. Android/iOS must implement enrollmenttoken. Legacy saved captures are retained and labeled historical; they are NOT the new contract. Normal signing and state checks require AUTH_DISABLED=false and AUTH_STATIC_LOGIN=false.';
   for (const spec of specs) {
     let item = auth.item.find((candidate) => routeOf(candidate) === spec.route);
     if (!item) {

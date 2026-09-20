@@ -104,6 +104,17 @@ describe('ProxyService', () => {
     );
   });
 
+  it('relays the backend authentication retry window without changing its body', async () => {
+    const body = Buffer.from(JSON.stringify({ status: 'error', httpStatusCode: 429 }));
+    const http = { request: jest.fn().mockReturnValue(of({ status: 429, data: body, headers: { 'retry-after': '60' } })) };
+    const service = new ProxyService(http as unknown as HttpService, config);
+    const res = makeRes();
+    await service.forward(makeReq(), res);
+    expect(res.status).toHaveBeenCalledWith(429);
+    expect(res.setHeader).toHaveBeenCalledWith('retry-after', '60');
+    expect(res.send).toHaveBeenCalledWith(body);
+  });
+
   it('does not infer a lang header from accept-language or the query string', async () => {
     const request = jest
       .fn()

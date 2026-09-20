@@ -1643,3 +1643,38 @@ LOV route with absent/empty/filtered `data_type`, URL-encoded Arabic, English
 fallback, and stable submit values. Semantic lint has a pre-existing unused
 `_lang` parameter in `LovMapper.toItem`, reproduced against HEAD; both lookup
 test files pass semantic lint.
+
+## Backend Docker timezone
+
+The backend Docker image defaults to `TZ=Asia/Qatar` (UTC+3). Compose uses
+`TZ: "${TZ:-Asia/Qatar}"`, allowing the host environment or `.env` to override it;
+`.env.example` also supplies `TZ=Asia/Qatar` for local launches. The runtime image
+explicitly installs `tzdata` noninteractively for system-library timezone support.
+Gateway configuration, database server timezones, explicit `Date.UTC()` parsing,
+and `toISOString()` output are unchanged. Dependent effective dates follow the
+backend process's local calendar date (Qatar with the default Docker timezone).
+
+Validate Compose without resolving database secrets or requiring a local `.env`:
+`docker compose config --no-interpolate --no-env-resolution --quiet` from
+`HMC_BackEnd/`. Deploy with `docker compose up -d --build --force-recreate api`;
+a container restart alone does not update its environment or image.
+
+## SQL Server audit timezone
+
+Both `HMC_Sanad_UserLogs_tbl.LoginTime` and
+`HMC_Sanad_FunctionAccessLogs_tbl.AccessDatetime` use fixed UTC+3 on INSERT.
+The client explicitly reverted the TZ-based audit conversion: these two columns
+must not read `TZ` or use an environment-dependent/DST offset. Their SQL uses
+`SWITCHOFFSET(TODATETIMEOFFSET(@timestamp, '+00:00'), '+03:00')` with the respective
+timestamp parameter. Docker's process timezone settings are separate and unchanged.
+
+JS Date binds remain the original UTC instant: node-mssql infers DateTime and
+Tedious defaults to `useUTC: true`. Do not pre-shift JS Dates or change the shared
+pool's date mode. Structured audit logs and existing database rows remain unchanged;
+there is no backfill or schema change. This supersedes the earlier TZ-based audit
+conversion and the earlier login-only fixed UTC+3 conversion.
+
+Checks: `npm.cmd test -- --runInBand core/audit --silent` and `npm.cmd run build`.
+Sink tests cover both columns with fixed UTC+3 under different, missing, empty,
+and invalid TZ settings, plus unchanged UTC binds and date/year-boundary inputs.
+SQL Server execution is mocked; live stored values require deployment verification.

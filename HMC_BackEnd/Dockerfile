@@ -37,7 +37,8 @@ RUN npm ci --omit=dev
 ############################
 FROM base AS runner
 ENV NODE_ENV=production \
-    PORT=443
+    PORT=443 \
+    TZ=Asia/Qatar
 
 # ---- Oracle Instant Client (node-oracledb Thick mode) ----
 # Thick mode needs the Oracle Client libraries. The Debian/glibc slim image
@@ -47,7 +48,7 @@ ENV NODE_ENV=production \
 # instantclient-basiclite-linuxx64.zip for a much smaller image if AL32UTF8 suffices.
 ARG INSTANT_CLIENT_URL=https://download.oracle.com/otn_software/linux/instantclient/instantclient-basic-linuxx64.zip
 RUN apt-get update \
- && apt-get install -y --no-install-recommends libaio1 ca-certificates curl unzip \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends libaio1 ca-certificates curl unzip tzdata \
  && mkdir -p /opt/oracle \
  && curl -fsSL "$INSTANT_CLIENT_URL" -o /tmp/instantclient.zip \
  && unzip -q /tmp/instantclient.zip -d /opt/oracle \

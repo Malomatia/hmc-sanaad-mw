@@ -20,6 +20,7 @@ services:
       # NODE_ENV defaults to production here (matching the runtime image ENV);
       # .env / host env still win via compose interpolation.
       NODE_ENV: "${NODE_ENV:-production}"
+      TZ: "${TZ:-Asia/Qatar}"
       PORT: "${PORT:-443}"
       API_PREFIX: "${API_PREFIX:-api/v1}"
       CORS_ORIGINS: "${CORS_ORIGINS:-*}"

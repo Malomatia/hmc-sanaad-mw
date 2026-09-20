@@ -27,6 +27,12 @@ function makeSink() {
 }
 
 describe('MssqlAuditSink', () => {
+  beforeEach(() => {
+    jest.replaceProperty(process, 'env', { ...process.env, TZ: 'Asia/Qatar' });
+  });
+
+  afterEach(() => jest.restoreAllMocks());
+
   it('binds the requested function-access columns and retains the structured audit log', async () => {
     const { sink, db, logs } = makeSink();
 
@@ -46,6 +52,9 @@ describe('MssqlAuditSink', () => {
         actionResult: 'success',
         accessDatetime: new Date(RECORD.timestamp),
       },
+    );
+    expect(db.execute.mock.calls[0][0]).toContain(
+      "SWITCHOFFSET(TODATETIMEOFFSET(@accessDatetime, '+00:00'), '+03:00')",
     );
   });
 
@@ -72,8 +81,62 @@ describe('MssqlAuditSink', () => {
           status,
         },
       );
+      expect(db.execute.mock.calls[1][0]).toContain(
+        "VALUES (@loginId, @imeiNumber, SWITCHOFFSET(TODATETIMEOFFSET(@loginTime, '+00:00'), '+03:00'), @status)",
+      );
     },
   );
+
+  it.each([
+    ['2026-09-20T21:30:00.000Z', '2026-09-20T21:30:00.000Z'],
+    ['2026-12-31T22:30:00.000Z', '2026-12-31T22:30:00.000Z'],
+    ['2026-09-21T00:30:00.000+03:00', '2026-09-20T21:30:00.000Z'],
+  ])('keeps UTC binds and structured audit timestamps for %s', async (timestamp, expectedUtc) => {
+    const { sink, db, logs } = makeSink();
+    const record = Object.freeze({ ...RECORD, functionId: 'auth_login', timestamp });
+
+    await sink.write(record);
+
+    expect(db.execute).toHaveBeenCalledTimes(2);
+    const [accessSql, accessParams] = db.execute.mock.calls[0];
+    const [loginSql, loginParams] = db.execute.mock.calls[1];
+    expect(accessSql).toContain("SWITCHOFFSET(TODATETIMEOFFSET(@accessDatetime, '+00:00'), '+03:00')");
+    expect(accessParams).toMatchObject({ accessDatetime: new Date(expectedUtc) });
+    expect(loginSql).toContain("SWITCHOFFSET(TODATETIMEOFFSET(@loginTime, '+00:00'), '+03:00')");
+    expect(loginParams).toMatchObject({ loginTime: new Date(expectedUtc) });
+    expect(logs.write).toHaveBeenCalledWith(record);
+    expect(record.timestamp).toBe(timestamp);
+  });
+
+  it.each([
+    ['Asia/Qatar', '2026-01-01T22:30:00.000Z'],
+    ['UTC', '2026-09-06T10:00:00.000Z'],
+    ['Asia/Kolkata', '2026-09-06T10:00:00.000Z'],
+    ['America/New_York', '2026-01-01T10:00:00.000Z'],
+    ['America/New_York', '2026-07-01T10:00:00.000Z'],
+    ['Pacific/Kiritimati', '2026-12-31T12:30:00.000Z'],
+    ['Invalid/Timezone', '2026-09-06T10:00:00.000Z'],
+    [undefined, '2026-09-06T10:00:00.000Z'],
+    ['', '2026-09-06T10:00:00.000Z'],
+  ])('uses fixed UTC+3 regardless of TZ=%s at %s for both SQL audit tables', async (timeZone, timestamp) => {
+    if (timeZone === undefined) delete process.env.TZ;
+    else process.env.TZ = timeZone;
+    const { sink, db, logs } = makeSink();
+    const record = Object.freeze({ ...RECORD, functionId: 'auth_login', timestamp });
+
+    await sink.write(record);
+
+    expect(db.execute).toHaveBeenCalledTimes(2);
+    const [accessSql, accessParams] = db.execute.mock.calls[0];
+    const [loginSql, loginParams] = db.execute.mock.calls[1];
+    expect(accessSql).toContain("SWITCHOFFSET(TODATETIMEOFFSET(@accessDatetime, '+00:00'), '+03:00')");
+    expect(loginSql).toContain("SWITCHOFFSET(TODATETIMEOFFSET(@loginTime, '+00:00'), '+03:00')");
+    expect(accessParams).toMatchObject({ accessDatetime: new Date(timestamp) });
+    expect(loginParams).toMatchObject({ loginTime: new Date(timestamp) });
+    expect(accessParams).not.toHaveProperty('timeZoneOffset');
+    expect(loginParams).not.toHaveProperty('timeZoneOffset');
+    expect(logs.write).toHaveBeenCalledWith(record);
+  });
 
   it('does not insert duplicate user logs for the existing login lifecycle event', async () => {
     const { sink, db, logs } = makeSink();

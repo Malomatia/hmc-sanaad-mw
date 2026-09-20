@@ -60,7 +60,8 @@ export class HealthCheckService {
            LEFT OUTER JOIN HMC_Sanad_AppMaster_Tbl B ON B.ID = A.APPID
            LEFT OUTER JOIN HMC_Sanad_DTReason_Mast_tbl C ON C.ReasonCode = A.ReasonCode
           WHERE B.AppName = @appName
-            AND GETDATE() BETWEEN A.SchDownStartTime AND A.SchDownEndTime`,
+            AND GETDATE() BETWEEN A.SchDownStartTime AND A.SchDownEndTime
+            AND A.Status = 1`,
         { appName },
       ),
       req.version

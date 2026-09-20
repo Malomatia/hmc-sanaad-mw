@@ -1605,3 +1605,41 @@ from `HMC_BackEnd/`. HTTP tests use real services/controllers with mocked Oracle
 repositories and check the messages recorded by the response logger as well.
 Semantic lint retains two pre-existing unused controller imports (`Role` and
 `ApprovalDetailQueryDto`), reproduced against HEAD; the other changed files pass.
+
+## Approval decision success messages
+
+`POST /approvals/:id/decision` also opts in, using
+`PreserveSubmitMessages({ successOnly: true })`. On business success only
+(`status === 'success'` and `successflag === 'S'`), APPROVE returns
+`Request Approved Successfully` / `تمت الموافقة على الطلب بنجاح`, and REJECT
+returns `Request Rejected Successfully` / `تم رفض الطلب بنجاح`. The service
+sets both message variants; the interceptor selects query `lang`, then the
+`lang` header, then English. Failure text and its existing query-only language
+selection are unchanged, as are Oracle inputs, result data, and push triggers.
+
+Focused checks: `npm.cmd test -- --runInBand core/http modules/approvals
+modules/notifications core/audit --silent` and `npm.cmd run build`.
+The broader `modules/auth` run currently has one pre-existing failure in
+`mssql-function-access.repository.spec.ts`: its query-bind expectation omits
+`StatusCode: 1`, which the implementation already sends in HEAD. Do not change
+that auth behaviour as part of approval message work.
+
+## Dependent LOV Arabic labels
+
+The client explicitly requested the dependent LOV localization fix, scoped to
+`D_DATA_AR`: `LovMapper` now recognizes that column, decodes it into `meaningAr`,
+and the existing `ResponseInterceptor` selects it as `meaning` for `lang=ar`.
+`code`, `used_value`, and the grouping `type` remain unchanged; missing/null/empty
+Arabic values still fall back to English. Empty or omitted `data_type` means
+all groups, not English-only labels. This supersedes the parked `D_DATA_AR`
+item above; the other postponed LOV localization work remains out of scope.
+LOV caching remains per language/options (default five minutes); redeploying or
+restarting the backend clears its in-memory cache.
+
+Regression checks: `npm.cmd test -- --runInBand lookups modules/dependents
+shared/utils/localize.util.spec.ts core/http/response.interceptor.spec.ts --silent`
+and `npm.cmd run build`. Tests mock Oracle and cover the authenticated dependent
+LOV route with absent/empty/filtered `data_type`, URL-encoded Arabic, English
+fallback, and stable submit values. Semantic lint has a pre-existing unused
+`_lang` parameter in `LovMapper.toItem`, reproduced against HEAD; both lookup
+test files pass semantic lint.

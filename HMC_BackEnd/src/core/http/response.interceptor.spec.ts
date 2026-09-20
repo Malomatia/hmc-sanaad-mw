@@ -346,17 +346,119 @@ describe('letters and approvals HTTP responses', () => {
     expect(reassign).toHaveBeenCalledWith(expect.objectContaining({ type: 'DELEGATE' }));
   });
 
-  it.each([
-    [true, 'تم الأرسال'],
-    [false, 'رسالة الرفض'],
-  ] as const)('does not change decision messages for success=%s', async (succeeded, message) => {
-    decide.mockResolvedValueOnce(succeeded ? successResult() : failureResult('Rejected', message));
+  describe.each([
+    {
+      decision: 'APPROVE',
+      messages: { en: 'Request Approved Successfully', ar: 'تمت الموافقة على الطلب بنجاح' },
+    },
+    {
+      decision: 'REJECT',
+      messages: { en: 'Request Rejected Successfully', ar: 'تم رفض الطلب بنجاح' },
+    },
+  ] as const)('$decision messages', ({ decision, messages }) => {
+    const payload = { itemKey: 'item-1', decision, comment: 'Reviewed.' };
 
+    it.each([
+      ['en', undefined, 'en'],
+      ['ar', undefined, 'ar'],
+      [undefined, undefined, 'en'],
+      [undefined, 'ar', 'ar'],
+      ['en', 'ar', 'en'],
+      ['ar', 'en', 'ar'],
+      ['unsupported', 'ar', 'en'],
+    ] as const)('localizes success for query=%s header=%s', async (queryLang, headerLang, expectedLang) => {
+      const source = Object.freeze({
+        ...successResult('Procedure success', { notificationId: '123' }),
+        errormessageAr: 'نص الإجراء',
+      });
+      decide.mockResolvedValueOnce(source);
+      const req = request(app.getHttpServer()).post('/api/v1/approvals/123/decision');
+      if (queryLang !== undefined) req.query({ lang: queryLang });
+      if (headerLang !== undefined) req.set('lang', headerLang);
+
+      const response = await req.send(payload).expect(200);
+
+      expect(response.body).toEqual({
+        status: 'success',
+        successflag: 'S',
+        message: messages[expectedLang],
+        httpStatusCode: 200,
+        result: source.result,
+      });
+      expect(decide).toHaveBeenCalledTimes(1);
+      expect(decide).toHaveBeenCalledWith({
+        ...payload,
+        itemType: 'HRSSA',
+        username: user.username,
+        approvalId: '123',
+        lang: expectedLang,
+      });
+      expect(source.errormessage).toBe('Procedure success');
+      expect(source.errormessageAr).toBe('نص الإجراء');
+      expect(record).toHaveBeenCalledWith(
+        expect.objectContaining({ responseSummary: expect.objectContaining(response.body) }),
+      );
+    });
+
+    it.each([
+      ['en', undefined, 'en'],
+      ['ar', undefined, 'ar'],
+      [undefined, undefined, 'en'],
+      [undefined, 'ar', 'en'],
+      ['en', 'ar', 'en'],
+      ['ar', 'en', 'ar'],
+    ] as const)('keeps failure text and language handling for query=%s header=%s', async (queryLang, headerLang, expectedLang) => {
+      const source = Object.freeze(failureResult('Procedure failure', 'تعذر تنفيذ القرار'));
+      decide.mockResolvedValueOnce(source);
+      const req = request(app.getHttpServer()).post('/api/v1/approvals/123/decision');
+      if (queryLang !== undefined) req.query({ lang: queryLang });
+      if (headerLang !== undefined) req.set('lang', headerLang);
+
+      const response = await req.send(payload).expect(200);
+
+      expect(response.body).toEqual({
+        status: 'error',
+        successflag: 'N',
+        message: expectedLang === 'ar' ? source.errormessageAr : source.errormessage,
+        httpStatusCode: 200,
+      });
+    });
+
+    it.each([
+      failureResult('Procedure failure'),
+      { ...successResult('Procedure failure'), status: 'error' },
+      { ...failureResult('Procedure failure'), status: 'success' },
+    ])('does not label a non-success result as successful: %j', async (source) => {
+      decide.mockResolvedValueOnce(source);
+
+      await request(app.getHttpServer())
+        .post('/api/v1/approvals/123/decision?lang=ar')
+        .send(payload)
+        .expect(200)
+        .expect(({ body: response }) => expect(response).toMatchObject({
+          status: source.status,
+          successflag: source.successflag,
+          message: 'Procedure failure',
+        }));
+    });
+
+    it('preserves exceptions instead of returning a success message', async () => {
+      decide.mockRejectedValueOnce(new ServiceUnavailableException('Oracle unavailable'));
+
+      await request(app.getHttpServer())
+        .post('/api/v1/approvals/123/decision')
+        .send(payload)
+        .expect(503);
+    });
+  });
+
+  it('rejects an invalid decision without calling Oracle', async () => {
     await request(app.getHttpServer())
-      .post('/api/v1/approvals/123/decision?lang=ar')
-      .send({ itemKey: 'item-1', decision: 'APPROVE' })
-      .expect(200)
-      .expect(({ body: response }) => expect(response.message).toBe(message));
+      .post('/api/v1/approvals/123/decision')
+      .send({ itemKey: 'item-1', decision: 'CANCEL' })
+      .expect(400);
+
+    expect(decide).not.toHaveBeenCalled();
   });
 
   it('normalizes SUBJECT on the requested approvals endpoint without changing its caller filter', async () => {

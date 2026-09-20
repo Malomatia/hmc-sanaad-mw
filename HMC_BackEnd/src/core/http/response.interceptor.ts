@@ -23,7 +23,8 @@ export const PRESERVE_AR_TWINS = 'preserveArTwins';
 export const PreserveArTwins = (...baseKeys: string[]) => SetMetadata(PRESERVE_AR_TWINS, baseKeys);
 
 export const PRESERVE_SUBMIT_MESSAGES = 'preserveSubmitMessages';
-export const PreserveSubmitMessages = () => SetMetadata(PRESERVE_SUBMIT_MESSAGES, true);
+export const PreserveSubmitMessages = (options: { successOnly?: boolean } = {}) =>
+  SetMetadata(PRESERVE_SUBMIT_MESSAGES, options.successOnly ? 'success' : true);
 
 /**
  * Standardizes success responses into the Sanaad envelope. Action results
@@ -47,10 +48,10 @@ export class ResponseInterceptor implements NestInterceptor<unknown, SanaadEnvel
         context.getHandler(),
         context.getClass(),
       ]) ?? [];
-    const preserveSubmitMessages = this.reflector.getAllAndOverride<boolean>(PRESERVE_SUBMIT_MESSAGES, [
-      context.getHandler(),
-      context.getClass(),
-    ]);
+    const preserveSubmitMessages = this.reflector.getAllAndOverride<boolean | 'success'>(
+      PRESERVE_SUBMIT_MESSAGES,
+      [context.getHandler(), context.getClass()],
+    );
 
     const http = context.switchToHttp();
     const res = http.getResponse<{ statusCode?: number }>();
@@ -72,9 +73,12 @@ export class ResponseInterceptor implements NestInterceptor<unknown, SanaadEnvel
           // one isn't set.
           const header = req?.headers?.lang;
           const successLang = toLang(req?.query?.lang ?? (Array.isArray(header) ? header[0] : header));
-          const messageLang = preserveSubmitMessages ? successLang : lang;
+          const succeeded = data.status === 'success' && data.successflag === 'S';
+          const preserveMessage =
+            preserveSubmitMessages === true || (preserveSubmitMessages === 'success' && succeeded);
+          const messageLang = preserveMessage ? successLang : lang;
           const message =
-            data.status === 'success' && data.successflag === 'S' && !preserveSubmitMessages
+            succeeded && !preserveMessage
               ? SUCCESS_MESSAGES[successLang]
               : messageLang === 'ar'
                 ? (data.errormessageAr ?? data.errormessage)

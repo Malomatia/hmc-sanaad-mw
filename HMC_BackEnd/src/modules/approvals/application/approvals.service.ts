@@ -21,6 +21,11 @@ import {
 } from '../domain/approvals.repository';
 import { RequestField, buildRequestFields, requestTypeKeyOf } from '../domain/request-fields';
 
+const DECISION_SUCCESS_MESSAGES = {
+  APPROVE: { en: 'Request Approved Successfully', ar: 'تمت الموافقة على الطلب بنجاح' },
+  REJECT: { en: 'Request Rejected Successfully', ar: 'تم رفض الطلب بنجاح' },
+} as const;
+
 const APPROVAL_MESSAGES = {
   QUESTION: {
     success: {
@@ -226,13 +231,16 @@ export class ApprovalsService {
     }
   }
 
-  decide(
+  async decide(
     approvalId: string,
     dto: { decision: ApprovalDecision; itemType: string; itemKey: string; comment?: string },
     user: AuthenticatedUser,
     lang: Lang,
   ): Promise<SubmitResult> {
-    return this.repo.decide({ username: user.username, lang, approvalId, ...dto });
+    const result = await this.repo.decide({ username: user.username, lang, approvalId, ...dto });
+    if (result.status !== 'success' || result.successflag !== 'S') return result;
+    const message = DECISION_SUCCESS_MESSAGES[dto.decision];
+    return { ...result, errormessage: message.en, errormessageAr: message.ar };
   }
 
   async requestInfo(

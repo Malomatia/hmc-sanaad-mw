@@ -212,7 +212,7 @@ export class LeaveOracleRepository extends BaseOracleRepository implements Leave
     return {
       days: Number.isFinite(days) ? days : undefined,
       successFlag: out.p_success_flag,
-      errorMessage: sanitizeOracleMessage(out.p_error_msg) as string,
+      errorMessage: sanitizeOracleMessage(out.p_error_msg, cmd.lang) as string,
     };
   }
 

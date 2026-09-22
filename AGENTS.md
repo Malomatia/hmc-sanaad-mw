@@ -1698,3 +1698,27 @@ signature, not a confirmed or deployed Oracle procedure. The approved timecard
 persistence/workflow contract and Oracle version are still needed. The stated
 28–31 limit counts array objects; a date-range entry counts once. Do not register
 the proposed procedure as a confirmed production contract based on this PDF.
+
+## Localized generic errors and Oracle FLEX failures
+
+Backend application/unknown errors and database errors without a usable description
+use `GENERIC_ERROR_MESSAGE` in `core/http/error-category.ts`: the client's exact
+English/Arabic Ounak Support wording. Gateway-originated HTTP 500 errors use the
+same wording. Query `lang` takes precedence over the `lang` header; missing or
+unsupported values default to English. Specific validation, authentication,
+network-timeout, and readable non-FLEX Oracle messages retain their existing text.
+
+Any Oracle error containing `FLEX` (case-insensitive, including FLEX-NULL,
+FLEX-VALUE, and flexfield identifiers) uses this generic message, whether thrown
+or returned through procedure OUT messages. Submit normalization checks English
+and decoded Arabic messages; the response interceptor selects the generic text
+using the request language. Approval request-info/reassign must preserve this
+fallback rather than overwrite it with their usual Not Processed messages.
+Leave calculation and payslip `errorMessage` fields pass language to the shared
+sanitizer. HTTP statuses, success flags, successful-submit messages, and raw
+Oracle diagnostics are unchanged.
+
+Focused regression checks: from `HMC_BackEnd/`, run `npm.cmd test -- --runInBand
+core/http core/database/base.repository.spec.ts modules/leave modules/payslip
+modules/approvals --silent`; from `HMC_Gateway/`, run `npm.cmd test -- --runInBand
+--silent`. Both projects also use `npm.cmd run build`.

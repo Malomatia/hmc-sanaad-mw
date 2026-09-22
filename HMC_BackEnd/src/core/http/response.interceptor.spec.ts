@@ -18,6 +18,7 @@ import { ApprovalsController } from '@modules/approvals/interface/approvals.cont
 import { LettersService } from '@modules/letters/application/letters.service';
 import { LettersController } from '@modules/letters/interface/letters.controller';
 import { ResponseInterceptor, SKIP_ENVELOPE } from './response.interceptor';
+import { GENERIC_ERROR_MESSAGE } from './error-category';
 
 async function shape(
   data: unknown,
@@ -302,6 +303,20 @@ describe('letters and approvals HTTP responses', () => {
         );
       },
     );
+
+    it.each(['en', 'ar'] as const)('preserves the Oracle fallback for %s', async (lang) => {
+      handler.mockResolvedValueOnce(failureResult(GENERIC_ERROR_MESSAGE.en, GENERIC_ERROR_MESSAGE.ar));
+      const response = await request(app.getHttpServer())
+        .post(`/api/v1/approvals/123/${route}`)
+        .set('lang', lang)
+        .send(payload)
+        .expect(200);
+      expect(response.body).toMatchObject({
+        status: 'error',
+        successflag: 'N',
+        message: GENERIC_ERROR_MESSAGE[lang],
+      });
+    });
 
     it('preserves exception status rather than converting a thrown error into a business response', async () => {
       handler.mockRejectedValueOnce(new ServiceUnavailableException('Oracle unavailable'));

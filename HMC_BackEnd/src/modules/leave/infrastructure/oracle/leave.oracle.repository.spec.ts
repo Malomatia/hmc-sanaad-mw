@@ -295,10 +295,24 @@ describe('LeaveOracleRepository — getBalance confirmed Oracle call', () => {
 });
 
 describe('LeaveOracleRepository.calculate error messages', () => {
+  it.each(['en', 'ar'] as const)('localizes FLEX errors for %s', async (lang) => {
+    const ora = {
+      call: jest.fn().mockResolvedValue({ p_success_flag: 'N', p_error_msg: 'FLEX-NULL' }),
+    } as unknown as OracleService;
+    const repository = new LeaveOracleRepository(ora, {} as OracleSchemaService);
+    const result = await repository.calculate({
+      username: 'TESTUSER', lang, absenceType: 'Annual', startDate: '20260901', endDate: '20260902',
+    });
+    expect(result.errorMessage).toBe(lang === 'ar'
+      ? 'حدث خطأ ما. يرجى المحاولة مرة أخرى. إذا استمرت المشكلة، يرجى التواصل مع فريق دعم عونك.'
+      : 'Something went wrong. Please try again. If the issue persists, contact Ounak Support.');
+    expect(result.successFlag).toBe('N');
+  });
+
   it.each([
     ['ORA-01403: no data found\nORA-06512: at line 4', 'no data found'],
     ['ORA-20001: Leave overlaps an existing request', 'Leave overlaps an existing request'],
-    ['ORA-00942: SELECT secret FROM accounts', 'The database request failed.'],
+    ['ORA-00942: SELECT secret FROM accounts', 'Something went wrong. Please try again. If the issue persists, contact Ounak Support.'],
     ['Invalid leave dates', 'Invalid leave dates'],
     [null, null],
     [undefined, undefined],

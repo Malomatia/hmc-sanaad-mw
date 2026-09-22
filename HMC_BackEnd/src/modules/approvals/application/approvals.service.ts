@@ -5,6 +5,7 @@ import { Lang } from '@shared/domain/lang';
 import { SubmitResult } from '@shared/domain/submit-result';
 import { ERROR_MESSAGES } from '@shared/constants/error-codes';
 import { AuthenticatedUser } from '@core/auth/auth-user.interface';
+import { GENERIC_ERROR_MESSAGE } from '@core/http/error-category';
 import {
   APPROVALS_REPOSITORY,
   ApprovalDecision,
@@ -299,6 +300,7 @@ function withApprovalMessage(
   action: keyof typeof APPROVAL_MESSAGES,
 ): SubmitResult {
   const outcome = result.status === 'success' && result.successflag === 'S' ? 'success' : 'failure';
+  if (outcome === 'failure' && result.errormessage === GENERIC_ERROR_MESSAGE.en) return result;
   const message = APPROVAL_MESSAGES[action][outcome];
   return { ...result, errormessage: message.en, errormessageAr: message.ar };
 }

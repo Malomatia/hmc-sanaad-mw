@@ -68,6 +68,9 @@ describe('HealthCheckService', () => {
     expect(db.query).toHaveBeenCalledWith(expect.stringContaining('HMC_Sanad_AppDownTime_tbl'), {
       appName: 'SanaadHealth',
     });
+    expect(db.query).toHaveBeenNthCalledWith(1, expect.stringContaining('AND A.Status = 1'), {
+      appName: 'SanaadHealth',
+    });
   });
 
   it.each(['M', 'O', 'R'])(

@@ -1704,3 +1704,95 @@ The full backend run on this date has 1,692 passing tests and nine failures in
 unchanged suites: the six documented USERNAME/USER_NAME supervisor expectations,
 and three empty-string assertions for optional dependent gender/passport issue
 fields. These business DTOs/tests were not changed by the auth-security phase.
+## Approval decision success messages
+
+`POST /approvals/:id/decision` also opts in, using
+`PreserveSubmitMessages({ successOnly: true })`. On business success only
+(`status === 'success'` and `successflag === 'S'`), APPROVE returns
+`Request Approved Successfully` / `تمت الموافقة على الطلب بنجاح`, and REJECT
+returns `Request Rejected Successfully` / `تم رفض الطلب بنجاح`. The service
+sets both message variants; the interceptor selects query `lang`, then the
+`lang` header, then English. Failure text and its existing query-only language
+selection are unchanged, as are Oracle inputs, result data, and push triggers.
+
+Focused checks: `npm.cmd test -- --runInBand core/http modules/approvals
+modules/notifications core/audit --silent` and `npm.cmd run build`.
+The broader `modules/auth` run currently has one pre-existing failure in
+`mssql-function-access.repository.spec.ts`: its query-bind expectation omits
+`StatusCode: 1`, which the implementation already sends in HEAD. Do not change
+that auth behaviour as part of approval message work.
+
+## Dependent LOV Arabic labels
+
+The client explicitly requested the dependent LOV localization fix, scoped to
+`D_DATA_AR`: `LovMapper` now recognizes that column, decodes it into `meaningAr`,
+and the existing `ResponseInterceptor` selects it as `meaning` for `lang=ar`.
+`code`, `used_value`, and the grouping `type` remain unchanged; missing/null/empty
+Arabic values still fall back to English. Empty or omitted `data_type` means
+all groups, not English-only labels. This supersedes the parked `D_DATA_AR`
+item above; the other postponed LOV localization work remains out of scope.
+LOV caching remains per language/options (default five minutes); redeploying or
+restarting the backend clears its in-memory cache.
+
+Regression checks: `npm.cmd test -- --runInBand lookups modules/dependents
+shared/utils/localize.util.spec.ts core/http/response.interceptor.spec.ts --silent`
+and `npm.cmd run build`. Tests mock Oracle and cover the authenticated dependent
+LOV route with absent/empty/filtered `data_type`, URL-encoded Arabic, English
+fallback, and stable submit values. Semantic lint has a pre-existing unused
+`_lang` parameter in `LovMapper.toItem`, reproduced against HEAD; both lookup
+test files pass semantic lint.
+
+## Backend Docker timezone
+
+The backend Docker image defaults to `TZ=Asia/Qatar` (UTC+3). Compose uses
+`TZ: "${TZ:-Asia/Qatar}"`, allowing the host environment or `.env` to override it;
+`.env.example` also supplies `TZ=Asia/Qatar` for local launches. The runtime image
+explicitly installs `tzdata` noninteractively for system-library timezone support.
+Gateway configuration, database server timezones, explicit `Date.UTC()` parsing,
+and `toISOString()` output are unchanged. Dependent effective dates follow the
+backend process's local calendar date (Qatar with the default Docker timezone).
+
+Validate Compose without resolving database secrets or requiring a local `.env`:
+`docker compose config --no-interpolate --no-env-resolution --quiet` from
+`HMC_BackEnd/`. Deploy with `docker compose up -d --build --force-recreate api`;
+a container restart alone does not update its environment or image.
+
+## SQL Server audit timezone
+
+Both `HMC_Sanad_UserLogs_tbl.LoginTime` and
+`HMC_Sanad_FunctionAccessLogs_tbl.AccessDatetime` use fixed UTC+3 on INSERT.
+The client explicitly reverted the TZ-based audit conversion: these two columns
+must not read `TZ` or use an environment-dependent/DST offset. Their SQL uses
+`SWITCHOFFSET(TODATETIMEOFFSET(@timestamp, '+00:00'), '+03:00')` with the respective
+timestamp parameter. Docker's process timezone settings are separate and unchanged.
+
+JS Date binds remain the original UTC instant: node-mssql infers DateTime and
+Tedious defaults to `useUTC: true`. Do not pre-shift JS Dates or change the shared
+pool's date mode. Structured audit logs and existing database rows remain unchanged;
+there is no backfill or schema change. This supersedes the earlier TZ-based audit
+conversion and the earlier login-only fixed UTC+3 conversion.
+
+Checks: `npm.cmd test -- --runInBand core/audit --silent` and `npm.cmd run build`.
+Sink tests cover both columns with fixed UTC+3 under different, missing, empty,
+and invalid TZ settings, plus unchanged UTC binds and date/year-boundary inputs.
+SQL Server execution is mocked; live stored values require deployment verification.
+
+## Branded timecard API proposal PDF
+
+Regenerate `HMC_Timecard_API_Proposal_Malomatia.pdf` from the workspace root with
+`node "Docs_Ai/Project Structure/.handover-build/render-timecard.mjs"`. The renderer
+contains the proposal content and reuses local Edge/Playwright/pdfjs tooling,
+`handover.css`, `paginate.js`, and the supplied `malomatia-design/` assets without
+network access or dependency installation. HTML, layout/content verification
+reports, and page previews use timecard-specific filenames in `.handover-build/`.
+It checks the complete 31-entry request JSON, sample response JSON, code/text/table
+preservation, contents links, embedded assets, and PDF bounds. The example splits
+21–22 July into two single-day date-range entries, preserving 29 hourly entries
+and one entry per calendar day. The client removed the implementation-handover
+section; the renderer also verifies that it is absent from the PDF.
+
+This is a design proposal only: `XXHMC_SND_TIMECARD_SUBMIT_PR` is a proposed
+signature, not a confirmed or deployed Oracle procedure. The approved timecard
+persistence/workflow contract and Oracle version are still needed. The stated
+28–31 limit counts array objects; a date-range entry counts once. Do not register
+the proposed procedure as a confirmed production contract based on this PDF.

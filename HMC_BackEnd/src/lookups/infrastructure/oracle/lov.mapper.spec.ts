@@ -1,3 +1,4 @@
+import { localizeArTwins } from '@shared/utils/localize.util';
 import { LovMapper } from './lov.mapper';
 
 /**
@@ -31,6 +32,42 @@ describe('LovMapper', () => {
       code: '01',
       meaning: 'Spouse',
       type: 'CONTACT',
+    });
+  });
+
+  it.each([
+    ['D_DATA_AR', 'الموظف'],
+    ['d_data_ar', encodeURIComponent('الموظف')],
+    ['D_Data_Ar', 'الموظف'],
+  ])('reads dependent Arabic labels from %s without changing submit values', (column, label) => {
+    const source = Object.freeze({
+      D_DATA_TYPE: 'SPONSORSHIP',
+      [column]: label,
+      D_DATA: 'Employee',
+    });
+    const item = map(source);
+    expect(item.meaningAr).toBe('الموظف');
+    expect(localizeArTwins(item, 'ar')).toEqual({
+      code: 'Employee', meaning: 'الموظف', used_value: 'Employee', type: 'SPONSORSHIP',
+    });
+    expect(localizeArTwins(item, 'en')).toEqual({
+      code: 'Employee', meaning: 'Employee', used_value: 'Employee', type: 'SPONSORSHIP',
+    });
+    expect(item.meaning).toBe('Employee');
+    expect(source[column]).toBe(label);
+  });
+
+  it.each([null, undefined, ''])('falls back to English for an empty D_DATA_AR=%s', (label) => {
+    const item = map({ D_DATA: 'Employee', D_DATA_AR: label, D_DATA_TYPE: 'SPONSORSHIP' });
+    expect(localizeArTwins(item, 'ar')).toEqual({
+      code: 'Employee', meaning: 'Employee', used_value: 'Employee', type: 'SPONSORSHIP',
+    });
+  });
+
+  it('keeps a dependent contact lookup code distinct from its localized label', () => {
+    const item = map({ CODE: 'C', D_DATA: 'Child', D_DATA_AR: 'طفل', D_DATA_TYPE: 'CONTACT' });
+    expect(localizeArTwins(item, 'ar')).toEqual({
+      code: 'C', meaning: 'طفل', used_value: 'Child', type: 'CONTACT',
     });
   });
 

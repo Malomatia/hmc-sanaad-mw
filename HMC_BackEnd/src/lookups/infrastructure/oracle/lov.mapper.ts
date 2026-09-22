@@ -65,6 +65,7 @@ export class LovMapper {
     'value_ar',
     'dataar',
     'data_ar',
+    'd_data_ar',
     'placear',
     'place_ar',
     'defaultvaluear',

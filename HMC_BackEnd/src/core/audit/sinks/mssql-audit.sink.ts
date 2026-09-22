@@ -23,7 +23,8 @@ export class MssqlAuditSink implements AuditSink {
       this.db.execute(
         `INSERT INTO HMC_Sanad_FunctionAccessLogs_tbl
            (LoginID, IMEINumber, AppName, AppVersion, FunctionID, ActionTaken, ActionResult, AccessDatetime)
-         VALUES (@loginId, @imeiNumber, @appName, @appVersion, @functionId, @actionTaken, @actionResult, @accessDatetime)`,
+         VALUES (@loginId, @imeiNumber, @appName, @appVersion, @functionId, @actionTaken, @actionResult,
+                 SWITCHOFFSET(TODATETIMEOFFSET(@accessDatetime, '+00:00'), '+03:00'))`,
         {
           loginId,
           imeiNumber,
@@ -40,7 +41,7 @@ export class MssqlAuditSink implements AuditSink {
       writes.push(
         this.db.execute(
           `INSERT INTO HMC_Sanad_UserLogs_tbl (LoginID, IMEINumber, LoginTime, Status)
-           VALUES (@loginId, @imeiNumber, @loginTime, @status)`,
+           VALUES (@loginId, @imeiNumber, SWITCHOFFSET(TODATETIMEOFFSET(@loginTime, '+00:00'), '+03:00'), @status)`,
           { loginId, imeiNumber, loginTime: timestamp, status },
         ),
       );

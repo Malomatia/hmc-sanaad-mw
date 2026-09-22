@@ -185,6 +185,7 @@ export class ApprovalsController {
 
   @Post(':id/decision')
   @HttpCode(200)
+  @PreserveSubmitMessages({ successOnly: true })
   @ApiOperation({ summary: 'op 22 — Approve/Reject', operationId: 'approvals_decision' })
   @ApiOkResponse({ type: SubmitResultDto })
   // `id` (notification id) and `itemKey` must come from the SAME row of

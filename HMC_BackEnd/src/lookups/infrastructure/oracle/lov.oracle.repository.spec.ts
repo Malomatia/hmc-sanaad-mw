@@ -19,6 +19,9 @@ import { OracleContractCatalog } from '@core/database/oracle-contracts';
 import { OracleContractUnavailableException } from '@core/database/oracle.error';
 import { ORACLE_OBJECTS } from '@shared/constants/oracle-objects';
 import { LettersService } from '@modules/letters/application/letters.service';
+import { DependentService, PassportService } from '@modules/dependents/application/dependents.service';
+import { DEPENDENT_REPOSITORY } from '@modules/dependents/domain/dependents.repository';
+import { DependentsController } from '@modules/dependents/interface/dependents.controller';
 
 describe('Static LOV contracts', () => {
   function make() {
@@ -486,7 +489,7 @@ describe('LovOracleRepository', () => {
   });
 });
 
-describe('Default leave LOV HTTP responses', () => {
+describe('Localized LOV HTTP responses', () => {
   const path = '/api/v1/lookups/lov';
   const secret = 'default-lov-test-secret-not-for-production';
   const token = new JwtService({ secret, signOptions: { expiresIn: '1h', issuer: 'sanaad', audience: 'sanaad-b2e', algorithm: 'HS256' } })
@@ -500,9 +503,12 @@ describe('Default leave LOV HTTP responses', () => {
       getOrThrow: () => ({ jwtSecret: secret, jwtIssuer: 'sanaad', jwtAudience: 'sanaad-b2e' }),
     };
     const moduleRef = await Test.createTestingModule({
-      controllers: [LookupsController],
+      controllers: [LookupsController, DependentsController],
       providers: [
         LookupsService,
+        DependentService,
+        { provide: DEPENDENT_REPOSITORY, useValue: {} },
+        { provide: PassportService, useValue: {} },
         JwtAuthGuard,
         JwtStrategy,
         TokenRevocationService,
@@ -587,6 +593,64 @@ describe('Default leave LOV HTTP responses', () => {
       .expect(200);
 
     expect(response.body.result.items).toEqual([{ code: 'No', meaning: 'لا', used_value: 'No' }]);
+  });
+
+  describe.each(['en', 'ar'])('dependent LOV lang=%s', (lang) => {
+    it.each([undefined, '', 'sponsorship'])(
+      'selects the requested label with data_type=%s and preserves submit values',
+      async (dataType) => {
+        query.mockResolvedValue([{
+          D_DATA_TYPE: 'SPONSORSHIP',
+          D_DATA: 'Employee',
+          D_DATA_AR: encodeURIComponent('الموظف'),
+        }]);
+        const req = request(app.getHttpServer())
+          .get('/api/v1/dependents/lov')
+          .query({ lang })
+          .set('Authorization', `Bearer ${token}`);
+        if (dataType !== undefined) req.query({ data_type: dataType });
+
+        await req.expect(200).expect({
+          result: {
+            items: [{
+              code: 'Employee',
+              meaning: lang === 'ar' ? 'الموظف' : 'Employee',
+              used_value: 'Employee',
+              type: 'SPONSORSHIP',
+            }],
+          },
+          opstatus: 0,
+          status: 'success',
+          httpStatusCode: 200,
+        });
+        expect(query).toHaveBeenCalledTimes(1);
+        expect(query).toHaveBeenCalledWith(
+          `SELECT * FROM XXHMC_SND_DEP_LOOKUP_LOV${dataType ? ' WHERE UPPER(D_DATA_TYPE) = :dataType' : ''}`,
+          dataType ? { dataType: 'SPONSORSHIP' } : {},
+        );
+      },
+    );
+  });
+
+  it.each([undefined, null, ''])('keeps English when the dependent Arabic label is %s', async (label) => {
+    query.mockResolvedValueOnce([{
+      D_DATA: 'Employee', D_DATA_AR: label, D_DATA_TYPE: 'SPONSORSHIP',
+    }]);
+
+    await request(app.getHttpServer())
+      .get('/api/v1/dependents/lov?lang=ar&data_type=')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200)
+      .expect(({ body }) => expect(body.result.items).toEqual([{
+        code: 'Employee', meaning: 'Employee', used_value: 'Employee', type: 'SPONSORSHIP',
+      }]));
+  });
+
+  it('keeps dependent LOV authentication required', async () => {
+    await request(app.getHttpServer())
+      .get('/api/v1/dependents/lov?lang=ar&data_type=')
+      .expect(401);
+    expect(query).not.toHaveBeenCalled();
   });
 
   it.each(['ALSR_DEFAULT_LOV', 'LIBR_DEFAULT_LOV'])(

@@ -1678,3 +1678,23 @@ Checks: `npm.cmd test -- --runInBand core/audit --silent` and `npm.cmd run build
 Sink tests cover both columns with fixed UTC+3 under different, missing, empty,
 and invalid TZ settings, plus unchanged UTC binds and date/year-boundary inputs.
 SQL Server execution is mocked; live stored values require deployment verification.
+
+## Branded timecard API proposal PDF
+
+Regenerate `HMC_Timecard_API_Proposal_Malomatia.pdf` from the workspace root with
+`node "Docs_Ai/Project Structure/.handover-build/render-timecard.mjs"`. The renderer
+contains the proposal content and reuses local Edge/Playwright/pdfjs tooling,
+`handover.css`, `paginate.js`, and the supplied `malomatia-design/` assets without
+network access or dependency installation. HTML, layout/content verification
+reports, and page previews use timecard-specific filenames in `.handover-build/`.
+It checks the complete 31-entry request JSON, sample response JSON, code/text/table
+preservation, contents links, embedded assets, and PDF bounds. The example splits
+21–22 July into two single-day date-range entries, preserving 29 hourly entries
+and one entry per calendar day. The client removed the implementation-handover
+section; the renderer also verifies that it is absent from the PDF.
+
+This is a design proposal only: `XXHMC_SND_TIMECARD_SUBMIT_PR` is a proposed
+signature, not a confirmed or deployed Oracle procedure. The approved timecard
+persistence/workflow contract and Oracle version are still needed. The stated
+28–31 limit counts array objects; a date-range entry counts once. Do not register
+the proposed procedure as a confirmed production contract based on this PDF.

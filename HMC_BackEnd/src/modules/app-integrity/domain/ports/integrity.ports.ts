@@ -10,7 +10,7 @@ import { AttestKey, IntegrityVerdict } from '../attestation';
  */
 export interface ChallengeStorePort {
   /** Issue and remember a nonce. */
-  issue(username: string): Promise<string>;
+  issue(deviceId: string): Promise<string>;
   /**
    * Spend a nonce: true only if it was issued by us, has not expired, and has
    * not been used before. Consuming is part of checking, not a second step.

@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
 import { MssqlService } from '@core/database/mssql.service';
 import { MssqlQueryError } from '@core/database/mssql.error';
@@ -66,15 +66,18 @@ export class MssqlChallengeStore extends GuardedStore implements ChallengeStoreP
     super(db);
   }
 
-  async issue(username: string): Promise<string> {
+  async issue(deviceId: string): Promise<string> {
     const value = randomBytes(32).toString('base64');
-    await this.guard(CHALLENGE_TABLE, 'issue', () =>
+    const result = await this.guard(CHALLENGE_TABLE, 'issue', () =>
       this.db.execute(
         `INSERT INTO ${CHALLENGE_TABLE} (Challenge, LoginID, IssuedAt, ExpiresAt)
-         VALUES (@value, @username, GETDATE(), DATEADD(millisecond, @ttl, GETDATE()))`,
-        { value, username, ttl: this.ttlMs },
+         VALUES (@value, @deviceId, GETDATE(), DATEADD(millisecond, @ttl, GETDATE()))`,
+        { value, deviceId, ttl: this.ttlMs },
       ),
     );
+    if ((result?.rowsAffected ?? 0) < 1) {
+      throw new ServiceUnavailableException('An attestation challenge could not be issued.');
+    }
     return value;
   }
 

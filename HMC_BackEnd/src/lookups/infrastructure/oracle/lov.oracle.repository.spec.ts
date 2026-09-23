@@ -581,6 +581,39 @@ describe('Localized LOV HTTP responses', () => {
     },
   );
 
+  describe.each([
+    ['EMPLOYMENT_STATUS_V', 'FLEX_VALUE', 'Active', 'نشط'],
+    ['EMP_MARITAL_LOV', 'MARITAL_STATUS', 'Married', 'متزوج'],
+  ])('%s label language', (lovname, field, en, ar) => {
+    it.each(['en', 'ar', undefined])('returns meaning for lang=%s', async (lang) => {
+      const row = Object.freeze({ [`${field}_AR`]: encodeURIComponent(ar), [field]: en });
+      query.mockResolvedValue([row]);
+      const req = request(app.getHttpServer())
+        .get(path)
+        .query({ lovname })
+        .set('Authorization', `Bearer ${token}`);
+      if (lang !== undefined) req.query({ lang });
+      await req.expect(200).expect({
+        result: { items: [{ code: en, meaning: lang === 'ar' ? ar : en, used_value: en }] },
+        opstatus: 0,
+        status: 'success',
+        httpStatusCode: 200,
+      });
+      expect(query).toHaveBeenCalledWith(`SELECT * FROM XXHMC_SND_${lovname}`, {});
+      expect(row[`${field}_AR`]).toBe(encodeURIComponent(ar));
+    });
+
+    it.each([null, undefined, ''])('keeps English when the Arabic column is %s', async (label) => {
+      query.mockResolvedValue([{ [field]: en, [`${field}_AR`]: label }]);
+      const response = await request(app.getHttpServer())
+        .get(path)
+        .query({ lovname, lang: 'ar' })
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      expect(response.body.result.items).toEqual([{ code: en, meaning: en, used_value: en }]);
+    });
+  });
+
   it('decodes an encoded ALSR Arabic default while retaining the English submit value', async () => {
     query.mockResolvedValueOnce([{ DEFAULT_VALUE: 'No', DEFAULT_VALUE_AR: encodeURIComponent('لا') }]);
     const response = await request(app.getHttpServer())

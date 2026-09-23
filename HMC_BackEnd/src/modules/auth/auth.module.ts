@@ -3,10 +3,12 @@ import { HttpModule } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { AuthController } from './interface/auth.controller';
 import { HealthCheckController } from './interface/healthcheck.controller';
+import { AppSettingController } from './interface/app-setting.controller';
 import { AuthService } from './application/auth.service';
 import { OnboardingService } from './application/onboarding.service';
 import { MpinService } from './application/mpin.service';
 import { HealthCheckService } from './application/healthcheck.service';
+import { AppSettingService } from './application/app-setting.service';
 import { LDAP_USER_PORT, LdapUserPort } from './domain/ports/ldap-user.port';
 import { OTP_PORT, OtpPort } from './domain/ports/otp.port';
 import { OTP_DELIVERY_PORT } from './domain/ports/otp-delivery.port';
@@ -57,12 +59,13 @@ import { OracleLoginEmploymentRepository } from './infrastructure/adapters/oracl
  */
 @Module({
   imports: [HttpModule],
-  controllers: [AuthController, HealthCheckController],
+  controllers: [AuthController, HealthCheckController, AppSettingController],
   providers: [
     AuthService,
     OnboardingService,
     MpinService,
     HealthCheckService,
+    AppSettingService,
     LdapUserRepository,
     EntraGraphUserRepository,
     MssqlUserRepository,

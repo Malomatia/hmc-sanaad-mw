@@ -132,6 +132,12 @@ export interface AppLaunchConfig {
   appName: string;
 }
 
+/** Public app settings (GET /app-setting): terms & conditions switch + link. */
+export interface AppSettingsConfig {
+  termsAndConditionsStatus: boolean;
+  termsAndConditionsUrl: string;
+}
+
 /**
  * Users/Sanaad SQL Server database - backs the auth cycle (device registration,
  * MPIN, OTP rows) and the API-1 downtime/app-update tables. Legacy tables:
@@ -473,6 +479,7 @@ export interface RootConfig {
   auth: AuthConfig;
   cerner: CernerConfig;
   appLaunch: AppLaunchConfig;
+  appSettings: AppSettingsConfig;
   mpin: MpinConfig;
   otp: OtpConfig;
   ldap: LdapConfig;
@@ -707,6 +714,10 @@ export default (): RootConfig => ({
     downtimeStart: process.env.APP_DOWNTIME_START ?? '',
     downtimeEnd: process.env.APP_DOWNTIME_END ?? '',
     appName: process.env.APP_NAME ?? 'SanaadHealth',
+  },
+  appSettings: {
+    termsAndConditionsStatus: toBool(process.env.TERMS_AND_CONDITIONS_STATUS),
+    termsAndConditionsUrl: process.env.TERMS_AND_CONDITIONS_URL ?? '',
   },
   mpin: {
     minLength: Number(process.env.MPIN_MIN_LENGTH ?? 4),

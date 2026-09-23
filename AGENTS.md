@@ -1722,3 +1722,69 @@ Focused regression checks: from `HMC_BackEnd/`, run `npm.cmd test -- --runInBand
 core/http core/database/base.repository.spec.ts modules/leave modules/payslip
 modules/approvals --silent`; from `HMC_Gateway/`, run `npm.cmd test -- --runInBand
 --silent`. Both projects also use `npm.cmd run build`.
+
+## Generic LOV Arabic label pairs
+
+The client has now requested the generic LOV localization pass, superseding the
+remaining deferred label-pair work above. `LovMapper` retains the selected English
+label column and probes its `<field>_AR` / `<field>AR` twins before the legacy
+Arabic-name list. This also covers a label sourced from the code column, as in
+`EMPLOYMENT_STATUS_V` (`FLEX_VALUE` / `FLEX_VALUE_AR`), and arbitrary descriptive
+columns such as `EMP_MARITAL_LOV.MARITAL_STATUS`. Column lookup is case-insensitive,
+Arabic values are URL-decoded, and the response interceptor selects `meaning`
+according to query `lang`. Missing/null/empty Arabic falls back to English;
+`code` and `used_value` remain stable, and source/cached rows are not mutated.
+
+Explicit mapper regressions include `TYPE_OF_PHONE`, `ACCRUAL_PLAN_NAME`,
+`LEAVE_REASON`, `FLEX_VALUE`, `ANUAL_TKT_DEFAULT` (intentional spelling), `COUNTRY`,
+`DELIVERY_LOCATION`, `REASON`, `D_DATA`, `PLACE`, and `MARITAL_STATUS`, each paired
+with `_AR`. Existing suffix-less names such as `VALUEAR` remain supported. The
+fix does not translate English content stored in an Arabic database column.
+Restarting/redeploying the backend clears existing in-memory LOV cache entries.
+
+Regression command from `HMC_BackEnd/`: `npm.cmd test -- --runInBand lookups
+modules/dependents modules/profile modules/school-fees modules/letters
+modules/contact shared/utils/localize.util.spec.ts
+core/http/response.interceptor.spec.ts --silent`, followed by `npm.cmd run build`.
+The HTTP tests exercise `/lookups/lov` for both reported views with mocked Oracle.
+
+## Public device-attestation challenge
+
+`POST /app-integrity/challenge` replaces GET and accepts only the JSON body
+`{ "deviceId": "..." }`: a required non-blank string, maximum 100 characters.
+It requires neither JWT nor attestation headers in either service, including
+integrity `enforce` mode. The backend uses method-level `@Public()` and retains
+`@SkipIntegrity()`; the gateway registers an explicit public controller in its
+pre-auth module before the authenticated wildcard. The gateway throttles this
+route to 60 requests per minute per observed client IP per instance, not by the
+untrusted submitted device identifier. Other app-integrity routes remain JWT
+protected; this does not make iOS registration or login attestation anonymous.
+
+The client confirmed that `deviceId` must be stored in the EXISTING `LoginID`
+column of `HMC_Sanad_AttestChallenge_tbl`, using the bound `@deviceId` value.
+Do not introduce a `DeviceID` column. No schema change is needed; the earlier
+`HMC_BackEnd/tools/app-integrity-device-id.sql` is now a harmless no-op. The DTO
+limit follows the documented `LoginID NVARCHAR(100)` capacity. This mapping is
+specific to challenge issuance: `HMC_Sanad_AttestKey_tbl.LoginID` continues to
+hold the authenticated username. Device IDs are metadata, not authenticated
+identity. Random nonce generation, configurable expiry and atomic single-use
+consumption are unchanged. Issuance returns HTTP 503 if the INSERT fails or
+affects no rows, rather than returning an unusable nonce.
+
+Regression checks: backend `npm.cmd test -- --runInBand modules/app-integrity
+core/config/app-integrity-config.spec.ts`; gateway `npm.cmd run test:e2e --
+--runInBand`. Both projects support a non-emitting build typecheck with
+`npx.cmd --no-install tsc --project tsconfig.build.json --noEmit --incremental false`.
+
+## Public app settings (`GET /app-setting`)
+
+A public GET that needs no JWT and returns an unwrapped (`@SkipEnvelope`) response,
+`{ "terms_and_conditions_status": <boolean>, "terms_and_conditions_url": "<string>" }`,
+read from `TERMS_AND_CONDITIONS_STATUS` (Joi boolean, default `false`) and
+`TERMS_AND_CONDITIONS_URL` (URI or empty, default `''`). These come from the `appSettings`
+config namespace, served by `AppSettingController`/`AppSettingService` in the backend
+auth module. The gateway forwards it through an explicit `@Public()` controller in its
+auth module, before the wildcard. Like `/healthcheck`, it has no `@SkipIntegrity()`.
+The audit action is `view` (GET default), operationId `auth_appSetting`. Tests:
+backend `modules/auth/application/app-setting.service.spec.ts`, gateway e2e
+`forwards GET /app-setting ...`.

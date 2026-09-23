@@ -394,6 +394,107 @@ describe('Gateway (e2e) — query identity with AUTH_DISABLED=true', () => {
   });
 });
 
+describe('Gateway (e2e) — public device challenge with integrity enforced', () => {
+  let backend: MockBackend;
+  let app: INestApplication;
+  let previousMode: string | undefined;
+
+  beforeAll(async () => {
+    previousMode = process.env.GATEWAY_INTEGRITY_MODE;
+    backend = await startMockBackend(JWT_SECRET);
+    process.env.BACKEND_BASE_URL = backend.url;
+    process.env.BACKEND_API_PREFIX = 'api/v1';
+    process.env.JWT_SECRET = JWT_SECRET;
+    process.env.AUTH_DISABLED = 'false';
+    process.env.GATEWAY_INTEGRITY_MODE = 'enforce';
+    app = await createApp();
+  });
+
+  afterAll(async () => {
+    await app.close();
+    await backend.close();
+    if (previousMode === undefined) delete process.env.GATEWAY_INTEGRITY_MODE;
+    else process.env.GATEWAY_INTEGRITY_MODE = previousMode;
+  });
+
+  it('forwards POST challenge with deviceId and no JWT or attestation headers', async () => {
+    const body = { deviceId: 'mobile-installation-1' };
+    const count = backend.requests.length;
+    const response = await request(app.getHttpServer())
+      .post('/api/v1/app-integrity/challenge')
+      .send(body)
+      .expect(200);
+
+    expect(response.body).toEqual({
+      result: { challenge: 'mock-attestation-challenge' },
+      opstatus: 0,
+      status: 'success',
+      httpStatusCode: 200,
+    });
+    expect(backend.requests).toHaveLength(count + 1);
+    expect(backend.requests[count]).toMatchObject({
+      method: 'POST',
+      url: '/api/v1/app-integrity/challenge',
+      body,
+    });
+    expect(backend.requests[count].headers.authorization).toBeUndefined();
+  });
+
+  it.each(['ios/register', 'android/verify'])('does not make %s public', async (route) => {
+    const count = backend.requests.length;
+    await request(app.getHttpServer()).post(`/api/v1/app-integrity/${route}`).send({}).expect(401);
+    expect(backend.requests).toHaveLength(count);
+  });
+
+  it('does not exempt the old GET challenge route', async () => {
+    const count = backend.requests.length;
+    await request(app.getHttpServer()).get('/api/v1/app-integrity/challenge').expect(401);
+    expect(backend.requests).toHaveLength(count);
+  });
+
+  it('forwards GET /app-setting with no JWT or attestation headers', async () => {
+    const count = backend.requests.length;
+    const response = await request(app.getHttpServer()).get('/api/v1/app-setting').expect(200);
+
+    expect(response.body).toEqual({
+      terms_and_conditions_status: true,
+      terms_and_conditions_url: 'https://example.com/terms',
+    });
+    expect(backend.requests).toHaveLength(count + 1);
+    expect(backend.requests[count]).toMatchObject({ method: 'GET', url: '/api/v1/app-setting' });
+    expect(backend.requests[count].headers.authorization).toBeUndefined();
+  });
+
+  it('still requires an integrity proof for authenticated business requests', async () => {
+    const count = backend.requests.length;
+    await request(app.getHttpServer())
+      .get('/api/v1/employee/profile')
+      .set('Authorization', `Bearer ${signToken({ username: 'TEST_USER' })}`)
+      .expect(401);
+    expect(backend.requests).toHaveLength(count);
+  });
+
+  it('rate-limits challenge issuance by caller even when deviceId changes', async () => {
+    const limitedApp = await createApp();
+    const count = backend.requests.length;
+    try {
+      for (let index = 0; index < 60; index++) {
+        await request(limitedApp.getHttpServer())
+          .post('/api/v1/app-integrity/challenge')
+          .send({ deviceId: `device-${index}` })
+          .expect(200);
+      }
+      await request(limitedApp.getHttpServer())
+        .post('/api/v1/app-integrity/challenge')
+        .send({ deviceId: 'another-device' })
+        .expect(429);
+      expect(backend.requests).toHaveLength(count + 60);
+    } finally {
+      await limitedApp.close();
+    }
+  });
+});
+
 describe('Gateway (e2e) — backend unreachable', () => {
   let app: INestApplication;
 

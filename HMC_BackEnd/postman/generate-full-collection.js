@@ -71,6 +71,8 @@ const MODULES = [
       { name: 'API-1 Health Check (app launch)', method: 'POST', p: 'healthcheck', auth: 'public', kind: 'raw',
         body: { username: 'hmc12345', imeinumber: '356789012345678', platform: 'Android', appname: 'Sanaad', version: '1.0.0' },
         success: { status: 'ok' }, errors: [400, 500] },
+      { name: 'App settings (terms & conditions)', method: 'GET', p: 'app-setting', auth: 'public', kind: 'raw',
+        success: { terms_and_conditions_status: true, terms_and_conditions_url: 'https://example.com/terms' }, errors: [500] },
       { name: 'API-2 User Validate (LDAP + send OTP)', method: 'POST', p: 'auth/initiate', auth: 'public', kind: 'raw',
         body: { username: 'hmc12345', imeinumber: '356789012345678', platform: 'Android' },
         success: { employeeusername: 'hmc12345', employeename: 'Name of employee', newuser: 'Yes', employeeflag: 'Yes', employeephonenumber: '7786XXXX', requestid: '35233177903C44859C82269212F48088' },

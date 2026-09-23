@@ -158,6 +158,9 @@ services:
       EMAIL_MESSAGE_TEMPLATE_AR: "${EMAIL_MESSAGE_TEMPLATE_AR:-رمز التحقق لتسجيل الدخول في تطبيق سند هو {otp}}"
       # ── App-launch health check (API-1) — AppName matched in the Users DB ──
       APP_NAME: "${APP_NAME:-SanaadHealth}"
+      # ── Public app settings (GET /app-setting) ──
+      TERMS_AND_CONDITIONS_STATUS: "${TERMS_AND_CONDITIONS_STATUS:-false}"
+      TERMS_AND_CONDITIONS_URL: "${TERMS_AND_CONDITIONS_URL:-}"
       # ── Auth (JWT) — JWT_SECRET must come from the host env in production
       # and MUST match the gateway's JWT_SECRET (shared validation). ──
       JWT_SECRET: "${JWT_SECRET:-dev-only-secret-change-me}"

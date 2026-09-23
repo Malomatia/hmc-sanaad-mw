@@ -1,11 +1,21 @@
-import { Body, Controller, Get, HttpCode, Post } from '@nestjs/common';
+import { Body, Controller, HttpCode, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
 import { CurrentUser } from '@core/auth/decorators/current-user.decorator';
+import { Public } from '@core/auth/decorators/public.decorator';
 import { AuthenticatedUser } from '@core/auth/auth-user.interface';
 import { SkipIntegrity } from '@core/integrity/skip-integrity.decorator';
 import { AppIntegrityService } from '../application/app-integrity.service';
+
+export class IssueChallengeDto {
+  @ApiProperty({ description: 'Device identifier supplied by the mobile app.', maxLength: 100 })
+  @IsString()
+  @IsNotEmpty()
+  @Matches(/\S/, { message: 'deviceId must not be blank' })
+  @MaxLength(100)
+  deviceId!: string;
+}
 
 export class RegisterAttestationDto {
   @ApiProperty({ description: 'Key identifier returned by DCAppAttestService.generateKey().' })
@@ -48,7 +58,6 @@ export class VerifyAndroidTokenDto {
  * get a challenge would never terminate.
  */
 @ApiTags('app-integrity')
-@ApiBearerAuth()
 @SkipIntegrity()
 @Controller('app-integrity')
 export class AppIntegrityController {
@@ -59,20 +68,23 @@ export class AppIntegrityController {
    * Android only if you choose to bind the token to a server value rather than
    * to the request body.
  */
-  @Get('challenge')
+  @Public()
+  @Post('challenge')
+  @HttpCode(200)
   @ApiOperation({
-    summary: 'Issue a one-time attestation challenge',
+    summary: 'Issue a one-time attestation challenge for a device (no JWT required)',
     operationId: 'appIntegrity_challenge',
   })
-  @ApiOkResponse({ schema: { example: { challenge: 'q1w2e3...', expiresInMs: 300000 } } })
-  async challenge(@CurrentUser() user: AuthenticatedUser) {
-    return { challenge: await this.service.issueChallenge(user.username) };
+  @ApiOkResponse({ schema: { example: { challenge: 'q1w2e3...' } } })
+  async challenge(@Body() dto: IssueChallengeDto) {
+    return { challenge: await this.service.issueChallenge(dto.deviceId) };
   }
 
   /**
    * iOS one-time registration. Android has no equivalent: its token is
    * self-contained and nothing is stored.
  */
+  @ApiBearerAuth()
   @Post('ios/register')
   @HttpCode(200)
   @ApiOperation({
@@ -107,6 +119,7 @@ export class AppIntegrityController {
    * means a build that did not come from Play, `MEETS_BASIC_INTEGRITY` alone
    * means a rooted or emulated device.
  */
+  @ApiBearerAuth()
   @Post('android/verify')
   @HttpCode(200)
   @ApiOperation({

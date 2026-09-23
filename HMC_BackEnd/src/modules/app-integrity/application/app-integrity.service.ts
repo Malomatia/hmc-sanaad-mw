@@ -47,8 +47,8 @@ export class AppIntegrityService {
   }
 
   /** A one-time nonce for the client to attest or assert against. */
-  issueChallenge(username: string): Promise<string> {
-    return this.challenges.issue(username);
+  issueChallenge(deviceId: string): Promise<string> {
+    return this.challenges.issue(deviceId);
   }
 
   /** iOS registration — verify the attestation and remember the public key. */

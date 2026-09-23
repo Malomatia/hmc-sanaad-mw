@@ -104,9 +104,15 @@ export class LovMapper {
   static toItem(row: Record<string, any>, _lang: Lang): LovItem {
     const codeColumn = this.firstColumn(row, this.CODE_COLUMNS);
     const code = codeColumn ? str(row, codeColumn) : undefined;
-    const meaning =
-      this.firstString(row, this.MEANING_COLUMNS) ?? this.fallbackLabel(row, codeColumn);
-    const meaningAr = this.firstArString(row, this.MEANING_AR_COLUMNS);
+    const meaningColumn =
+      this.firstColumn(row, this.MEANING_COLUMNS) ??
+      this.fallbackLabelColumn(row, codeColumn) ??
+      codeColumn;
+    const meaning = meaningColumn ? str(row, meaningColumn) : undefined;
+    const meaningAr = this.firstArString(row, [
+      ...(meaningColumn ? [`${meaningColumn}_ar`, `${meaningColumn}ar`] : []),
+      ...this.MEANING_AR_COLUMNS,
+    ]);
     const type = this.firstString(row, this.TYPE_COLUMNS);
     const id = this.firstString(row, this.RECORD_ID_COLUMNS);
     // Only when DESCRIPTION is carrying something other than the label — on
@@ -150,11 +156,11 @@ export class LovMapper {
    * first descriptive column that is neither the code column, an id, nor a
    * technical column.
    */
-  private static fallbackLabel(
+  private static fallbackLabelColumn(
     row: Record<string, any>,
     codeColumn: string | undefined,
   ): string | undefined {
-    const key = Object.keys(row).find((k) => {
+    return Object.keys(row).find((k) => {
       const lower = k.toLowerCase();
       if (codeColumn && lower === codeColumn.toLowerCase()) return false;
       if (this.TECHNICAL_COLUMNS.has(lower)) return false;
@@ -165,7 +171,6 @@ export class LovMapper {
       if (lower.endsWith('_ar') || this.MEANING_AR_COLUMNS.includes(lower)) return false;
       return col(row, k) != null;
     });
-    return key ? str(row, key) : undefined;
   }
 
   private static firstColumn(row: Record<string, any>, names: string[]): string | undefined {

@@ -57,6 +57,13 @@ describe('AppIntegrityService', () => {
     username: 'AIBRAHIM39',
   };
 
+  it('issues a challenge using the mobile device identifier without a username', async () => {
+    const { service, challenges } = make();
+
+    await expect(service.issueChallenge('device-installation-1')).resolves.toBe('nonce');
+    expect(challenges.issue).toHaveBeenCalledWith('device-installation-1');
+  });
+
   describe('iOS registration', () => {
     it('stores the public key when the attestation verifies', async () => {
       const { service, keys } = make();

@@ -161,6 +161,7 @@ services:
       # ── Public app settings (GET /app-setting) ──
       TERMS_AND_CONDITIONS_STATUS: "${TERMS_AND_CONDITIONS_STATUS:-false}"
       TERMS_AND_CONDITIONS_URL: "${TERMS_AND_CONDITIONS_URL:-}"
+      PRIVACY_POLICY_URL: "${PRIVACY_POLICY_URL:-https://www.hamad.qa/EN/Sanad/Pages/Privacy-Policy.html}"
       # ── Auth (JWT) — JWT_SECRET must come from the host env in production
       # and MUST match the gateway's JWT_SECRET (shared validation). ──
       JWT_SECRET: "${JWT_SECRET:-dev-only-secret-change-me}"

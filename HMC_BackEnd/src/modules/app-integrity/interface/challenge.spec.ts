@@ -104,29 +104,103 @@ describe('POST /app-integrity/challenge', () => {
     expect(service.issueChallenge).not.toHaveBeenCalled();
   });
 
-  it.each(['ios/register', 'android/verify'])('keeps %s authenticated', async (route) => {
-    await request(app.getHttpServer()).post(`/api/v1/app-integrity/${route}`).send({}).expect(401);
-    expect(service.registerIosKey).not.toHaveBeenCalled();
-    expect(service.verifyAndroidToken).not.toHaveBeenCalled();
+  /**
+   * The app attests on launch, before login — a JWT cannot be a precondition
+   * for the two routes that complete that flow, in either integrity mode.
+   */
+  describe('anonymous registration and self-check', () => {
+    const REGISTER = '/api/v1/app-integrity/ios/register';
+    const VERIFY = '/api/v1/app-integrity/android/verify';
+    const registerBody = {
+      deviceId: 'mobile-installation-1',
+      keyId: 'key-1',
+      attestation: 'YXR0ZXN0YXRpb24=',
+      challenge: 'server-issued-challenge',
+    };
+
+    it('registers an iOS key without a JWT, against the device that fetched the challenge', async () => {
+      service.registerIosKey.mockResolvedValue({ ok: true, platform: 'ios' });
+
+      const response = await request(app.getHttpServer()).post(REGISTER).send(registerBody).expect(200);
+
+      expect(response.body).toMatchObject({ result: { message: 'Device attested.' } });
+      expect(service.registerIosKey).toHaveBeenCalledWith(registerBody);
+    });
+
+    it('does not reveal WHY an attestation was refused', async () => {
+      service.registerIosKey.mockResolvedValue({ ok: false, platform: 'ios', reason: 'bad chain' });
+
+      const response = await request(app.getHttpServer()).post(REGISTER).send(registerBody).expect(200);
+
+      expect(response.body.result).toEqual({
+        message: 'Attestation could not be verified.',
+        verified: false,
+      });
+      expect(JSON.stringify(response.body)).not.toContain('bad chain');
+    });
+
+    it.each([
+      { ...registerBody, deviceId: undefined },
+      { ...registerBody, deviceId: '' },
+      { ...registerBody, deviceId: 'x'.repeat(101) },
+      { ...registerBody, keyId: undefined },
+      { ...registerBody, attestation: undefined },
+      { ...registerBody, challenge: undefined },
+      { ...registerBody, username: 'someone' },
+    ])('rejects an invalid register body %j before any verification', async (body) => {
+      await request(app.getHttpServer()).post(REGISTER).send(body).expect(400);
+      expect(service.registerIosKey).not.toHaveBeenCalled();
+    });
+
+    it('checks an Android token without a JWT and returns the verdicts', async () => {
+      service.verifyAndroidToken.mockResolvedValue({
+        ok: false,
+        platform: 'android',
+        reason: 'device failed integrity',
+        details: { deviceRecognitionVerdict: [] },
+      });
+
+      const response = await request(app.getHttpServer())
+        .post(VERIFY)
+        .send({ integrityToken: 'play.integrity.token', requestHash: 'abc' })
+        .expect(200);
+
+      expect(response.body.result).toEqual({
+        verified: false,
+        reason: 'device failed integrity',
+        verdicts: { deviceRecognitionVerdict: [] },
+      });
+      expect(service.verifyAndroidToken).toHaveBeenCalledWith('play.integrity.token', 'abc');
+    });
+
+    it('ignores a bearer token rather than requiring one', async () => {
+      service.verifyAndroidToken.mockResolvedValue({ ok: true, platform: 'android' });
+
+      await request(app.getHttpServer())
+        .post(VERIFY)
+        .set('Authorization', 'Bearer not-a-real-token')
+        .send({ integrityToken: 'play.integrity.token' })
+        .expect(200);
+    });
   });
 
-  it('documents only challenge issuance as public and requires its JSON body', () => {
+  it('documents all three routes as public and requires their JSON bodies', () => {
     const document = SwaggerModule.createDocument(
       app,
       new DocumentBuilder().addBearerAuth().build(),
     );
     const challenge = document.paths[PATH];
     expect(challenge.get).toBeUndefined();
-    expect(challenge.post?.security ?? []).toEqual([]);
     expect(challenge.post?.requestBody).toMatchObject({ required: true });
     expect(document.components?.schemas?.IssueChallengeDto).toMatchObject({
       required: ['deviceId'],
       properties: { deviceId: { type: 'string', maxLength: 100 } },
     });
-    for (const route of ['ios/register', 'android/verify']) {
-      expect(document.paths[`/api/v1/app-integrity/${route}`].post?.security).toEqual([
-        { bearer: [] },
-      ]);
+    expect(document.components?.schemas?.RegisterAttestationDto).toMatchObject({
+      required: expect.arrayContaining(['deviceId', 'keyId', 'attestation', 'challenge']),
+    });
+    for (const route of ['challenge', 'ios/register', 'android/verify']) {
+      expect(document.paths[`/api/v1/app-integrity/${route}`].post?.security ?? []).toEqual([]);
     }
   });
 });

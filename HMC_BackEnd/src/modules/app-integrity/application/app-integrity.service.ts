@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { createHash } from 'node:crypto';
-import { IntegrityVerdict } from '../domain/attestation';
+import { IntegrityVerdict, isUnboundKeyOwner, unboundKeyOwner } from '../domain/attestation';
 import {
   ANDROID_INTEGRITY_PORT,
   ATTEST_KEY_STORE_PORT,
@@ -51,17 +51,29 @@ export class AppIntegrityService {
     return this.challenges.issue(deviceId);
   }
 
-  /** iOS registration — verify the attestation and remember the public key. */
+  /**
+   * iOS registration — verify the attestation and remember the public key.
+   *
+   * Anonymous: the app attests on launch, before anyone has logged in, so
+   * there is no user to record. The key is stored against the device instead
+   * and claimed by the first user who proves possession of it (see
+   * `verifyIosAssertion`). The challenge must have been issued to the same
+   * device — that is what ties this call to the one that fetched the nonce.
+   */
   async registerIosKey(input: {
     keyId: string;
     attestation: string;
     challenge: string;
-    username: string;
+    deviceId: string;
   }): Promise<IntegrityVerdict> {
     // Spend the challenge FIRST: an attestation that fails must still burn it,
     // or a captured one can be retried until it is accepted.
-    if (!(await this.challenges.consume(input.challenge))) {
-      return { ok: false, platform: 'ios', reason: 'challenge is unknown, expired or already used' };
+    if (!(await this.challenges.consume(input.challenge, input.deviceId))) {
+      return {
+        ok: false,
+        platform: 'ios',
+        reason: 'challenge is unknown, expired, already used or was issued to another device',
+      };
     }
 
     const result = await this.ios.verifyAttestation({
@@ -75,14 +87,21 @@ export class AppIntegrityService {
 
     await this.keys.save({
       keyId: input.keyId,
-      username: input.username,
+      username: unboundKeyOwner(input.deviceId),
       publicKey: result.publicKey,
       signCount: result.signCount ?? 0,
     });
     return { ok: true, platform: 'ios' };
   }
 
-  /** iOS per-request proof. */
+  /**
+   * iOS per-request proof.
+   *
+   * Ownership is checked only when there IS a caller: on the pre-login routes
+   * (login itself is attested) the signature alone is the proof, and the
+   * first assertion made WITH a session claims a key that was registered
+   * anonymously. After that the key answers for that user only.
+   */
   async verifyIosAssertion(input: {
     keyId: string;
     assertion: string;
@@ -95,9 +114,12 @@ export class AppIntegrityService {
 
     const stored = await this.keys.find(input.keyId);
     if (!stored) return { ok: false, platform: 'ios', reason: 'key is not registered' };
-    // A key belongs to the person who attested it; accepting someone else's
-    // would let one device speak for another account.
-    if (stored.username.toUpperCase() !== input.username.toUpperCase()) {
+
+    const caller = input.username.trim();
+    const unbound = isUnboundKeyOwner(stored.username);
+    // A key belongs to the person who first proved it; accepting someone
+    // else's would let one device speak for another account.
+    if (caller && !unbound && stored.username.toUpperCase() !== caller.toUpperCase()) {
       return { ok: false, platform: 'ios', reason: 'key belongs to another user' };
     }
 
@@ -109,6 +131,9 @@ export class AppIntegrityService {
     });
     if (!result.ok) return { ok: false, platform: 'ios', reason: result.reason };
 
+    // Only a VALID signature claims the key — binding before verifying would
+    // let a bogus assertion pin someone else's device to this account.
+    if (caller && unbound) await this.keys.bind(input.keyId, caller);
     await this.keys.updateSignCount(input.keyId, result.signCount ?? stored.signCount + 1);
     return { ok: true, platform: 'ios' };
   }

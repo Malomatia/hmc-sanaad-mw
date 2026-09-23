@@ -1776,6 +1776,63 @@ core/config/app-integrity-config.spec.ts`; gateway `npm.cmd run test:e2e --
 --runInBand`. Both projects support a non-emitting build typecheck with
 `npx.cmd --no-install tsc --project tsconfig.build.json --noEmit --incremental false`.
 
+## Anonymous iOS registration and Android self-check (2026-09-23)
+
+`POST /app-integrity/ios/register` and `POST /app-integrity/android/verify` no
+longer require a JWT, in either service and in every integrity mode. The app
+attests on launch, before anyone has logged in, so a session could never be a
+precondition — and on staging it showed: after the challenge went public
+(2026-09-19) the challenge table filled with device-keyed nonces that were
+NEVER consumed (`UsedAt IS NULL` on every row from `19c89fc7-…`,
+`a5b3d106-…`), because the register call that should have spent them was
+answered 401 at the gateway and never reached the backend. `HMC_Sanad_AttestKey_tbl`
+has held 0 rows since the feature shipped. This supersedes "other app-integrity
+routes remain JWT protected" above.
+
+**What replaces the token.** Backend: method-level `@Public()` on both routes
+(the controller keeps `@SkipIntegrity()`). Gateway: explicit `@Public()`
+routes in `modules/auth/app-integrity.controller.ts`, ahead of the wildcard,
+throttled per IP at **20/min** each (challenge stays at 60/min) — each call
+costs a certificate-chain check or a Google API round trip. Validation is the
+same strict DTO as before; the attestation object itself, plus a server-issued
+single-use challenge, is the proof.
+
+**Ownership without a user.** `RegisterAttestationDto` now requires `deviceId`
+(same rules as the challenge DTO). Registration spends the challenge with
+`consume(value, deviceId)` — one UPDATE with `AND LoginID = @deviceId`, so a
+nonce fetched by one device cannot be spent by another. The key is saved with
+`LoginID = 'device:<deviceId>'` (`unboundKeyOwner`, cut to the column's 100
+chars; `LoginID` is NOT NULL and the client declined a device column — the
+prefix is the "unbound" marker, `:` being impossible in a login). The **first
+assertion made WITH a session and a VALID signature** claims the key
+(`AttestKeyStorePort.bind`), and from then on it answers for that user only.
+Assertions with no session (login itself is attested) are judged on the
+signature alone and neither claim nor reject on ownership — previously they
+always failed with "key belongs to another user" because `username` was `''`.
+A shared handset therefore belongs to whoever logged in first; a second
+account on the same phone is refused until the app re-attests. Binding
+happens after `verifyAssertion`, never before.
+
+Regression: backend `npm.cmd test -- --runInBand modules/app-integrity
+core/config/app-integrity-config.spec.ts` (81); gateway `npm.cmd run test:e2e --
+--runInBand` (77). `google-play-integrity.adapter.ts` has a pre-existing unused
+`AppIntegrityConfig` import (reproduces on HEAD).
+
+**Staging state on 2026-09-23** (`GET /health/backend` → `appIntegrity`):
+`mode: observe`, `ios: ok`, **`android: disabled`** — `PLAY_INTEGRITY_SERVICE_ACCOUNT`
+(and optionally `ANDROID_PACKAGE_NAME`) are not set, so `android/verify` always
+answers `"Play Integrity is not configured"`. iOS is configured but has never
+produced a stored key even when the route was reachable (Sep 6–18: 437
+challenges consumed, 0 keys) — the refusal reason is only in the server log;
+the usual causes are a debug build with `APPLE_APP_ATTEST_ALLOW_DEVELOPMENT`
+unset, a simulator (App Attest unsupported), or a bundle/team id mismatch.
+`tools/app-integrity-schema.sql` referenced by the store's warning is NOT in
+the repo; the tables exist on staging with these columns (all NOT NULL unless
+marked): `HMC_Sanad_AttestChallenge_tbl(ChallengeID int, Challenge nvarchar(200),
+LoginID nvarchar(100) NULL, IssuedAt, ExpiresAt, UsedAt NULL)` and
+`HMC_Sanad_AttestKey_tbl(AttestKeyID int, KeyID nvarchar(200), LoginID nvarchar(100),
+PublicKey nvarchar(1000), SignCount bigint, CreatedAt, UpdatedAt)`.
+
 ## Public app settings (`GET /app-setting`)
 
 A public GET that needs no JWT and returns an unwrapped (`@SkipEnvelope`) response,

@@ -14,8 +14,11 @@ export interface ChallengeStorePort {
   /**
    * Spend a nonce: true only if it was issued by us, has not expired, and has
    * not been used before. Consuming is part of checking, not a second step.
+   * With `deviceId`, it must also have been issued to THAT device — the
+   * anonymous registration route has no user to tie the two calls together,
+   * so the device identifier is what does.
    */
-  consume(value: string): Promise<boolean>;
+  consume(value: string, deviceId?: string): Promise<boolean>;
 }
 
 export const CHALLENGE_STORE_PORT = Symbol('CHALLENGE_STORE_PORT');
@@ -26,6 +29,8 @@ export interface AttestKeyStorePort {
   find(keyId: string): Promise<AttestKey | undefined>;
   /** Record the counter after a valid assertion, for replay detection. */
   updateSignCount(keyId: string, signCount: number): Promise<void>;
+  /** Claim a key registered before login for the user who first proves it. */
+  bind(keyId: string, username: string): Promise<void>;
 }
 
 export const ATTEST_KEY_STORE_PORT = Symbol('ATTEST_KEY_STORE_PORT');

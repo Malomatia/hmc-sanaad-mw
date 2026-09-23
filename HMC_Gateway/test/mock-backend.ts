@@ -54,6 +54,32 @@ export function startMockBackend(jwtSecret: string): Promise<MockBackend> {
         return;
       }
 
+      if (req.method === 'POST' && req.url === '/api/v1/app-integrity/ios/register') {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            result: { message: 'Device attested.' },
+            opstatus: 0,
+            status: 'success',
+            httpStatusCode: 200,
+          }),
+        );
+        return;
+      }
+
+      if (req.method === 'POST' && req.url === '/api/v1/app-integrity/android/verify') {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            result: { verified: false, reason: 'Play Integrity is not configured' },
+            opstatus: 0,
+            status: 'success',
+            httpStatusCode: 200,
+          }),
+        );
+        return;
+      }
+
       if (req.method === 'GET' && req.url === '/api/v1/app-setting') {
         res.writeHead(200, { 'content-type': 'application/json' });
         res.end(

@@ -1,6 +1,6 @@
 import { ServiceUnavailableException } from '@nestjs/common';
 import { MssqlService } from '@core/database/mssql.service';
-import { MssqlChallengeStore } from './mssql-integrity-store.repository';
+import { MssqlAttestKeyStore, MssqlChallengeStore } from './mssql-integrity-store.repository';
 
 describe('MssqlChallengeStore', () => {
   const execute = jest.fn();
@@ -49,6 +49,41 @@ describe('MssqlChallengeStore', () => {
     const [sql, params] = execute.mock.calls[0];
     expect(sql).toContain('SET UsedAt = GETDATE()');
     expect(sql).toContain('WHERE Challenge = @value AND UsedAt IS NULL AND ExpiresAt > GETDATE()');
+    expect(sql).not.toContain('LoginID');
     expect(params).toEqual({ value: 'one-time-challenge' });
+  });
+
+  it('ties consumption to the issuing device in the SAME statement when asked', async () => {
+    // Anonymous registration has no user linking the two calls; the device
+    // predicate must be atomic with the spend, not a separate read.
+    await store.consume('one-time-challenge', 'mobile-installation-1');
+
+    const [sql, params] = execute.mock.calls[0];
+    expect(sql).toMatch(/UsedAt IS NULL AND ExpiresAt > GETDATE\(\) AND LoginID = @deviceId/);
+    expect(sql).not.toContain('mobile-installation-1');
+    expect(params).toEqual({ value: 'one-time-challenge', deviceId: 'mobile-installation-1' });
+  });
+});
+
+describe('MssqlAttestKeyStore', () => {
+  const execute = jest.fn();
+  const store = new MssqlAttestKeyStore({ execute } as unknown as MssqlService);
+
+  beforeEach(() => {
+    execute.mockReset().mockResolvedValue({ rowsAffected: 1, rows: [] });
+  });
+
+  it('claims a key for a user with bound values only', async () => {
+    await store.bind("key'1", 'AIBRAHIM39');
+
+    const [sql, params] = execute.mock.calls[0];
+    expect(sql).toMatch(/UPDATE HMC_Sanad_AttestKey_tbl SET LoginID = @username, UpdatedAt = GETDATE\(\)\s+WHERE KeyID = @keyId/);
+    expect(sql).not.toContain('AIBRAHIM39');
+    expect(params).toEqual({ keyId: "key'1", username: 'AIBRAHIM39' });
+  });
+
+  it('treats a missing table as "cannot record", not a crash', async () => {
+    execute.mockRejectedValueOnce(new Error("Invalid object name 'HMC_Sanad_AttestKey_tbl'."));
+    await expect(store.bind('k1', 'AIBRAHIM39')).resolves.toBeUndefined();
   });
 });

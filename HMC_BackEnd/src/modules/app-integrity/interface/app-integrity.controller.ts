@@ -1,10 +1,8 @@
 import { Body, Controller, HttpCode, Post } from '@nestjs/common';
-import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsNotEmpty, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
-import { CurrentUser } from '@core/auth/decorators/current-user.decorator';
 import { Public } from '@core/auth/decorators/public.decorator';
-import { AuthenticatedUser } from '@core/auth/auth-user.interface';
 import { SkipIntegrity } from '@core/integrity/skip-integrity.decorator';
 import { AppIntegrityService } from '../application/app-integrity.service';
 
@@ -17,7 +15,7 @@ export class IssueChallengeDto {
   deviceId!: string;
 }
 
-export class RegisterAttestationDto {
+export class RegisterAttestationDto extends IssueChallengeDto {
   @ApiProperty({ description: 'Key identifier returned by DCAppAttestService.generateKey().' })
   @IsString()
   @IsNotEmpty()
@@ -53,9 +51,13 @@ export class VerifyAndroidTokenDto {
 /**
  * Device attestation setup.
  *
- * Both routes are exempt from the integrity guard itself - a device cannot
- * prove itself before it has registered, and requiring a challenge in order to
- * get a challenge would never terminate.
+ * Every route here is public — no JWT and no attestation headers. The app
+ * attests on launch, before anyone has logged in, so a session cannot be a
+ * precondition; and a device cannot prove itself before it has registered, so
+ * requiring a challenge in order to get a challenge would never terminate.
+ * What stands in for authentication is the attestation itself (Apple's
+ * certificate chain, Google's signed verdict), a server-issued single-use
+ * challenge tied to the device, and the gateway's per-IP throttle.
  */
 @ApiTags('app-integrity')
 @SkipIntegrity()
@@ -81,22 +83,20 @@ export class AppIntegrityController {
   }
 
   /**
-   * iOS one-time registration. Android has no equivalent: its token is
-   * self-contained and nothing is stored.
+   * iOS one-time registration, before login. The key is recorded against the
+   * device and claimed by the first user who signs a request with it. Android
+   * has no equivalent: its token is self-contained and nothing is stored.
  */
-  @ApiBearerAuth()
+  @Public()
   @Post('ios/register')
   @HttpCode(200)
   @ApiOperation({
-    summary: 'Register an App Attest key (iOS, once per install)',
+    summary: 'Register an App Attest key (iOS, once per install, no JWT required)',
     operationId: 'appIntegrity_registerIos',
   })
   @ApiOkResponse({ schema: { example: { status: 'success', message: 'Device attested.' } } })
-  async registerIos(
-    @Body() dto: RegisterAttestationDto,
-    @CurrentUser() user: AuthenticatedUser,
-  ) {
-    const verdict = await this.service.registerIosKey({ ...dto, username: user.username });
+  async registerIos(@Body() dto: RegisterAttestationDto) {
+    const verdict = await this.service.registerIosKey(dto);
     // The reason is deliberately not returned: it would tell a probing client
     // exactly which check to defeat next. It is in the server log.
     return verdict.ok
@@ -118,12 +118,16 @@ export class AppIntegrityController {
    * Google's verdicts so a failure can be acted on: `UNRECOGNIZED_VERSION`
    * means a build that did not come from Play, `MEETS_BASIC_INTEGRITY` alone
    * means a rooted or emulated device.
+   *
+   * Public like the rest of the controller: the app checks itself on launch,
+   * before login. Each call costs one Google API round trip, so the gateway
+   * throttles it per IP.
  */
-  @ApiBearerAuth()
+  @Public()
   @Post('android/verify')
   @HttpCode(200)
   @ApiOperation({
-    summary: 'Check a Play Integrity token (Android, development aid)',
+    summary: 'Check a Play Integrity token (Android, development aid, no JWT required)',
     operationId: 'appIntegrity_verifyAndroid',
   })
   @ApiOkResponse({

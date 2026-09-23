@@ -81,15 +81,17 @@ export class MssqlChallengeStore extends GuardedStore implements ChallengeStoreP
     return value;
   }
 
-  async consume(value: string): Promise<boolean> {
+  async consume(value: string, deviceId?: string): Promise<boolean> {
     // One statement: marking it used IS the check, so a challenge cannot be
-    // spent twice by two requests arriving together.
+    // spent twice by two requests arriving together. The device predicate is
+    // part of the same statement for the same reason.
     const result = await this.guard(CHALLENGE_TABLE, 'consume', () =>
       this.db.execute(
         `UPDATE ${CHALLENGE_TABLE}
             SET UsedAt = GETDATE()
-          WHERE Challenge = @value AND UsedAt IS NULL AND ExpiresAt > GETDATE()`,
-        { value },
+          WHERE Challenge = @value AND UsedAt IS NULL AND ExpiresAt > GETDATE()` +
+          (deviceId === undefined ? '' : ' AND LoginID = @deviceId'),
+        deviceId === undefined ? { value } : { value, deviceId },
       ),
     );
     return (result?.rowsAffected ?? 0) > 0;
@@ -149,6 +151,16 @@ export class MssqlAttestKeyStore extends GuardedStore implements AttestKeyStoreP
         `UPDATE ${KEY_TABLE} SET SignCount = @signCount, UpdatedAt = GETDATE()
           WHERE KeyID = @keyId`,
         { keyId, signCount },
+      ),
+    );
+  }
+
+  async bind(keyId: string, username: string): Promise<void> {
+    await this.guard(KEY_TABLE, 'bind', () =>
+      this.db.execute(
+        `UPDATE ${KEY_TABLE} SET LoginID = @username, UpdatedAt = GETDATE()
+          WHERE KeyID = @keyId`,
+        { keyId, username },
       ),
     );
   }

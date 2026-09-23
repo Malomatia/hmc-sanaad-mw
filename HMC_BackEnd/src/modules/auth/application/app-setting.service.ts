@@ -16,6 +16,7 @@ export class AppSettingService {
     return {
       terms_and_conditions_status: this.cfg.termsAndConditionsStatus,
       terms_and_conditions_url: this.cfg.termsAndConditionsUrl,
+      privacy_policy_url: this.cfg.privacyPolicyUrl,
     };
   }
 }

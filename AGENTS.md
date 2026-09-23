@@ -1779,9 +1779,12 @@ core/config/app-integrity-config.spec.ts`; gateway `npm.cmd run test:e2e --
 ## Public app settings (`GET /app-setting`)
 
 A public GET that needs no JWT and returns an unwrapped (`@SkipEnvelope`) response,
-`{ "terms_and_conditions_status": <boolean>, "terms_and_conditions_url": "<string>" }`,
-read from `TERMS_AND_CONDITIONS_STATUS` (Joi boolean, default `false`) and
-`TERMS_AND_CONDITIONS_URL` (URI or empty, default `''`). These come from the `appSettings`
+`{ "terms_and_conditions_status": <boolean>, "terms_and_conditions_url": "<string>",
+"privacy_policy_url": "<string>" }`, read from `TERMS_AND_CONDITIONS_STATUS` (Joi boolean,
+default `false`), `TERMS_AND_CONDITIONS_URL` (URI or empty, default `''`) and
+`PRIVACY_POLICY_URL` (URI or empty). The privacy URL defaults to
+`DEFAULT_PRIVACY_POLICY_URL` (the Sanad Privacy-Policy page), and `docker-compose.yml`
+supplies the same value, so keep the two in sync. These come from the `appSettings`
 config namespace, served by `AppSettingController`/`AppSettingService` in the backend
 auth module. The gateway forwards it through an explicit `@Public()` controller in its
 auth module, before the wildcard. Like `/healthcheck`, it has no `@SkipIntegrity()`.

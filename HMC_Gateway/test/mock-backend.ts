@@ -60,6 +60,7 @@ export function startMockBackend(jwtSecret: string): Promise<MockBackend> {
           JSON.stringify({
             terms_and_conditions_status: true,
             terms_and_conditions_url: 'https://example.com/terms',
+            privacy_policy_url: 'https://www.hamad.qa/EN/Sanad/Pages/Privacy-Policy.html',
           }),
         );
         return;

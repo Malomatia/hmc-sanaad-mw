@@ -459,6 +459,7 @@ describe('Gateway (e2e) — public device challenge with integrity enforced', ()
     expect(response.body).toEqual({
       terms_and_conditions_status: true,
       terms_and_conditions_url: 'https://example.com/terms',
+      privacy_policy_url: 'https://www.hamad.qa/EN/Sanad/Pages/Privacy-Policy.html',
     });
     expect(backend.requests).toHaveLength(count + 1);
     expect(backend.requests[count]).toMatchObject({ method: 'GET', url: '/api/v1/app-setting' });

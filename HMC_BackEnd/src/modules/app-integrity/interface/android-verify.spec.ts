@@ -1,4 +1,5 @@
 import { AppIntegrityController } from './app-integrity.controller';
+import { AppIntegrityMetrics } from '../application/app-integrity.metrics';
 import { AppIntegrityService } from '../application/app-integrity.service';
 
 /**
@@ -16,7 +17,7 @@ describe('POST /app-integrity/android/verify', () => {
     const service = {
       verifyAndroidToken: jest.fn().mockResolvedValue(verdict),
     } as unknown as jest.Mocked<AppIntegrityService>;
-    return { controller: new AppIntegrityController(service), service };
+    return { controller: new AppIntegrityController(service, new AppIntegrityMetrics()), service };
   }
 
   const VERDICTS = {

@@ -8,6 +8,7 @@ import { JwtAuthGuard } from '@core/auth/jwt-auth.guard';
 import { JwtStrategy } from '@core/auth/jwt.strategy';
 import { TokenRevocationService } from '@core/auth/token-revocation.service';
 import { ResponseInterceptor } from '@core/http/response.interceptor';
+import { AppIntegrityMetrics } from '../application/app-integrity.metrics';
 import { AppIntegrityService } from '../application/app-integrity.service';
 import { AppIntegrityController } from './app-integrity.controller';
 import { AppIntegrityGuard } from './app-integrity.guard';
@@ -40,6 +41,7 @@ describe('POST /app-integrity/challenge', () => {
           useValue: { isRevoked: jest.fn().mockReturnValue(false) },
         },
         { provide: AppIntegrityService, useValue: service },
+        AppIntegrityMetrics,
       ],
     }).compile();
     app = moduleRef.createNestApplication();

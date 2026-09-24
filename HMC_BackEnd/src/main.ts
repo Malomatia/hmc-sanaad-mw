@@ -14,6 +14,9 @@ import { AppConfig, DiagnosticsConfig } from '@core/config/configuration';
  */
 const BODY_LIMIT = '25mb';
 
+/** Express request carrying the untouched body bytes (see `verify` below). */
+type RawBodyRequest = { rawBody?: Buffer };
+
 /**
  * With DIAGNOSTICS_ENABLED=false the diagnostics/logs/DB-test routes return
  * 404 (DiagnosticsEnabledGuard), so drop them from the OpenAPI document too —
@@ -54,7 +57,19 @@ async function bootstrap(): Promise<void> {
    * Fixed here rather than env-driven: it is a property of the payload shape,
    * not of the environment, and every deployment needs the same value.
    */
-  app.useBodyParser('json', { limit: BODY_LIMIT });
+  /**
+   * `verify` keeps the RAW bytes next to the parsed object. Play Integrity
+   * binds a token to a SHA-256 the client computed over exactly the bytes it
+   * sent, so hashing a re-serialized body compares two different strings —
+   * whitespace, key order after a proxy, escaping — and refuses honest
+   * traffic. The gateway does the same for the same reason.
+   */
+  app.useBodyParser('json', {
+    limit: BODY_LIMIT,
+    verify: (req: RawBodyRequest, _res: unknown, buf: Buffer) => {
+      if (buf?.length) req.rawBody = Buffer.from(buf);
+    },
+  });
   app.useBodyParser('urlencoded', { limit: BODY_LIMIT, extended: true });
 
   // Security & performance hardening

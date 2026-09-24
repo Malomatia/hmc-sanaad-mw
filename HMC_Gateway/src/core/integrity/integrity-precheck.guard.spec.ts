@@ -17,8 +17,10 @@ import { IS_PUBLIC_KEY } from '../auth/decorators/public.decorator';
 describe('IntegrityPreCheckGuard', () => {
   const TOKEN = 'a'.repeat(64);
 
-  function make(mode: 'off' | 'observe' | 'enforce') {
-    const config = { getOrThrow: () => ({ mode }) } as unknown as ConfigService;
+  function make(mode: 'off' | 'observe' | 'enforce', requireRequestHash = false) {
+    const config = {
+      getOrThrow: () => ({ mode, requireRequestHash }),
+    } as unknown as ConfigService;
     return new IntegrityPreCheckGuard(new Reflector(), config);
   }
 
@@ -103,9 +105,20 @@ describe('IntegrityPreCheckGuard', () => {
       expect(() => make('enforce').canActivate(ctx)).toThrow(UnauthorizedException);
     });
 
-    it('allows a token sent without a hash — the backend still verifies it', () => {
-      // The hash is optional in the protocol; refusing here would invent a rule.
+    it('allows a token sent without a hash when the header is not required yet', () => {
       expect(make('enforce').canActivate(context({ 'x-integrity-token': TOKEN }))).toBe(true);
+    });
+
+    it('rejects a token sent without a hash once the header is required', () => {
+      // Omitting it binds the token to nothing, which is the same replay the
+      // hash exists to stop — the check must not be opt-out by the client.
+      expect(() =>
+        make('enforce', true).canActivate(context({ 'x-integrity-token': TOKEN })),
+      ).toThrow(UnauthorizedException);
+    });
+
+    it('still allows a missing hash while observing, so old builds are counted not blocked', () => {
+      expect(make('observe', true).canActivate(context({ 'x-integrity-token': TOKEN }))).toBe(true);
     });
 
     it('rejects a token too short to be real', () => {

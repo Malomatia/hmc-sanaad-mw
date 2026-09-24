@@ -1,6 +1,7 @@
 import { ExecutionContext, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Reflector } from '@nestjs/core';
+import { AppIntegrityMetrics } from '../application/app-integrity.metrics';
 import { AppIntegrityService } from '../application/app-integrity.service';
 import {
   ANDROID_REQUEST_HASH_HEADER,
@@ -22,7 +23,7 @@ import { SKIP_INTEGRITY_KEY } from '@core/integrity/skip-integrity.decorator';
 describe('AppIntegrityGuard', () => {
   function make(
     mode: 'off' | 'observe' | 'enforce',
-    verdicts: { ios?: boolean; android?: boolean } = {},
+    verdicts: { ios?: boolean; android?: boolean; requireRequestHash?: boolean } = {},
   ) {
     const service = {
       verifyIosAssertion: jest
@@ -38,11 +39,14 @@ describe('AppIntegrityGuard', () => {
         ios: { enabled: true },
         android: { enabled: true },
         challengeTtlMs: 1000,
+        requireRequestHash: verdicts.requireRequestHash ?? false,
       }),
     } as unknown as ConfigService;
+    const metrics = new AppIntegrityMetrics();
     return {
-      guard: new AppIntegrityGuard(new Reflector(), service, config),
+      guard: new AppIntegrityGuard(new Reflector(), service, config, metrics),
       service,
+      metrics,
     };
   }
 
@@ -50,6 +54,7 @@ describe('AppIntegrityGuard', () => {
     headers: Record<string, string> = {},
     body: unknown = {},
     skip = false,
+    rawBody?: Buffer,
   ): ExecutionContext {
     const handler = () => undefined;
     class Controller {}
@@ -61,6 +66,7 @@ describe('AppIntegrityGuard', () => {
         getRequest: () => ({
           headers,
           body,
+          rawBody,
           url: '/api/v1/leave/apply',
           user: { username: 'AIBRAHIM39' },
         }),
@@ -88,6 +94,31 @@ describe('AppIntegrityGuard', () => {
       await expect(
         guard.canActivate(context({ [ANDROID_TOKEN_HEADER]: 'tok' })),
       ).resolves.toBe(true);
+    });
+
+    it('allows an Android request with no hash header even when it would be required', async () => {
+      // Old client builds are exactly what observe mode is there to count.
+      const { guard } = make('observe', { requireRequestHash: true });
+
+      await expect(guard.canActivate(context({ [ANDROID_TOKEN_HEADER]: 'tok' }))).resolves.toBe(
+        true,
+      );
+    });
+
+    it('counts what enforcement would have refused, by platform and reason', async () => {
+      // The rollout decision is made from these numbers, not from log lines.
+      const { guard, metrics } = make('observe', { android: false });
+
+      await guard.canActivate(context({ [ANDROID_TOKEN_HEADER]: 'tok' }));
+      await guard.canActivate(context());
+
+      const snapshot = metrics.snapshot();
+      expect(snapshot.observed).toBe(2);
+      expect(snapshot.failed).toBe(2);
+      expect(snapshot.byPlatform.android).toEqual({ observed: 1, passed: 0, failed: 1 });
+      expect(snapshot.byPlatform.none.failed).toBe(1);
+      expect(snapshot.byReason).toContainEqual({ platform: 'android', reason: 'nope', count: 1 });
+      expect(snapshot.lastFailure?.platform).toBe('none');
     });
   });
 
@@ -147,6 +178,38 @@ describe('AppIntegrityGuard', () => {
               [ANDROID_REQUEST_HASH_HEADER]: AppIntegrityService.hashBody(body),
             },
             body,
+          ),
+        ),
+      ).resolves.toBe(true);
+    });
+
+    it('rejects an Android token sent with no request hash at all', async () => {
+      // Omitting the header would otherwise bind the token to nothing, which
+      // is the same replay the hash exists to stop.
+      const { guard, service } = make('enforce', { requireRequestHash: true });
+
+      await expect(
+        guard.canActivate(context({ [ANDROID_TOKEN_HEADER]: 'tok' }, { amount: 1000 })),
+      ).rejects.toThrow(UnauthorizedException);
+      expect(service.verifyAndroidToken).not.toHaveBeenCalled();
+    });
+
+    it('hashes the bytes RECEIVED, not a re-serialization of the parsed body', async () => {
+      // Key order and whitespace survive the wire but not JSON.parse, so
+      // hashing req.body would refuse honest clients.
+      const { guard } = make('enforce', { requireRequestHash: true });
+      const raw = Buffer.from('{"b":2,"a":1}', 'utf8');
+
+      await expect(
+        guard.canActivate(
+          context(
+            {
+              [ANDROID_TOKEN_HEADER]: 'tok',
+              [ANDROID_REQUEST_HASH_HEADER]: AppIntegrityService.hashBody(raw),
+            },
+            { a: 1, b: 2 },
+            false,
+            raw,
           ),
         ),
       ).resolves.toBe(true);

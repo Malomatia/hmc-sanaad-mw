@@ -3,6 +3,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import { MssqlService } from '@core/database/mssql.service';
 import { AppIntegrityConfig } from '@core/config/configuration';
+import { AppIntegrityMetrics } from './application/app-integrity.metrics';
 import { AppIntegrityService } from './application/app-integrity.service';
 import {
   ANDROID_INTEGRITY_PORT,
@@ -42,6 +43,7 @@ import { AppIntegrityGuard } from './interface/app-integrity.guard';
   controllers: [AppIntegrityController],
   providers: [
     AppIntegrityService,
+    AppIntegrityMetrics,
     MssqlAttestKeyStore,
     { provide: ATTEST_KEY_STORE_PORT, useExisting: MssqlAttestKeyStore },
     {
@@ -85,6 +87,6 @@ import { AppIntegrityGuard } from './interface/app-integrity.guard';
     },
     { provide: APP_GUARD, useClass: AppIntegrityGuard },
   ],
-  exports: [AppIntegrityService],
+  exports: [AppIntegrityService, AppIntegrityMetrics],
 })
 export class AppIntegrityModule {}

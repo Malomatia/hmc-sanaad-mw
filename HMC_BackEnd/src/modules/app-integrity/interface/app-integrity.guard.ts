@@ -3,6 +3,7 @@ import {
   ExecutionContext,
   Injectable,
   Logger,
+  Optional,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -11,6 +12,7 @@ import { AuthenticatedUser } from '@core/auth/auth-user.interface';
 import { AppIntegrityConfig } from '@core/config/configuration';
 import { SKIP_INTEGRITY_KEY } from '@core/integrity/skip-integrity.decorator';
 import { IntegrityVerdict } from '../domain/attestation';
+import { AppIntegrityMetrics, ObservedPlatform } from '../application/app-integrity.metrics';
 import { AppIntegrityService } from '../application/app-integrity.service';
 
 /** Headers the app sends. One platform per request, never both. */
@@ -19,6 +21,9 @@ export const IOS_KEY_ID_HEADER = 'x-ios-key-id';
 export const INTEGRITY_CHALLENGE_HEADER = 'x-integrity-challenge';
 export const ANDROID_TOKEN_HEADER = 'x-integrity-token';
 export const ANDROID_REQUEST_HASH_HEADER = 'x-integrity-request-hash';
+
+/** SHA-256 as the client sends it. */
+const SHA256_HEX = /^[a-f0-9]{64}$/i;
 
 /**
  * Enforces device attestation on incoming requests.
@@ -45,6 +50,9 @@ export class AppIntegrityGuard implements CanActivate {
     private readonly reflector: Reflector,
     private readonly service: AppIntegrityService,
     config: ConfigService,
+    // Optional so a unit test can build the guard with three arguments; the
+    // counters are a side channel, never a reason for the guard not to exist.
+    @Optional() private readonly metrics: AppIntegrityMetrics = new AppIntegrityMetrics(),
   ) {
     this.cfg = config.getOrThrow<AppIntegrityConfig>('appIntegrity');
     if (this.cfg.mode === 'off') return;
@@ -68,27 +76,68 @@ export class AppIntegrityGuard implements CanActivate {
     const req = context.switchToHttp().getRequest<{
       headers: Record<string, string | undefined>;
       body?: unknown;
+      rawBody?: Buffer;
       url?: string;
       user?: AuthenticatedUser;
     }>();
     const route = req.url ?? '';
     const verdict = await this.verify(req);
+    this.metrics.record({
+      platform: AppIntegrityGuard.observedPlatform(req.headers, verdict),
+      ok: verdict.ok,
+      reason: verdict.reason,
+      route,
+    });
 
     if (verdict.ok) return true;
     return this.reject(route, verdict);
   }
 
+  /**
+   * What the request CLAIMED to be, for the counters: a call with no headers
+   * at all is neither an iOS nor an Android failure, and counting it as one
+   * would make the per-platform rollout numbers meaningless.
+   */
+  private static observedPlatform(
+    headers: Record<string, string | undefined>,
+    verdict: IntegrityVerdict,
+  ): ObservedPlatform {
+    if (headers[ANDROID_TOKEN_HEADER]) return 'android';
+    if (headers[IOS_ASSERTION_HEADER]) return 'ios';
+    return verdict.ok ? verdict.platform : 'none';
+  }
+
   private async verify(req: {
     headers: Record<string, string | undefined>;
     body?: unknown;
+    rawBody?: Buffer;
     user?: AuthenticatedUser;
   }): Promise<IntegrityVerdict> {
     const androidToken = req.headers[ANDROID_TOKEN_HEADER];
     if (androidToken) {
-      // Only trust the client's hash if it matches the body we received.
       const claimed = req.headers[ANDROID_REQUEST_HASH_HEADER];
-      const actual = AppIntegrityService.hashBody(req.body);
-      if (claimed && claimed !== actual) {
+      // Absent, the token is bound to nothing: a genuine one captured from any
+      // request can be replayed onto a different call simply by leaving the
+      // header off. That is most of what Play Integrity buys over "is the app
+      // real", so enforcement requires it.
+      if (!claimed) {
+        if (this.cfg.mode === 'enforce' && this.cfg.requireRequestHash) {
+          return { ok: false, platform: 'android', reason: 'request hash header is missing' };
+        }
+        return this.service.verifyAndroidToken(androidToken, undefined);
+      }
+      if (!SHA256_HEX.test(claimed)) {
+        return {
+          ok: false,
+          platform: 'android',
+          reason: 'request hash is not a SHA-256 hex digest',
+        };
+      }
+      // Only trust the client's hash if it matches the body we received. The
+      // RAW bytes, not a re-serialization of them - the client hashed exactly
+      // what it put on the wire.
+      const actual = AppIntegrityService.hashBody(req.rawBody ?? req.body);
+      if (claimed.toLowerCase() !== actual.toLowerCase()) {
         return { ok: false, platform: 'android', reason: 'request hash does not match the body' };
       }
       return this.service.verifyAndroidToken(androidToken, claimed);

@@ -470,6 +470,13 @@ export interface AppIntegrityConfig {
   };
   /** How long a challenge stays usable, in milliseconds. */
   challengeTtlMs: number;
+  /**
+   * Whether an Android request must carry `x-integrity-request-hash` while
+   * `enforce` is on. Without it a genuine token can be lifted onto another
+   * request simply by omitting the header, so the default is true; it exists
+   * as a switch only for a client build that predates the header.
+   */
+  requireRequestHash: boolean;
 }
 
 export interface RootConfig {
@@ -494,6 +501,12 @@ export interface RootConfig {
 }
 
 const toBool = (v: unknown): boolean => v === true || v === 'true';
+
+/** A finite, positive number, or the default — a typo must not disable a TTL. */
+const positiveNumber = (raw: string | undefined, fallback: number): number => {
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+};
 
 /**
  * Bundle identifier / package name of the Sanaad app — the same string on both
@@ -824,7 +837,14 @@ export default (): RootConfig => ({
         serviceAccount: androidKey,
         enabled: !!packageName && !!androidKey,
       },
-      challengeTtlMs: Number(process.env.APP_INTEGRITY_CHALLENGE_TTL_MS ?? 300000),
+      // A non-numeric or non-positive TTL would make every challenge expire
+      // instantly (NaN comparisons are false), which reads as "attestation is
+      // broken" rather than "the variable has a typo".
+      challengeTtlMs: positiveNumber(process.env.APP_INTEGRITY_CHALLENGE_TTL_MS, 300000),
+      requireRequestHash:
+        process.env.APP_INTEGRITY_REQUIRE_REQUEST_HASH === undefined
+          ? true
+          : toBool(process.env.APP_INTEGRITY_REQUIRE_REQUEST_HASH),
     };
   })(),
 });

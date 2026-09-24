@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { google, playintegrity_v1 } from 'googleapis';
-import { AppIntegrityConfig, FirebaseServiceAccount } from '@core/config/configuration';
+import { FirebaseServiceAccount } from '@core/config/configuration';
 import { IntegrityVerdict } from '../../domain/attestation';
 import { AndroidIntegrityPort } from '../../domain/ports/integrity.ports';
 

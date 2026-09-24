@@ -299,10 +299,12 @@ Facts worth not rediscovering:
   switched on and everything fails at once. Unlike the guard it RETURNS
   Google's verdicts, which is the point. Android has no `register` route
   because it has no key to store.
-- `@SkipIntegrity()` (`core/integrity/`) exempts a controller — health,
-  diagnostics, the dev console and the attestation routes themselves, since a
-  device cannot prove itself before registering. Mobile routes including login
-  stay covered.
+- `@SkipIntegrity()` (`core/integrity/`) exempts a controller — `/health`,
+  `/healthcheck` and `/app-setting` (launch-time, before a device can have
+  attested), `/diagnostics`, `/api-logs`, the dev console and the attestation
+  routes themselves, since a device cannot prove itself before registering.
+  Mobile routes including login stay covered. The list is pinned by
+  `modules/app-integrity/interface/exempt-routes.spec.ts`.
 - Each platform binds a refusing stub when unconfigured, so iOS can be live
   while the Android credential is still being issued. Storage is
   `tools/app-integrity-schema.sql`; a missing table warns once and means
@@ -1826,12 +1828,53 @@ produced a stored key even when the route was reachable (Sep 6–18: 437
 challenges consumed, 0 keys) — the refusal reason is only in the server log;
 the usual causes are a debug build with `APPLE_APP_ATTEST_ALLOW_DEVELOPMENT`
 unset, a simulator (App Attest unsupported), or a bundle/team id mismatch.
-`tools/app-integrity-schema.sql` referenced by the store's warning is NOT in
-the repo; the tables exist on staging with these columns (all NOT NULL unless
+The tables exist on staging with these columns (all NOT NULL unless
 marked): `HMC_Sanad_AttestChallenge_tbl(ChallengeID int, Challenge nvarchar(200),
 LoginID nvarchar(100) NULL, IssuedAt, ExpiresAt, UsedAt NULL)` and
 `HMC_Sanad_AttestKey_tbl(AttestKeyID int, KeyID nvarchar(200), LoginID nvarchar(100),
 PublicKey nvarchar(1000), SignCount bigint, CreatedAt, UpdatedAt)`.
+
+## Attestation review (2026-09-24, branch `feature/app-integrity-review-and-schema`)
+
+- **Schema scripts are now tracked**: `HMC_BackEnd/tools/app-integrity-schema.sql`
+  and `HMC_BackEnd/tools/notifications-schema.sql` — the paths both stores'
+  "does not exist yet" warnings already pointed at. Idempotent
+  (`IF NOT EXISTS`); comments carry the current semantics (`LoginID` of the
+  challenge table holds the `deviceId`; the key table's `LoginID` is
+  `device:<deviceId>` until the first valid authenticated assertion binds it).
+  The workspace-root `tools/` copies are the untracked originals.
+- **Staging DB, checked read-only through `/diagnostics/users-db/sql`**: all
+  three tables exist with exactly the scripted columns and indexes.
+  `HMC_Sanad_DeviceToken_tbl` = 58 rows and STILL has
+  `IX_HMC_Sanad_DeviceToken_Value` (the 1700-byte-key index the script now
+  drops — needs the DBA to run the last statement of the notifications
+  script). `HMC_Sanad_AttestChallenge_tbl` = 2,202 rows / 792 consumed.
+  `HMC_Sanad_AttestKey_tbl` = 0 rows: no iPhone has ever completed
+  registration. DDL cannot be run through the API (SELECT-only console), so
+  creating tables elsewhere (UAT/prod) is a DBA step with these scripts.
+- **Exempt routes fixed to match the published contract.** The mobile doc
+  listed `/healthcheck` as attestation-exempt but the controller had no
+  `@SkipIntegrity()`, so in `enforce` mode API-1 answered 401 — the app's
+  first call on launch, before a fresh iOS install can possibly have attested.
+  `HealthCheckController`, `AppSettingController` (same class: launch-time,
+  no user data) and `ApiLogsController` (curl/Postman like `/diagnostics`)
+  now carry `@SkipIntegrity()`. `modules/app-integrity/interface/exempt-routes.spec.ts`
+  pins the exempt list AND that `/auth/*`, `/leave/*`, `/notifications/*`
+  stay covered. The earlier note "Like `/healthcheck`, it has no
+  `@SkipIntegrity()`" under app settings is superseded.
+- **`Docs_Ai/API/mobile-notifications-and-attestation.md` was stale** (still
+  `GET /challenge` with a Bearer token, no `deviceId`, "identical 401 message
+  on purpose"). Rewritten to the live contract, every example captured from a
+  running build: POST + `deviceId`, all three `/app-integrity/*` routes
+  public, throttles 60/20/20 per minute per IP, 503 while the challenge table
+  is missing, and the two different 401 bodies — the gateway pre-check says
+  "This request did not come from a verified app.", the backend folds
+  attestation failures into its generic "Authentication failed." (same body
+  as a bad JWT; reason in the server log only).
+- Postman collection gained an **App Integrity** folder (3 requests, real
+  responses, `attestChallenge` collection variable chained from the challenge
+  test script). The collection previously had no attestation or notification
+  requests at all; notifications are still missing.
 
 ## Public app settings (`GET /app-setting`)
 
@@ -1844,7 +1887,8 @@ default `false`), `TERMS_AND_CONDITIONS_URL` (URI or empty, default `''`) and
 supplies the same value, so keep the two in sync. These come from the `appSettings`
 config namespace, served by `AppSettingController`/`AppSettingService` in the backend
 auth module. The gateway forwards it through an explicit `@Public()` controller in its
-auth module, before the wildcard. Like `/healthcheck`, it has no `@SkipIntegrity()`.
+auth module, before the wildcard. Like `/healthcheck`, it carries `@SkipIntegrity()`
+since 2026-09-24 (launch-time, no user data — see "Attestation review" above).
 The audit action is `view` (GET default), operationId `auth_appSetting`. Tests:
 backend `modules/auth/application/app-setting.service.spec.ts`, gateway e2e
 `forwards GET /app-setting ...`.

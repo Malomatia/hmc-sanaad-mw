@@ -3,6 +3,7 @@ import { ApiExcludeEndpoint, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Public } from '../auth/decorators/public.decorator';
 import { SkipEnvelope } from '../http/response.interceptor';
 import { DiagnosticsEnabledGuard } from '../http/diagnostics-enabled.guard';
+import { SkipIntegrity } from '../integrity/skip-integrity.decorator';
 import { ApiLogQueryDto } from './dto/api-log-query.dto';
 import { ApiLogsService } from './api-logs.service';
 import { API_LOG_VIEW_HTML } from './api-log.view';
@@ -19,6 +20,8 @@ import { API_LOG_VIEW_HTML } from './api-log.view';
  */
 @UseGuards(DiagnosticsEnabledGuard)
 @Public()
+// Read with curl/Postman like /diagnostics, never from the app.
+@SkipIntegrity()
 @ApiTags('api-logs')
 @Controller('api-logs')
 export class ApiLogsController {

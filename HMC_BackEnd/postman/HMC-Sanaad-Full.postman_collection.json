@@ -30,6 +30,11 @@
       "key": "refreshtoken",
       "value": "",
       "type": "string"
+    },
+    {
+      "key": "attestChallenge",
+      "value": "",
+      "type": "string"
     }
   ],
   "item": [
@@ -1250,6 +1255,620 @@
             "description": "**Purpose:** Revoke the current access token (bearer) and, when sent in the body, the refresh token — the pair is then fully dead. Requires `Authorization: Bearer {{token}}` (collection-level auth). NOTE: revocation is in-memory — a backend restart forgets it (tokens then live until natural expiry)."
           },
           "response": []
+        }
+      ]
+    },
+    {
+      "name": "App Integrity",
+      "item": [
+        {
+          "name": "POST /app-integrity/challenge",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Response time is less than 5 seconds\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(5000);",
+                  "});",
+                  "",
+                  "pm.test(\"Response is valid JSON\", function () {",
+                  "    pm.response.to.be.json;",
+                  "});",
+                  "",
+                  "pm.test(\"Challenge issued\", function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.result.challenge).to.be.a(\"string\").and.not.empty;",
+                  "    pm.collectionVariables.set(\"attestChallenge\", json.result.challenge);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/app-integrity/challenge",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "app-integrity",
+                "challenge"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"deviceId\": \"a5b3d106-8d16-482f-bd4e-8c080a5da203\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "**Purpose:** Issue a one-time attestation challenge (nonce) for a device. PUBLIC — no JWT and no attestation headers; the app calls it on launch, before login. Gateway throttle: 60/min per IP.\n\n**Body:** `deviceId` (required, non-blank, max 100 chars) — the same stable installation id the app sends as `imeinumber`. The challenge can only be spent by this device.\n\n**Response:** Sanaad read envelope — `{ result: { challenge }, opstatus, status, httpStatusCode }`. Single use, valid 5 minutes (`APP_INTEGRITY_CHALLENGE_TTL_MS`).\n\n**503** until `HMC_Sanad_AttestChallenge_tbl` exists (`HMC_BackEnd/tools/app-integrity-schema.sql`).\n\nNote: was `GET` until 2026-09-19 — `GET` is now 404."
+          },
+          "response": [
+            {
+              "name": "Success (200)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app-integrity/challenge",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app-integrity",
+                    "challenge"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"deviceId\": \"a5b3d106-8d16-482f-bd4e-8c080a5da203\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"result\": {\n    \"challenge\": \"AAZxbHy1Kz8ozDwx5e4sxx65ZYovhjfSFUIRisZz1JM=\"\n  },\n  \"opstatus\": 0,\n  \"status\": \"success\",\n  \"httpStatusCode\": 200\n}"
+            },
+            {
+              "name": "Validation error - missing deviceId (400)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app-integrity/challenge",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app-integrity",
+                    "challenge"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"message\": \"Validation failed.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 400,\n  \"errors\": {\n    \"details\": [\n      \"deviceId must be shorter than or equal to 100 characters\",\n      \"deviceId must not be blank\",\n      \"deviceId should not be empty\",\n      \"deviceId must be a string\"\n    ]\n  }\n}"
+            },
+            {
+              "name": "Challenge table missing (503)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app-integrity/challenge",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app-integrity",
+                    "challenge"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"deviceId\": \"a5b3d106-8d16-482f-bd4e-8c080a5da203\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Service Unavailable",
+              "code": 503,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"message\": \"An external service is currently unavailable.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 503\n}"
+            }
+          ]
+        },
+        {
+          "name": "POST /app-integrity/ios/register",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Response time is less than 5 seconds\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(5000);",
+                  "});",
+                  "",
+                  "pm.test(\"Response is valid JSON\", function () {",
+                  "    pm.response.to.be.json;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/app-integrity/ios/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "app-integrity",
+                "ios",
+                "register"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"deviceId\": \"a5b3d106-8d16-482f-bd4e-8c080a5da203\",\n  \"keyId\": \"<from DCAppAttestService.generateKey()>\",\n  \"attestation\": \"<base64 of the attestation object>\",\n  \"challenge\": \"{{attestChallenge}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "**Purpose:** iOS one-time registration of an App Attest key (once per install). PUBLIC — no JWT; the attestation object plus the server-issued single-use challenge is the proof. Gateway throttle: 20/min per IP.\n\n**Body:** `deviceId`, `keyId`, `attestation` (base64), `challenge` — all required. The challenge must have been issued to the same `deviceId`, and it is spent BEFORE the attestation is examined (a failed attempt burns it).\n\n**Response:** always HTTP 200 inside the envelope. Accepted: `{ message: \"Device attested.\" }`. Refused: `{ message: \"Attestation could not be verified.\", verified: false }` — branch on `verified`; its absence means success. The reason is deliberately withheld (server log only) so a probing client is not told which check to defeat next.\n\nThe key is stored with `LoginID = device:<deviceId>` and claimed by the first user whose protected request carries a valid assertion with a session.\n\nAndroid has no equivalent route: there is no key pair to store."
+          },
+          "response": [
+            {
+              "name": "Accepted (200)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app-integrity/ios/register",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app-integrity",
+                    "ios",
+                    "register"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"deviceId\": \"a5b3d106-8d16-482f-bd4e-8c080a5da203\",\n  \"keyId\": \"<from DCAppAttestService.generateKey()>\",\n  \"attestation\": \"<base64 of the attestation object>\",\n  \"challenge\": \"{{attestChallenge}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"result\": {\n    \"message\": \"Device attested.\"\n  },\n  \"opstatus\": 0,\n  \"status\": \"success\",\n  \"httpStatusCode\": 200\n}"
+            },
+            {
+              "name": "Refused (200, verified=false)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app-integrity/ios/register",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app-integrity",
+                    "ios",
+                    "register"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"deviceId\": \"a5b3d106-8d16-482f-bd4e-8c080a5da203\",\n  \"keyId\": \"<from DCAppAttestService.generateKey()>\",\n  \"attestation\": \"<base64 of the attestation object>\",\n  \"challenge\": \"{{attestChallenge}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"result\": {\n    \"message\": \"Attestation could not be verified.\",\n    \"verified\": false\n  },\n  \"opstatus\": 0,\n  \"status\": \"success\",\n  \"httpStatusCode\": 200\n}"
+            },
+            {
+              "name": "Validation error - missing deviceId (400)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app-integrity/ios/register",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app-integrity",
+                    "ios",
+                    "register"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"keyId\": \"k\",\n  \"attestation\": \"YQ==\",\n  \"challenge\": \"c\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"message\": \"Validation failed.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 400,\n  \"errors\": {\n    \"details\": [\n      \"deviceId must be shorter than or equal to 100 characters\",\n      \"deviceId must not be blank\",\n      \"deviceId should not be empty\",\n      \"deviceId must be a string\"\n    ]\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "POST /app-integrity/android/verify",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Response time is less than 5 seconds\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(5000);",
+                  "});",
+                  "",
+                  "pm.test(\"Response is valid JSON\", function () {",
+                  "    pm.response.to.be.json;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/app-integrity/android/verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "app-integrity",
+                "android",
+                "verify"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"integrityToken\": \"<from requestStandardPlayIntegrityToken()>\",\n  \"requestHash\": \"<sha256 hex of your request body>\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "**Purpose:** Android self-check of a Play Integrity token — a DEVELOPMENT AID, not the enforcement path (in production the token rides as `X-Integrity-Token` on the real request). PUBLIC — no JWT. Gateway throttle: 20/min per IP. Each call costs one Google API round trip.\n\n**Body:** `integrityToken` (required), `requestHash` (optional — send it to have that half checked too; it is what stops a genuine token being reused on a different request).\n\n**Response:** unlike the guard this route REPORTS WHY — `{ verified, reason?, verdicts? }`. `UNRECOGNIZED_VERSION` = a build that did not come from Play; `MEETS_BASIC_INTEGRITY` alone = rooted or emulated.\n\nWhile `PLAY_INTEGRITY_SERVICE_ACCOUNT` is not set (staging as of 2026-09-24) every token answers \"Play Integrity is not configured\"."
+          },
+          "response": [
+            {
+              "name": "Valid (200)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app-integrity/android/verify",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app-integrity",
+                    "android",
+                    "verify"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"integrityToken\": \"<from requestStandardPlayIntegrityToken()>\",\n  \"requestHash\": \"<sha256 hex of your request body>\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"result\": {\n    \"verified\": true,\n    \"verdicts\": {\n      \"appRecognitionVerdict\": \"PLAY_RECOGNIZED\",\n      \"deviceRecognitionVerdict\": [\n        \"MEETS_DEVICE_INTEGRITY\"\n      ],\n      \"appLicensingVerdict\": \"LICENSED\",\n      \"packageName\": \"com.hmc.sanaad\"\n    }\n  },\n  \"opstatus\": 0,\n  \"status\": \"success\",\n  \"httpStatusCode\": 200\n}"
+            },
+            {
+              "name": "Rejected with reason (200)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app-integrity/android/verify",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app-integrity",
+                    "android",
+                    "verify"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"integrityToken\": \"<from requestStandardPlayIntegrityToken()>\",\n  \"requestHash\": \"<sha256 hex of your request body>\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"result\": {\n    \"verified\": false,\n    \"reason\": \"app verdict UNRECOGNIZED_VERSION\",\n    \"verdicts\": {\n      \"appRecognitionVerdict\": \"UNRECOGNIZED_VERSION\",\n      \"deviceRecognitionVerdict\": [\n        \"MEETS_BASIC_INTEGRITY\"\n      ],\n      \"appLicensingVerdict\": \"LICENSED\"\n    }\n  },\n  \"opstatus\": 0,\n  \"status\": \"success\",\n  \"httpStatusCode\": 200\n}"
+            },
+            {
+              "name": "Play Integrity not configured (200)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app-integrity/android/verify",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app-integrity",
+                    "android",
+                    "verify"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"integrityToken\": \"<from requestStandardPlayIntegrityToken()>\",\n  \"requestHash\": \"<sha256 hex of your request body>\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"result\": {\n    \"verified\": false,\n    \"reason\": \"Play Integrity is not configured\"\n  },\n  \"opstatus\": 0,\n  \"status\": \"success\",\n  \"httpStatusCode\": 200\n}"
+            },
+            {
+              "name": "Validation error - missing token (400)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/app-integrity/android/verify",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app-integrity",
+                    "android",
+                    "verify"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"message\": \"Validation failed.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 400,\n  \"errors\": {\n    \"details\": [\n      \"integrityToken should not be empty\",\n      \"integrityToken must be a string\"\n    ]\n  }\n}"
+            }
+          ]
         }
       ]
     },

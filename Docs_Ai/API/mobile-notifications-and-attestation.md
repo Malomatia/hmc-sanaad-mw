@@ -50,7 +50,8 @@ every mode off:
 | `GET /health/backend` | 200 |
 | `POST /notifications/device-token` | 200 |
 | `DELETE /notifications/device-token` | 200 |
-| `GET /app-integrity/challenge` | 200 |
+| `POST /app-integrity/challenge` | 503 until `HMC_Sanad_AttestChallenge_tbl` exists (a nonce that cannot be stored is never handed out), 200 afterwards |
+| `POST /app-integrity/ios/register` | 200 `{"message":"Attestation could not be verified.","verified":false}` |
 | `POST /app-integrity/android/verify` | 200 `{"verified":false,"reason":"Play Integrity is not configured"}` |
 | `POST /leave/apply` with an invalid body | 400 — unchanged |
 | `GET /lookups/lov` with Oracle down | 503 — unchanged |
@@ -70,8 +71,16 @@ tokens are already in place the moment it does.
 ## Database team
 
 Three tables on the **Sanaad SQL Server** — the same database as
-`HMC_Sanad_DeviceRegn_tbl`. Scripts: `tools/notifications-schema.sql` and
-`tools/app-integrity-schema.sql`.
+`HMC_Sanad_DeviceRegn_tbl`. Scripts (idempotent, in the repo):
+`HMC_BackEnd/tools/notifications-schema.sql` and
+`HMC_BackEnd/tools/app-integrity-schema.sql`.
+
+**Staging already has all three** (checked 2026-09-24: columns and indexes
+exactly as below; 58 device tokens, 2,202 challenges, 0 attested keys). Two
+things are still outstanding there: the `DROP INDEX
+IX_HMC_Sanad_DeviceToken_Value` at the end of the notifications script (see
+the note under table 1), and any other environment (UAT, production) that has
+not run the scripts yet.
 
 ### 1. `HMC_Sanad_DeviceToken_tbl` — notifications
 
@@ -90,13 +99,19 @@ CREATE TABLE HMC_Sanad_DeviceToken_tbl (
 );
 
 CREATE INDEX IX_HMC_Sanad_DeviceToken_LoginID ON HMC_Sanad_DeviceToken_tbl (LoginID);
-CREATE INDEX IX_HMC_Sanad_DeviceToken_Value   ON HMC_Sanad_DeviceToken_tbl (DeviceTokenValue);
 ```
 
 One row per device; a user may legitimately have several (phone and tablet).
 The UNIQUE constraint is load-bearing — Firebase reissues a token after a
 reinstall, and it is what makes the app replace the old one instead of
 accumulating dead tokens.
+
+**No index on `DeviceTokenValue`.** An earlier revision created
+`IX_HMC_Sanad_DeviceToken_Value`; SQL Server warns that an `NVARCHAR(4000)`
+key exceeds the 1700-byte index limit and that inserts of long values *will
+fail*. Nothing searches by token value (dead tokens are deleted by
+`LoginID + IMEINumber`), so the script now drops that index — staging still
+has it and needs that statement run.
 
 ### 2. `HMC_Sanad_AttestChallenge_tbl` — attestation (iOS)
 
@@ -118,6 +133,13 @@ CREATE INDEX IX_HMC_Sanad_AttestChallenge_Expiry ON HMC_Sanad_AttestChallenge_tb
 
 `UsedAt` enforces single use. A challenge that could be reused would let one
 captured proof be replayed indefinitely.
+
+`LoginID` holds the **device id** the challenge was issued to (the `deviceId`
+the app sends — see the endpoint below), not a user: the app fetches its
+challenge on launch, before anyone has logged in. Registration spends the
+challenge with `AND LoginID = @deviceId`, so a nonce fetched by one device
+cannot be spent by another. The column keeps its name; the client decided
+against a separate `DeviceID` column.
 
 ### 3. `HMC_Sanad_AttestKey_tbl` — attestation (iOS)
 
@@ -141,6 +163,14 @@ CREATE INDEX IX_HMC_Sanad_AttestKey_LoginID ON HMC_Sanad_AttestKey_tbl (LoginID)
 **Include this one in backups.** iOS registers once and then signs every later
 request with that key; if the table is lost, every iPhone user must register
 again. `SignCount` is replay protection — it increases with each request.
+
+`LoginID` starts as `device:<deviceId>` — the key is registered on launch,
+before login, so there is no user yet (`device:` is the "unbound" marker; `:`
+cannot occur in an AD login and employee numbers are digits). The first
+protected request that carries a **valid** assertion **and** a session claims
+the key for that user, and from then on it answers for that user only. A
+shared handset therefore belongs to whoever logged in first; a second account
+on the same phone is refused until the app re-attests.
 
 Android needs no tables: its token is self-contained and verified with Google
 on each call.
@@ -332,18 +362,25 @@ between what you hash and what you send will be rejected.
 
 ### iOS — App Attest
 
+Everything below runs **before login** — none of the `/app-integrity/*` calls
+takes a JWT. `deviceId` is the same stable installation id the app already
+sends as `imeinumber` elsewhere; it ties the challenge to the device that
+asked for it.
+
 **Once per installation:**
 
 ```dart
 final keyId = await AppAttest.generateKey();      // keep in secure storage
 
-final challenge = (await api.get('/app-integrity/challenge')).data['challenge'];
+final challenge = (await api.post('/app-integrity/challenge',
+    data: {'deviceId': deviceId})).data['result']['challenge'];
 final attestation = await AppAttest.attestKey(
   keyId,
   base64Encode(sha256.convert(utf8.encode(challenge)).bytes),
 );
 
 await api.post('/app-integrity/ios/register', data: {
+  'deviceId': deviceId,
   'keyId': keyId, 'attestation': attestation, 'challenge': challenge,
 });
 ```
@@ -351,7 +388,8 @@ await api.post('/app-integrity/ios/register', data: {
 **Before each request afterwards:**
 
 ```dart
-final challenge = (await api.get('/app-integrity/challenge')).data['challenge'];
+final challenge = (await api.post('/app-integrity/challenge',
+    data: {'deviceId': deviceId})).data['result']['challenge'];
 final assertion = await AppAttest.generateAssertion(
   keyId,
   base64Encode(sha256.convert(utf8.encode(challenge)).bytes),
@@ -363,7 +401,9 @@ headers['X-Integrity-Challenge'] = challenge;
 ```
 
 A challenge is single-use — fetch a new one every time. Losing `keyId` means
-registering again.
+registering again. The challenge must come from the **same `deviceId`** that
+registers or asserts with it; one fetched under another id is refused as
+"already used or issued to another device".
 
 ### Why iOS registers and Android does not
 
@@ -375,11 +415,20 @@ and then have nothing to save.
 
 ### Exempt routes
 
+No attestation headers are required on:
+
 ```
-/health   /healthcheck   /diagnostics   /dev-console   /app-integrity/*
+/health   /healthcheck   /app-setting   /app-integrity/*
+/diagnostics   /api-logs   /dev-console
 ```
 
-Everything else, including login, is covered once enforcement is on.
+The first row is what the app calls on launch before it can have attested
+(a fresh iOS install has to register its key first) — none of it is per-user.
+The second row is reached with curl and Postman, never from the app.
+Everything else, **including login**, is covered once enforcement is on;
+refusing scripted credential attempts is much of the point. The gateway's
+first-pass check additionally lets every `@Public()` route through (the whole
+pre-login journey); the backend still verifies those.
 
 ---
 
@@ -428,9 +477,17 @@ Content-Type: application/json
 
 ### Issue an attestation challenge
 
+No JWT — the app attests on launch, before anyone has logged in. What stands
+in for authentication on the three `/app-integrity/*` routes is the
+attestation itself, the server-issued single-use challenge tied to the
+device, and a per-IP throttle at the gateway (60/min here, 20/min on the two
+verification routes).
+
 ```http
-GET /api/v1/app-integrity/challenge
-Authorization: Bearer <token>
+POST /api/v1/app-integrity/challenge
+Content-Type: application/json
+
+{ "deviceId": "a5b3d106-8d16-482f-bd4e-8c080a5da203" }
 ```
 ```json
 {
@@ -441,16 +498,34 @@ Authorization: Bearer <token>
 }
 ```
 
-Single use, valid for 5 minutes.
+Single use, valid for 5 minutes, and only spendable by the same `deviceId`.
+`deviceId` is a required non-blank string of at most 100 characters; a body
+without it:
+
+```json
+{
+  "success": false,
+  "message": "Validation failed.",
+  "status": "error",
+  "httpStatusCode": 400,
+  "errors": { "details": ["deviceId must be shorter than or equal to 100 characters", "deviceId must not be blank", "deviceId should not be empty", "deviceId must be a string"] }
+}
+```
+
+`GET` on this route is a 404 — it was a GET until 2026-09-19.
+
+Until `HMC_Sanad_AttestChallenge_tbl` exists the route answers 503
+(`"An external service is currently unavailable."`): a nonce that cannot be
+stored could never be verified, so none is handed out.
 
 ### Register an App Attest key (iOS, once per install)
 
 ```http
 POST /api/v1/app-integrity/ios/register
-Authorization: Bearer <token>
 Content-Type: application/json
 
 {
+  "deviceId": "a5b3d106-8d16-482f-bd4e-8c080a5da203",
   "keyId": "<from generateKey()>",
   "attestation": "<base64 attestation object>",
   "challenge": "AAZxbHy1Kz8ozDwx5e4sxx65ZYovhjfSFUIRisZz1JM="
@@ -478,13 +553,16 @@ log, so a probing client is not told which check to defeat next:
 }
 ```
 
-Check `verified`; its **absence** means success.
+Check `verified`; its **absence** means success. All four fields are
+required; a missing one is a 400 in the same shape as the challenge route
+(`"keyId should not be empty"`, ...). The challenge is spent **before** the
+attestation is examined, so a failed attempt burns it — fetch a new one before
+retrying.
 
 ### Check a Play Integrity token (Android, development aid)
 
 ```http
 POST /api/v1/app-integrity/android/verify
-Authorization: Bearer <token>
 Content-Type: application/json
 
 {
@@ -577,12 +655,28 @@ Content-Type: application/json
 ```
 
 Both pass through untouched while attestation is off. Once enforced, a missing
-or invalid proof gives:
+or invalid proof is a 401. Which of the two services refused it shows in the
+body — the gateway's cheap pre-check (missing headers, malformed values, hash
+not matching the body) answers with its own message:
 
 ```json
 {
   "status": "error",
   "message": "This request did not come from a verified app.",
+  "httpStatusCode": 401
+}
+```
+
+while the backend's cryptographic check (bad signature, unknown key, spent or
+foreign challenge, Google verdicts, counter not advancing) is folded into the
+backend's generic authentication error, the same body as a bad JWT — the
+reason is written to the server log only:
+
+```json
+{
+  "success": false,
+  "message": "Authentication failed.",
+  "status": "error",
   "httpStatusCode": 401
 }
 ```
@@ -645,6 +739,8 @@ of what Play Integrity offers over a plain "is the app real" test.
 ```
 1. Deploy                                  — nothing changes, features dormant
 2. Create the three tables                 — registrations start persisting
+                                             (done on staging; run the two
+                                             tools/*.sql scripts elsewhere)
 3. Set FIREBASE_SERVICE_ACCOUNT            — notifications begin working
 4. Enable Play Integrity API + link Play Console
 5. Set APPLE_TEAM_ID, APPLE_BUNDLE_ID, ANDROID_PACKAGE_NAME

@@ -1,9 +1,14 @@
-import { Body, Controller, HttpCode, Post } from '@nestjs/common';
-import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Body, Controller, Get, HttpCode, Post, UseGuards } from '@nestjs/common';
+import { ApiExcludeEndpoint, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsNotEmpty, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
 import { Public } from '@core/auth/decorators/public.decorator';
 import { SkipIntegrity } from '@core/integrity/skip-integrity.decorator';
+import { DiagnosticsEnabledGuard } from '@core/http/diagnostics-enabled.guard';
+import {
+  AppIntegrityMetrics,
+  IntegrityMetricsSnapshot,
+} from '../application/app-integrity.metrics';
 import { AppIntegrityService } from '../application/app-integrity.service';
 
 export class IssueChallengeDto {
@@ -63,7 +68,27 @@ export class VerifyAndroidTokenDto {
 @SkipIntegrity()
 @Controller('app-integrity')
 export class AppIntegrityController {
-  constructor(private readonly service: AppIntegrityService) {}
+  constructor(
+    private readonly service: AppIntegrityService,
+    private readonly metrics: AppIntegrityMetrics,
+  ) {}
+
+  /**
+   * What enforcement WOULD have refused, counted.
+   *
+   * The rollout plan is "run in `observe`, read the numbers, then switch",
+   * and a warning line per request does not produce a number — there is no
+   * log aggregation in this deployment. Behind the diagnostics switch (404
+   * when it is off) like every other observability route: the reasons name
+   * which check a client failed.
+   */
+  @Public()
+  @UseGuards(DiagnosticsEnabledGuard)
+  @Get('metrics')
+  @ApiExcludeEndpoint()
+  metricsSnapshot(): IntegrityMetricsSnapshot {
+    return this.metrics.snapshot();
+  }
 
   /**
    * A one-time nonce. Both platforms need one - iOS to attest and to assert,

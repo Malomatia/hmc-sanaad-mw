@@ -143,10 +143,19 @@ export class AppIntegrityService {
     return this.android.verifyToken(token, requestHash);
   }
 
-  /** SHA-256 of the raw body, matching what the client hashes. */
+  /**
+   * SHA-256 of the raw body, matching what the client hashes.
+   *
+   * A Buffer is hashed as it arrived. Re-serializing the parsed object would
+   * produce a different string from the one the client signed — whitespace
+   * and escaping differ — so the bytes are preferred wherever they are kept.
+   */
   static hashBody(body: unknown): string {
-    return createHash('sha256')
-      .update(typeof body === 'string' ? body : JSON.stringify(body ?? {}))
-      .digest('hex');
+    const data = Buffer.isBuffer(body)
+      ? body
+      : typeof body === 'string'
+        ? body
+        : JSON.stringify(body ?? {});
+    return createHash('sha256').update(data).digest('hex');
   }
 }

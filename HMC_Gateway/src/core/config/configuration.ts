@@ -66,6 +66,12 @@ export interface ThrottleConfig {
  */
 export interface IntegrityConfig {
   mode: 'off' | 'observe' | 'enforce';
+  /**
+   * Whether an Android request must carry `x-integrity-request-hash` while
+   * `enforce` is on. Omitting it binds the token to nothing, so the default
+   * is true; the switch exists for a client build that predates the header.
+   */
+  requireRequestHash: boolean;
 }
 
 export interface RootConfig {
@@ -135,5 +141,9 @@ export default (): RootConfig => ({
     )
       ? process.env.GATEWAY_INTEGRITY_MODE!.toLowerCase()
       : 'off') as IntegrityConfig['mode'],
+    requireRequestHash:
+      process.env.GATEWAY_INTEGRITY_REQUIRE_REQUEST_HASH === undefined
+        ? true
+        : toBool(process.env.GATEWAY_INTEGRITY_REQUIRE_REQUEST_HASH),
   },
 });

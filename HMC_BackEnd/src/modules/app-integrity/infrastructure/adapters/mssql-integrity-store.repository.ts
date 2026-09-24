@@ -11,6 +11,14 @@ const KEY_TABLE = 'HMC_Sanad_AttestKey_tbl';
 /** SQL Server "Invalid object name" — the table has not been created. */
 const INVALID_OBJECT_NAME = 208;
 
+/** How often one process sweeps expired challenges away, and how much of
+ * the backlog a single sweep takes — a capped DELETE cannot lock the table
+ * for long behind the request that triggered it. */
+const PURGE_INTERVAL_MS = 15 * 60 * 1000;
+const PURGE_BATCH = 5000;
+/** Expired rows are kept this long, so a failure can still be investigated. */
+const PURGE_GRACE_HOURS = 24;
+
 /**
  * Shared guard for both stores: a table that does not exist yet is a
  * deployment step, and is reported once rather than on every call.
@@ -59,6 +67,8 @@ abstract class GuardedStore {
  */
 @Injectable()
 export class MssqlChallengeStore extends GuardedStore implements ChallengeStorePort {
+  private lastPurgeAt = 0;
+
   constructor(
     db: MssqlService,
     private readonly ttlMs: number,
@@ -67,6 +77,7 @@ export class MssqlChallengeStore extends GuardedStore implements ChallengeStoreP
   }
 
   async issue(deviceId: string): Promise<string> {
+    await this.purgeSpent();
     const value = randomBytes(32).toString('base64');
     const result = await this.guard(CHALLENGE_TABLE, 'issue', () =>
       this.db.execute(
@@ -95,6 +106,33 @@ export class MssqlChallengeStore extends GuardedStore implements ChallengeStoreP
       ),
     );
     return (result?.rowsAffected ?? 0) > 0;
+  }
+
+  /**
+   * Delete challenges that can never be spent again.
+   *
+   * `consume` filters on `ExpiresAt`, so a stale row is harmless — but every
+   * launch of every install issues one and nothing ever removed them, so the
+   * table grows without bound and the index with it. Rows are kept for a
+   * grace period after expiry so a support question can still be answered.
+   *
+   * Run from `issue` rather than a scheduler: the project has no job runner,
+   * and this is the only write path frequent enough to matter. It is rate
+   * limited to once an interval per process and failures are swallowed by
+   * `guard`, so housekeeping cannot fail a registration.
+   */
+  private async purgeSpent(): Promise<void> {
+    const now = Date.now();
+    if (now - this.lastPurgeAt < PURGE_INTERVAL_MS) return;
+    this.lastPurgeAt = now;
+
+    await this.guard(CHALLENGE_TABLE, 'purge', () =>
+      this.db.execute(
+        `DELETE TOP (@batch) FROM ${CHALLENGE_TABLE}
+          WHERE ExpiresAt < DATEADD(hour, -@graceHours, GETDATE())`,
+        { batch: PURGE_BATCH, graceHours: PURGE_GRACE_HOURS },
+      ),
+    );
   }
 }
 
@@ -145,11 +183,20 @@ export class MssqlAttestKeyStore extends GuardedStore implements AttestKeyStoreP
     };
   }
 
+  /**
+   * The counter only ever goes UP.
+   *
+   * Two assertions arriving together both read the old value, and an
+   * unconditional write lets the lower of the two land last — which restores
+   * a counter an attacker can then replay against. `SignCount < @signCount`
+   * makes the comparison part of the write, so the loser of the race is a
+   * no-op rather than a regression.
+   */
   async updateSignCount(keyId: string, signCount: number): Promise<void> {
     await this.guard(KEY_TABLE, 'updateSignCount', () =>
       this.db.execute(
         `UPDATE ${KEY_TABLE} SET SignCount = @signCount, UpdatedAt = GETDATE()
-          WHERE KeyID = @keyId`,
+          WHERE KeyID = @keyId AND SignCount < @signCount`,
         { keyId, signCount },
       ),
     );

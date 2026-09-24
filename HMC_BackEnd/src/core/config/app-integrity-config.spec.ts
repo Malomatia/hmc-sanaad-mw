@@ -21,6 +21,7 @@ describe('device attestation configuration', () => {
     'PLAY_INTEGRITY_SERVICE_ACCOUNT',
     'PLAY_INTEGRITY_SERVICE_ACCOUNT_PATH',
     'APP_INTEGRITY_CHALLENGE_TTL_MS',
+    'APP_INTEGRITY_REQUIRE_REQUEST_HASH',
   ];
   const saved: Record<string, string | undefined> = {};
 
@@ -62,6 +63,31 @@ describe('device attestation configuration', () => {
 
     it('gives a challenge five minutes', () => {
       expect(cfg().challengeTtlMs).toBe(300000);
+    });
+
+    it('requires the Android request hash, so a token is bound to one request', () => {
+      expect(cfg().requireRequestHash).toBe(true);
+    });
+  });
+
+  describe('hostile values', () => {
+    it.each(['', 'five minutes', '0', '-1'])(
+      'keeps the five-minute TTL when given %p rather than expiring instantly',
+      (value) => {
+        // Number('') is 0 and Number('five minutes') is NaN: either would make
+        // every challenge expire before the device could use it.
+        process.env.APP_INTEGRITY_CHALLENGE_TTL_MS = value;
+
+        expect(cfg().challengeTtlMs).toBe(300000);
+      },
+    );
+
+    it('only drops the request-hash requirement when it is explicitly disabled', () => {
+      process.env.APP_INTEGRITY_REQUIRE_REQUEST_HASH = 'false';
+      expect(cfg().requireRequestHash).toBe(false);
+
+      process.env.APP_INTEGRITY_REQUIRE_REQUEST_HASH = 'maybe';
+      expect(cfg().requireRequestHash).toBe(false);
     });
   });
 

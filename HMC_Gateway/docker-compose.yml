@@ -47,6 +47,9 @@ services:
       # ROLL OUT VIA observe: enforcing rejects real devices (no Play Services,
       # rooted, sideloaded, simulators).
       GATEWAY_INTEGRITY_MODE: "${GATEWAY_INTEGRITY_MODE:-off}"
+      # Without the request hash an Android token is bound to no particular
+      # request; false only for a client build that does not send it yet.
+      GATEWAY_INTEGRITY_REQUIRE_REQUEST_HASH: "${GATEWAY_INTEGRITY_REQUIRE_REQUEST_HASH:-true}"
       REQUEST_TIMEOUT_MS: "${REQUEST_TIMEOUT_MS:-35000}"
       LOG_LEVEL: "${LOG_LEVEL:-debug}"
     # Host:container port mapping stays in sync with GATEWAY_PORT in .env.

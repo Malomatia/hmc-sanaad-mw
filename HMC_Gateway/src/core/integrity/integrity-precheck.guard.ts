@@ -112,7 +112,15 @@ export class IntegrityPreCheckGuard implements CanActivate {
     if (malformed) return malformed;
 
     const claimed = req.headers[ANDROID_REQUEST_HASH];
-    if (!claimed) return undefined; // optional; the backend still verifies the token
+    // Without it the token is bound to nothing: one captured from any request
+    // can be replayed onto a different call by leaving the header off, which
+    // is exactly the attack the hash exists to stop. Tolerated while
+    // observing so the numbers show how many clients still omit it.
+    if (!claimed) {
+      return this.cfg.mode === 'enforce' && this.cfg.requireRequestHash
+        ? 'request hash header is missing'
+        : undefined;
+    }
     if (!SHA256_HEX.test(claimed)) return 'request hash is not a SHA-256 hex digest';
 
     // Hash the bytes we RECEIVED. Re-serializing first would compare a

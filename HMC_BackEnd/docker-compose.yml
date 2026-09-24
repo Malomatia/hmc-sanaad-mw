@@ -225,6 +225,9 @@ services:
       PLAY_INTEGRITY_SERVICE_ACCOUNT: "${PLAY_INTEGRITY_SERVICE_ACCOUNT:-}"
       PLAY_INTEGRITY_SERVICE_ACCOUNT_PATH: "${PLAY_INTEGRITY_SERVICE_ACCOUNT_PATH:-}"
       APP_INTEGRITY_CHALLENGE_TTL_MS: "${APP_INTEGRITY_CHALLENGE_TTL_MS:-300000}"
+      # Without the request hash an Android token is bound to no particular
+      # request; false only for a client build that does not send it yet.
+      APP_INTEGRITY_REQUIRE_REQUEST_HASH: "${APP_INTEGRITY_REQUIRE_REQUEST_HASH:-true}"
       # ── Diagnostics / misc ──
       DIAGNOSTICS_ENABLED: "${DIAGNOSTICS_ENABLED:-true}"
       REQUEST_TIMEOUT_MS: "${REQUEST_TIMEOUT_MS:-30000}"

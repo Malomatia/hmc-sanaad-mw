@@ -34,7 +34,6 @@ services:
       ORACLE_QUEUE_TIMEOUT_MS: "${ORACLE_QUEUE_TIMEOUT_MS:-25000}"
       ORACLE_CALL_TIMEOUT_MS: "${ORACLE_CALL_TIMEOUT_MS:-25000}"
       ORACLE_DISABLED: "${ORACLE_DISABLED:-false}"
-      ORACLE_SQL_ENABLED: "${ORACLE_SQL_ENABLED:-true}"
       # Thick mode needs the Oracle Client libs baked into the image (see Dockerfile/DOCKER.md).
       ORACLE_THICK_MODE: "${ORACLE_THICK_MODE:-true}"
       ORACLE_CLIENT_LIB_DIR: "${ORACLE_CLIENT_LIB_DIR:-}"
@@ -92,7 +91,6 @@ services:
       USERS_DB_ENCRYPT: "${USERS_DB_ENCRYPT:-true}"
       USERS_DB_TRUST_SERVER_CERT: "${USERS_DB_TRUST_SERVER_CERT:-false}"
       USERS_DB_DISABLED: "${USERS_DB_DISABLED:-false}"
-      USERS_DB_SQL_ENABLED: "${USERS_DB_SQL_ENABLED:-false}"
       # ── MOTC SMS gateway DB (OTP delivery via MOTC_SMS_PushTable) ──
       # OTP_STORE=legacy (default since 2026-09-03) stores/validates OTPs in
       # HMC_RHAP_OTP_tbl; OTP_DELIVERY picks the SMS path (motc = push table).
@@ -118,7 +116,6 @@ services:
       MOTC_SMS_DB_ENCRYPT: "${MOTC_SMS_DB_ENCRYPT:-true}"
       MOTC_SMS_DB_TRUST_SERVER_CERT: "${MOTC_SMS_DB_TRUST_SERVER_CERT:-false}"
       MOTC_SMS_DB_DISABLED: "${MOTC_SMS_DB_DISABLED:-false}"
-      MOTC_SMS_SQL_ENABLED: "${MOTC_SMS_SQL_ENABLED:-true}"
       # Fixed columns of the documented INSERT (values pending from the client).
       # Leave BUSINESS_PARAM1/2 empty so they carry username + IMEI (what lets
       # validation find "the latest OTP for THIS user+device").

@@ -67,20 +67,3 @@ export interface ApiLogPage {
   offset: number;
   items: ApiLogEntry[];
 }
-
-export interface ApiLogStatistics {
-  totalRequestsToday: number;
-  successfulRequests: number;
-  failedRequests: number;
-  averageResponseTimeMs: number;
-  slowRequests: number;
-  activeUsers: number;
-  requestsPerHour: { hour: string; count: number }[];
-  successVsErrors: { success: number; error: number };
-  responseTimeTrend: { timestamp: string; responseTimeMs: number }[];
-  topEndpoints: { endpoint: string; count: number; averageResponseTimeMs: number }[];
-  errorCategories: { category: string; count: number }[];
-  requestsByMethod: { method: string; count: number }[];
-  bufferCapacity: number;
-  bufferSize: number;
-}

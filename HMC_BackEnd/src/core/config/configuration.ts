@@ -36,11 +36,6 @@ export interface OracleConfig {
   queueTimeout: number;
   callTimeout: number;
   disabled: boolean;
-  /**
-   * Enables POST /diagnostics/oracle/sql (ad-hoc SELECT-only console over the
-   * XXHMC_SND_* schema). Ignored in production - always 403 there.
- */
-  sqlConsoleEnabled: boolean;
   /** Use node-oracledb Thick mode (requires Oracle Client libraries at runtime). */
   thickMode: boolean;
   /** Optional path to the Oracle Client / Instant Client libraries for Thick mode. */
@@ -74,15 +69,13 @@ export interface DevConsoleConfig {
 }
 
 /**
- * Master switch for the observability/test surface: the diagnostics APIs
- * (`/diagnostics/*` - Oracle logs, oracle-object, the users-db and motc-sms-db
- * SQL consoles), the API request/response log (`/api-logs/*`), and the DB
- * connection-test endpoints (`/health/db`, `/health/users-db`,
+ * Master switch for the observability/test surface: the diagnostics API
+ * (`/diagnostics/oracle-logs`), the API request/response log (`/api-logs`),
+ * and the DB connection-test endpoints (`/health/db`, `/health/users-db`,
  * `/health/motc-sms-db`). The plain `/health` liveness endpoint is NOT gated
  * (the gateway's dependency check relies on it). Disabled routes return 404,
- * so probing cannot tell the features exist. Finer-grained flags
- * (USERS_DB_SQL_ENABLED, MOTC_SMS_SQL_ENABLED, DEV_CONSOLE_ENABLED) still
- * apply on top when this is on.
+ * so probing cannot tell the features exist. DEV_CONSOLE_ENABLED still
+ * applies on top when this is on.
  */
 export interface DiagnosticsConfig {
   /** DIAGNOSTICS_ENABLED - defaults to true; set false to remove the routes. */
@@ -169,11 +162,6 @@ export interface UsersDbConfig {
    * so existing .env/compose files with USERS_DB_DISABLED don't break parsing.
  */
   disabled: boolean;
-  /**
-   * Enables POST /diagnostics/users-db/sql (ad-hoc SELECT console). Ignored in
-   * production - the endpoint is always 403 there regardless of this flag.
- */
-  sqlConsoleEnabled: boolean;
 }
 
 /**
@@ -212,12 +200,6 @@ export interface MotcSmsConfig {
   encrypt: boolean;
   trustServerCertificate: boolean;
   disabled: boolean;
-  /**
-   * POST /diagnostics/motc-sms-db/sql (ad-hoc SELECT console). TEMPORARILY
-   * ignored (client request 2026-09-03): the console is ungated like the
-   * Oracle one - restore the flag + production checks before hardening.
- */
-  sqlConsoleEnabled: boolean;
   /** Push/outbox table name (interpolated as an identifier - validated). */
   table: string;
   /**
@@ -264,9 +246,9 @@ export interface MotcSmsConfig {
 
 /**
  * SMTP email delivery: the OTP fallback channel for users with no mobile
- * number in the directory, and the diagnostics test email. Unset SMTP_HOST =
- * masked log-only in non-production, hard failure in production (same
- * contract as the SMS adapter).
+ * number in the directory. Unset SMTP_HOST = masked log-only in
+ * non-production, hard failure in production (same contract as the SMS
+ * adapter).
  */
 export interface EmailConfig {
   smtpHost: string;
@@ -610,8 +592,6 @@ export default (): RootConfig => ({
     queueTimeout: Number(process.env.ORACLE_QUEUE_TIMEOUT_MS ?? 25000),
     callTimeout: Number(process.env.ORACLE_CALL_TIMEOUT_MS ?? 25000),
     disabled: toBool(process.env.ORACLE_DISABLED),
-    // Default ON (client request): production is still a hard 403 regardless.
-    sqlConsoleEnabled: toBool(process.env.ORACLE_SQL_ENABLED ?? 'true'),
     thickMode: toBool(process.env.ORACLE_THICK_MODE ?? 'true'),
     libDir: process.env.ORACLE_CLIENT_LIB_DIR || undefined,
   },
@@ -641,7 +621,6 @@ export default (): RootConfig => ({
     encrypt: toBool(process.env.USERS_DB_ENCRYPT ?? 'true'),
     trustServerCertificate: toBool(process.env.USERS_DB_TRUST_SERVER_CERT ?? 'false'),
     disabled: toBool(process.env.USERS_DB_DISABLED),
-    sqlConsoleEnabled: toBool(process.env.USERS_DB_SQL_ENABLED),
   },
   motcSms: {
     host: process.env.MOTC_SMS_DB_HOST ?? '',
@@ -656,7 +635,6 @@ export default (): RootConfig => ({
     encrypt: toBool(process.env.MOTC_SMS_DB_ENCRYPT ?? 'true'),
     trustServerCertificate: toBool(process.env.MOTC_SMS_DB_TRUST_SERVER_CERT ?? 'false'),
     disabled: toBool(process.env.MOTC_SMS_DB_DISABLED),
-    sqlConsoleEnabled: toBool(process.env.MOTC_SMS_SQL_ENABLED),
     table: process.env.MOTC_SMS_TABLE ?? 'MOTC_SMS_PushTable',
     employeeMasterView: process.env.MOTC_SMS_EMPLOYEE_MASTER_VIEW ?? 'HMC_SND_LIV_EMP_MASTER_VW',
     appId: process.env.MOTC_SMS_APP_ID ?? '',

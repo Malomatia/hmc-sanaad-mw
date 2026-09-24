@@ -99,12 +99,33 @@ Related runtime behaviour:
   pool `ORACLE_QUEUE_TIMEOUT_MS`, both default 25 s, so a hung statement cannot
   outlive the HTTP 30 s timeout or exhaust the pool.
 
-Diagnostics endpoints for investigating a failure:
+Diagnostics endpoints for investigating a failure (both behind
+`DIAGNOSTICS_ENABLED=true` + `x-console-token`, 404 in production):
 
 | Endpoint | Purpose |
 |---|---|
 | `GET /api/v1/diagnostics/oracle-logs` | Every Oracle call made, with SQL, sanitized binds, duration and ORA code |
-| `GET /api/v1/diagnostics/oracle-logs/stats` | Aggregates per object |
+| `GET /api/v1/api-logs` | Every HTTP request/response the backend served, filterable |
+
+These two are the ONLY routes left under `/diagnostics` and `/api-logs`. The
+penetration-test remediation (branch `pentration-test-issues-fix`, 2026-09-24)
+removed the rest: the three ad-hoc SQL consoles (`oracle/sql`, `users-db/sql`,
+`motc-sms-db/sql`), `oracle-views`, `oracle-object`, the two HTML dashboards
+(`oracle-logs/view`, `api-logs/view`), `oracle-logs/stats`, the `DELETE`
+buffer-clear routes, `api-logs/{statistics,errors,success,slow,:id}` and
+`POST /diagnostics/email/test`, together with their `*_SQL_ENABLED` env flags.
+Do not bring them back on this branch; the `/dev-console` worksheet
+(`DEV_CONSOLE_*`) was outside that scope and is untouched.
+
+Consequence for the workspace `tools/` scripts: everything that reads Oracle
+through `/dev-console` (`tools/console.js sql|src|desc`, `grepsrc.js`,
+`kony-template-map.js`) and everything that reads `/diagnostics/oracle-logs`
+(`fetch-diag.js`, `binds.js`, `diag-*.js`) still works. Scripts built on the
+removed consoles no longer do: `sql.js`, `check-inlist.js`, `find-fcm.js`,
+`live-status.js` (Oracle — use `console.js sql` instead), and `last-otp.js`,
+`check-notif-*.js`, `check-unregister.js`, `cleanup-test-tokens.js`,
+`find-fcm2/3.js` (Users DB — no remote substitute exists; the dev console is
+Oracle-only).
 
 Submit endpoints accept the specification's `p_*` payload directly; parameter
 lookup tolerates the `p_` prefix being present on only one side.
@@ -461,8 +482,8 @@ responses as examples.
 - **Pointing the approvals reads at someone else (non-production only).** Ops
   20, 21, 21b and 23 honour a client-supplied `?enum=`/`?username=` as an
   ADDITIONAL scope when `NODE_ENV !== 'production'`, and ignore it inside
-  production — the same rule the SQL consoles use, so there is no extra switch
-  to set or to leak. That is how a tester gets real rows without an approver
+  production — the same rule the diagnostics guard uses, so there is no extra
+  switch to set or to leak. That is how a tester gets real rows without an approver
   account: `GET /approvals?enum=027303` returns that approver's 33, and
   `:id/details` will open one of their requests because the ownership check is
   widened by the same value. In production the parameter is dropped, because
@@ -984,10 +1005,12 @@ This supersedes the earlier automatic-discovery behavior. `OracleSchemaService`
 is injected with `OracleContractCatalog` from `core/database/oracle-contracts.ts`;
 its lookups read compiled definitions and never query Oracle. The catalog's
 column lists define supported filters, not a complete database-schema export.
-`OracleMetadataService` remains private to `OracleModule` for optional column
-reads (`ALL_TAB_COLUMNS` only). `GET /diagnostics/oracle-object` and
-`GET /dev-console/describe` are removed; no HTTP route may query `ALL_ARGUMENTS`.
-Do not inject the live dictionary reader into business modules.
+`OracleMetadataService` is no longer registered as a provider anywhere (its
+only injector was the removed `GET /diagnostics/oracle-object`); the class
+stays in `core/database/oracle-metadata.service.ts` because the contract
+catalog imports its `OracleArgumentInfo`/`OracleColumnInfo` types and the
+schema-service spec exercises it directly. Do not inject the live dictionary
+reader into business modules or expose it over HTTP again.
 
 The generic submit/cursor helpers require a registered contract. They no longer
 append guessed OUT names, assume a cursor name, or guess a view's first key.

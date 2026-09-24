@@ -94,7 +94,7 @@ describe('NotificationTriggerInterceptor', () => {
 
     await firstValueFrom(
       interceptor.intercept(
-        context('POST', '/api/v1/diagnostics/oracle/sql'),
+        context('POST', '/api/v1/leave/calculate'),
         handler({ rows: [] }),
       ),
     );

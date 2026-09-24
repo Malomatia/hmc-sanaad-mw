@@ -378,18 +378,8 @@ const MODULES = [
   {
     folder: 'Internal - Diagnostics (dev only)',
     items: [
-      { name: 'Oracle logs dashboard', method: 'GET', p: 'diagnostics/oracle-logs/view', auth: 'bearer', kind: 'raw', success: '<html>...</html>', errors: [401, 500] },
       { name: 'Oracle logs (JSON)', method: 'GET', p: 'diagnostics/oracle-logs', auth: 'bearer', kind: 'read', query: { limit: '100' }, success: { items: [], total: 0 }, errors: [401, 500] },
-      { name: 'Oracle logs stats', method: 'GET', p: 'diagnostics/oracle-logs/stats', auth: 'bearer', kind: 'read', success: {}, errors: [401, 500] },
-      { name: 'Clear Oracle log buffer', method: 'DELETE', p: 'diagnostics/oracle-logs', auth: 'bearer', kind: 'action', success: { cleared: true }, errors: [401, 500] },
-      { name: 'API logs dashboard', method: 'GET', p: 'api-logs/view', auth: 'bearer', kind: 'raw', success: '<html>...</html>', errors: [401, 500] },
       { name: 'API logs (JSON)', method: 'GET', p: 'api-logs', auth: 'bearer', kind: 'read', query: { limit: '100' }, success: { items: [], total: 0 }, errors: [401, 500] },
-      { name: 'API logs statistics', method: 'GET', p: 'api-logs/statistics', auth: 'bearer', kind: 'read', success: {}, errors: [401, 500] },
-      { name: 'API logs — errors only', method: 'GET', p: 'api-logs/errors', auth: 'bearer', kind: 'read', success: { items: [], total: 0 }, errors: [401, 500] },
-      { name: 'API logs — success only', method: 'GET', p: 'api-logs/success', auth: 'bearer', kind: 'read', success: { items: [], total: 0 }, errors: [401, 500] },
-      { name: 'API logs — slow requests', method: 'GET', p: 'api-logs/slow', auth: 'bearer', kind: 'read', success: { items: [], total: 0 }, errors: [401, 500] },
-      { name: 'API log by id', method: 'GET', p: 'api-logs/:id', auth: 'bearer', kind: 'read', pathVar: { id: '1' }, success: {}, errors: [401, 404, 500] },
-      { name: 'Clear API log buffer', method: 'DELETE', p: 'api-logs', auth: 'bearer', kind: 'action', success: { cleared: true }, errors: [401, 500] },
     ],
   },
 ];

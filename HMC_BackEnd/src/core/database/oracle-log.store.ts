@@ -59,17 +59,6 @@ export interface OracleLogPage {
   items: OracleLogEntry[];
 }
 
-export interface OracleLogStats {
-  total: number;
-  success: number;
-  error: number;
-  capacity: number;
-  avgDurationMs: number | null;
-  byObject: { object: string; count: number; errors: number }[];
-  oldest: string | null;
-  newest: string | null;
-}
-
 /**
  * Bounded in-memory ring buffer of Oracle call records, populated by
  * OracleService and served by the diagnostics API. Capacity-limited so it never
@@ -112,43 +101,6 @@ export class OracleLogStore {
     const total = filtered.length;
     const items = filtered.slice(offset, offset + limit);
     return { total, count: items.length, limit, offset, items };
-  }
-
-  stats(): OracleLogStats {
-    const total = this.entries.length;
-    const success = this.entries.filter((e) => e.status === 'success').length;
-    const durations = this.entries.map((e) => e.durationMs).filter((d) => Number.isFinite(d));
-    const avg = durations.length
-      ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length)
-      : null;
-
-    const byObjectMap = new Map<string, { count: number; errors: number }>();
-    for (const e of this.entries) {
-      const agg = byObjectMap.get(e.object) ?? { count: 0, errors: 0 };
-      agg.count += 1;
-      if (e.status === 'error') agg.errors += 1;
-      byObjectMap.set(e.object, agg);
-    }
-    const byObject = [...byObjectMap.entries()]
-      .map(([object, v]) => ({ object, ...v }))
-      .sort((a, b) => b.count - a.count);
-
-    return {
-      total,
-      success,
-      error: total - success,
-      capacity: this.capacity,
-      avgDurationMs: avg,
-      byObject,
-      oldest: this.entries[0]?.timestamp ?? null,
-      newest: this.entries[total - 1]?.timestamp ?? null,
-    };
-  }
-
-  clear(): number {
-    const n = this.entries.length;
-    this.entries.length = 0;
-    return n;
   }
 
   /**

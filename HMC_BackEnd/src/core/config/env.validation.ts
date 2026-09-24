@@ -26,8 +26,6 @@ export const envValidationSchema = Joi.object({
   ORACLE_QUEUE_TIMEOUT_MS: Joi.number().min(1).default(25000),
   ORACLE_CALL_TIMEOUT_MS: Joi.number().min(1).default(25000),
   ORACLE_DISABLED: Joi.boolean().default(false),
-  // Enables POST /diagnostics/oracle/sql (SELECT-only console; 403 in production).
-  ORACLE_SQL_ENABLED: Joi.boolean().default(true),
   // Thick mode: requires Oracle Client libraries installed at runtime.
   ORACLE_THICK_MODE: Joi.boolean().default(true),
   ORACLE_CLIENT_LIB_DIR: Joi.string().allow('').default(''),
@@ -59,7 +57,6 @@ export const envValidationSchema = Joi.object({
   MOTC_SMS_DB_ENCRYPT: Joi.boolean().default(true),
   MOTC_SMS_DB_TRUST_SERVER_CERT: Joi.boolean().default(false),
   MOTC_SMS_DB_DISABLED: Joi.boolean().default(false),
-  MOTC_SMS_SQL_ENABLED: Joi.boolean().default(true),
   MOTC_SMS_TABLE: Joi.string().default('MOTC_SMS_PushTable'),
   MOTC_SMS_EMPLOYEE_MASTER_VIEW: Joi.string().default('HMC_SND_LIV_EMP_MASTER_VW'),
   MOTC_SMS_APP_ID: Joi.string().allow('').default(''),
@@ -86,7 +83,7 @@ export const envValidationSchema = Joi.object({
     'OTP to register for Sanaad App is {otp}\n\nرمز التحقق للتسجيل في تطبيق سند هو {otp}',
   ),
 
-  // SMTP email (OTP fallback for users with no mobile + diagnostics test email)
+  // SMTP email (OTP fallback for users with no mobile)
   SMTP_HOST: Joi.string().allow('').default(''),
   SMTP_PORT: Joi.number().default(587),
   SMTP_SECURE: Joi.boolean().default(false),

@@ -19,10 +19,10 @@ import {
   StatusMessageDto,
 } from './dto/auth.dto';
 import {
+  InitiateResponseDto,
   SendOtpRequestDto,
   SendOtpResponseDto,
   UserValidateRequestDto,
-  UserValidateResponseDto,
   ValidateOtpRequestDto,
   ValidateOtpResponseDto,
 } from './dto/onboarding.dto';
@@ -52,11 +52,11 @@ export class AuthController {
   @HttpCode(200)
   @Post('initiate')
   @ApiOperation({ summary: 'API-2 — User Validate (LDAP + send OTP)', operationId: 'auth_initiate' })
-  @ApiOkResponse({ type: SendOtpResponseDto })
+  @ApiOkResponse({ type: InitiateResponseDto })
   initiate(
     @Body() dto: UserValidateRequestDto,
     @Lang() lang: LangCode,
-  ): Promise<UserValidateResponseDto> {
+  ): Promise<InitiateResponseDto> {
     return this.onboarding.validateUser(dto, lang);
   }
 

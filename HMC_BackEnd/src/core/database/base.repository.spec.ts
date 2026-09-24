@@ -552,7 +552,7 @@ describe('BaseOracleRepository.toSubmitResult', () => {
       'failed: SELECT NVL(days, 0) FROM absence_table WHERE id = :1',
     ]) {
       const result = repo.expose({ p_success_flag: 'N', p_error_msg: leak });
-      expect(result.errormessage).toBe('The database request failed.');
+      expect(result.errormessage).toBe('Something went wrong. Please try again. If the issue persists, contact Ounak Support.');
     }
   });
 

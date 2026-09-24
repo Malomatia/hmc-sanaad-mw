@@ -79,16 +79,18 @@ const PII_FIELDS = [
   'employeenumber',
   'jobname',
   'department',
-  'email',
   'emailunmasked',
-  'employeephonenumber',
   'employeephonenumberunmasked',
-  'newuser',
-  'vflag',
   'employeeflag',
   'devicestatus',
-  'otpmode',
 ];
+const CONTACT = { email: 'em******@example.test', employeephonenumber: 'XXXXX169' };
+const INITIATE_EXTRA = {
+  new: { ...CONTACT, newuser: 'Yes', vflag: 'New', otpmode: 'SMS', elapsedtimeinmins: 5 },
+  pending: { ...CONTACT, newuser: 'Yes', vflag: 'Pending', otpmode: 'Email', elapsedtimeinmins: 2 },
+  existing: { ...CONTACT, newuser: 'No', vflag: 'Exist' },
+  unknown: {},
+};
 
 describe('Onboarding security boundaries', () => {
   it('never delivers an authentication OTP to caller-selected contacts', async () => {
@@ -109,7 +111,7 @@ describe('Onboarding security boundaries', () => {
   });
 
   it.each(['new', 'existing', 'unknown', 'pending'] as const)(
-    'does not expose identity or registration state for %s users',
+    'returns the masked contact and OTP state (as on main) for %s users',
     async (kind) => {
       const { service, otp, devices } = makeService({
         identity: { isEmployee: kind !== 'unknown' },
@@ -127,12 +129,32 @@ describe('Onboarding security boundaries', () => {
         status: 'success',
         message: GENERIC,
         requestid: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/),
+        ...INITIATE_EXTRA[kind],
       });
       for (const key of PII_FIELDS) expect(result).not.toHaveProperty(key);
-      if (kind === 'unknown') expect(devices.bind).not.toHaveBeenCalled();
+      if (kind === 'unknown') {
+        for (const key of Object.keys(INITIATE_EXTRA.new)) expect(result).not.toHaveProperty(key);
+        expect(devices.bind).not.toHaveBeenCalled();
+      }
       if (kind === 'existing' || kind === 'unknown') expect(otp.send).not.toHaveBeenCalled();
     },
   );
+
+  it('returns only the masked contact on initiate, and none of it on send-otp', async () => {
+    const { service } = makeService();
+    const initiate = await service.validateUser(DTO);
+    expect(JSON.stringify(initiate)).not.toContain(IDENTITY.email);
+    expect(JSON.stringify(initiate)).not.toContain(IDENTITY.phoneNumber);
+    const sent = await service.sendOtp(DTO);
+    for (const key of Object.keys(INITIATE_EXTRA.new)) expect(sent).not.toHaveProperty(key);
+  });
+
+  it('omits a contact channel the directory does not have', async () => {
+    const { service } = makeService({ identity: { phoneNumber: undefined } });
+    const result = await service.validateUser(DTO);
+    expect(result.email).toBe('em******@example.test');
+    expect(result).not.toHaveProperty('employeephonenumber');
+  });
 
   it('creates an inactive registration before sending the onboarding OTP', async () => {
     const { service, devices, otp } = makeService();

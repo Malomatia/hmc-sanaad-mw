@@ -12,6 +12,8 @@ import { EMP_KEY_COLUMN, USERNAME_COLUMN } from '@shared/constants/oracle-column
 import {
   CATEGORY_MESSAGE,
   ErrorCategory,
+  GENERIC_ERROR_MESSAGE,
+  containsOracleFlexError,
   extractOracleErrorText,
   looksSensitive,
 } from '../http/error-category';
@@ -730,6 +732,7 @@ export abstract class BaseOracleRepository {
           ? 'No matching record was found for this request, or it has already been processed.'
           : 'Operation failed');
     let safeMessageAr = messageAr ? safeDecodeUri(messageAr) : undefined;
+    const flexError = containsOracleFlexError(message) || containsOracleFlexError(safeMessageAr);
 
     // This channel (op result, HTTP 200) bypasses the exception filter, so an
     // Oracle proc surfacing an ORA-/PLS- error or SQL text in p_message must be
@@ -755,6 +758,10 @@ export abstract class BaseOracleRepository {
     }
     if (!isSuccess && looksSensitive(safeMessageAr)) {
       safeMessageAr = extractOracleErrorText(safeMessageAr);
+    }
+    if (!isSuccess && flexError) {
+      errormessage = GENERIC_ERROR_MESSAGE.en;
+      safeMessageAr = GENERIC_ERROR_MESSAGE.ar;
     }
 
     return {

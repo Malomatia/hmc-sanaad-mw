@@ -163,6 +163,39 @@ export class SendOtpResponseDto {
   message?: string;
 }
 
+/** API-2 — generic OTP response plus the employee's masked contact and OTP state. */
+export class InitiateResponseDto extends SendOtpResponseDto {
+  @ApiPropertyOptional({
+    example: 'MK****@hamad.qa',
+    description: 'Masked — first 2 characters visible. Absent when unknown.',
+  })
+  email?: string;
+
+  @ApiPropertyOptional({
+    example: 'XXXXX206',
+    description: 'Masked — only the last 3 digits visible. Absent when unknown.',
+  })
+  employeephonenumber?: string;
+
+  @ApiPropertyOptional({ example: 'Yes', description: 'First-time user flag.' })
+  newuser?: string;
+
+  @ApiPropertyOptional({
+    example: 'New',
+    enum: ['New', 'Pending', 'Exist'],
+    description:
+      'New = a fresh OTP was stored · Pending = a still-valid unused OTP was kept · ' +
+      'Exist = existing user (newuser=No), no OTP.',
+  })
+  vflag?: string;
+
+  @ApiPropertyOptional({ example: 'SMS', enum: ['SMS', 'Email'] })
+  otpmode?: string;
+
+  @ApiPropertyOptional({ example: 2, description: 'Minutes the OTP is still valid for.' })
+  elapsedtimeinmins?: number;
+}
+
 /** API-3 — Validate OTP request. */
 export class ValidateOtpRequestDto extends ClientContextDto {
   @ApiProperty({ example: '232323' })

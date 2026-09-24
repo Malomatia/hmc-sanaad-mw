@@ -13,6 +13,7 @@ import {
 } from '../domain/ports/device-registry.port';
 import { EmployeeIdentity } from '../domain/auth-identity';
 import {
+  InitiateResponseDto,
   SendOtpRequestDto,
   SendOtpResponseDto,
   UserValidateRequestDto,
@@ -33,6 +34,16 @@ const MESSAGES: Record<'invalidUsername' | 'otpSent' | 'otpPending', Record<Lang
     ar: 'تم إرسال رمز التحقق مسبقاً وما زال صالحاً',
   },
 };
+
+/** Fields /auth/initiate returns on top of the generic OTP response (as on main). */
+const INITIATE_FIELDS: readonly (keyof InitiateResponseDto & keyof UserValidateResponseDto)[] = [
+  'email',
+  'employeephonenumber',
+  'newuser',
+  'vflag',
+  'otpmode',
+  'elapsedtimeinmins',
+];
 
 /**
  * API-2 (User Validate) + API-3 (Validate OTP). Reworked flow (client request
@@ -74,10 +85,23 @@ export class OnboardingService {
       config.get<string>('app.nodeEnv', 'development') !== 'production';
   }
 
+  /**
+   * API-2 — the generic OTP response plus the MASKED contact and OTP state
+   * (as on main). Only the masked contact forms are returned; the unmasked
+   * values stay server-side.
+   */
   async validateUser(
     dto: UserValidateRequestDto,
     lang: Lang = DEFAULT_LANG,
-  ): Promise<SendOtpResponseDto> {
+  ): Promise<InitiateResponseDto> {
+    const result = await this.initiate(dto, lang);
+    const extra = Object.fromEntries(
+      INITIATE_FIELDS.filter((key) => result[key] !== undefined).map((key) => [key, result[key]]),
+    );
+    return { ...this.genericOtpResponse(result, lang), ...extra };
+  }
+
+  private async initiate(dto: UserValidateRequestDto, lang: Lang): Promise<UserValidateResponseDto> {
     if (!this.devBypass) {
       await this.state.limit(
         'otp-send',
@@ -86,7 +110,10 @@ export class OnboardingService {
         this.config.get<number>('otp.resendWindowSeconds', 60),
       );
     }
-    const result = await this.validateUserInternal(dto, lang);
+    return this.validateUserInternal(dto, lang);
+  }
+
+  private genericOtpResponse(result: UserValidateResponseDto, lang: Lang): SendOtpResponseDto {
     return {
       status: 'success',
       message:
@@ -228,7 +255,7 @@ export class OnboardingService {
    * /auth/otp/validate.
    */
   async sendOtp(dto: SendOtpRequestDto, lang: Lang = DEFAULT_LANG): Promise<SendOtpResponseDto> {
-    return this.validateUser(dto, lang);
+    return this.genericOtpResponse(await this.initiate(dto, lang), lang);
   }
 
   private otpResponse(otp: string | undefined): { otp?: string } {

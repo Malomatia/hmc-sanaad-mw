@@ -28,6 +28,8 @@ describe('looksSensitive', () => {
     'UPDATE absence_table SET days = 0',
     'BEGIN XYZ_PKG.run(:p); END;',
     'error in XXHMC_SND_LEAV_OF_ABSEN_NEW_PR',
+    'FLEX-VALUE DOES NOT EXIST',
+    'flexfield validation failed',
     'at Object.<anonymous> (/app/dist/main.js:1:1)\n    at process',
   ])('still flags technical detail: %s', (text) => {
     expect(looksSensitive(text)).toBe(true);
@@ -98,11 +100,11 @@ describe('classifyException — readable Oracle errors', () => {
     'ORA-06512: at "APPS.PKG", line 4',
     'ORA-00942:',
   ])('keeps internal details out of the API: %s', (raw) => {
-    expect(classifyException(new OracleQueryError(raw)).message).toBe('The database request failed.');
+    expect(classifyException(new OracleQueryError(raw)).message).toBe('Something went wrong. Please try again. If the issue persists, contact Ounak Support.');
   });
 
   it('uses the new fallback when no Oracle description exists', () => {
-    expect(classifyException(new OracleUnavailableException()).message).toBe('The database request failed.');
+    expect(classifyException(new OracleUnavailableException()).message).toBe('Something went wrong. Please try again. If the issue persists, contact Ounak Support.');
   });
 });
 

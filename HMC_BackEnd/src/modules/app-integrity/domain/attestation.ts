@@ -22,6 +22,26 @@ export interface AttestKey {
   updatedAt?: Date;
 }
 
+/**
+ * Owner recorded for a key attested BEFORE login.
+ *
+ * iOS attests as soon as the app starts, and there is no session yet — so the
+ * key is stored against the device that presented the challenge, and the first
+ * authenticated assertion claims it for that user. `LoginID` is NOT NULL and
+ * the client declined a device column, so the device is written into the same
+ * column behind a prefix no login can carry (`:` is not legal in an AD name,
+ * and employee numbers are digits). The column is NVARCHAR(100); a device id
+ * may itself be 100 characters, so the value is cut to fit — it is never
+ * looked up by, only recognised.
+ */
+export const UNBOUND_KEY_OWNER_PREFIX = 'device:';
+
+export const unboundKeyOwner = (deviceId: string): string =>
+  `${UNBOUND_KEY_OWNER_PREFIX}${deviceId}`.slice(0, 100);
+
+export const isUnboundKeyOwner = (owner: string): boolean =>
+  owner.startsWith(UNBOUND_KEY_OWNER_PREFIX);
+
 /** A server-issued nonce, so a client cannot attest against its own value. */
 export interface Challenge {
   value: string;

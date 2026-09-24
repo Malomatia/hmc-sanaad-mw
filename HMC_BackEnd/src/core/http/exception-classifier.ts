@@ -7,6 +7,8 @@ import {
   CATEGORY_MESSAGE,
   CATEGORY_STATUS,
   ErrorCategory,
+  GENERIC_ERROR_MESSAGE,
+  containsOracleFlexError,
   extractOracleErrorText,
 } from './error-category';
 
@@ -95,7 +97,9 @@ export function classifyException(exception: unknown): ClassifiedError {
 /** Oracle/PL-SQL errors: map a few well-known codes, everything else is a generic DB error. */
 function classifyOracle(ex: OracleQueryError): ClassifiedError {
   const code = ex.oraCode;
-  const message = extractOracleErrorText(ex.message);
+  const message = containsOracleFlexError(ex.message)
+    ? GENERIC_ERROR_MESSAGE.en
+    : extractOracleErrorText(ex.message);
   // ORA-01403 only escapes from a SELECT INTO inside a procedure, i.e. one of
   // the values we submitted did not resolve — the endpoint and the record are
   // both fine. Answering 404 "The requested resource was not found" therefore

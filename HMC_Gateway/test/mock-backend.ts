@@ -42,6 +42,57 @@ export function startMockBackend(jwtSecret: string): Promise<MockBackend> {
         return;
       }
 
+      if (req.method === 'POST' && req.url === '/api/v1/app-integrity/challenge') {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            result: { challenge: 'mock-attestation-challenge' },
+            opstatus: 0,
+            status: 'success',
+            httpStatusCode: 200,
+          }),
+        );
+        return;
+      }
+
+      if (req.method === 'POST' && req.url === '/api/v1/app-integrity/ios/register') {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            result: { message: 'Device attested.' },
+            opstatus: 0,
+            status: 'success',
+            httpStatusCode: 200,
+          }),
+        );
+        return;
+      }
+
+      if (req.method === 'POST' && req.url === '/api/v1/app-integrity/android/verify') {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            result: { verified: false, reason: 'Play Integrity is not configured' },
+            opstatus: 0,
+            status: 'success',
+            httpStatusCode: 200,
+          }),
+        );
+        return;
+      }
+
+      if (req.method === 'GET' && req.url === '/api/v1/app-setting') {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            terms_and_conditions_status: true,
+            terms_and_conditions_url: 'https://example.com/terms',
+            privacy_policy_url: 'https://www.hamad.qa/EN/Sanad/Pages/Privacy-Policy.html',
+          }),
+        );
+        return;
+      }
+
       if (req.url?.startsWith('/api/v1/slow')) {
         // Never responds — used to exercise the gateway's timeout handling.
         return;

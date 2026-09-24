@@ -37,6 +37,11 @@ export enum ErrorCategory {
   SCHEMA_MISMATCH = 'SCHEMA_MISMATCH',
 }
 
+export const GENERIC_ERROR_MESSAGE = Object.freeze({
+  en: 'Something went wrong. Please try again. If the issue persists, contact Ounak Support.',
+  ar: 'حدث خطأ ما. يرجى المحاولة مرة أخرى. إذا استمرت المشكلة، يرجى التواصل مع فريق دعم عونك.',
+});
+
 /** Safe, high-level message shown to clients per category (English). */
 export const CATEGORY_MESSAGE: Readonly<Record<ErrorCategory, string>> = Object.freeze({
   [ErrorCategory.VALIDATION_ERROR]: 'Validation failed.',
@@ -48,14 +53,14 @@ export const CATEGORY_MESSAGE: Readonly<Record<ErrorCategory, string>> = Object.
     'lookup (LOV) endpoint — the letter name and language must be a valid pair, and ' +
     'the phone number and delivery location must be ones already on record.',
   [ErrorCategory.BUSINESS_RULE_ERROR]: 'The requested operation cannot be completed.',
-  [ErrorCategory.DATABASE_ERROR]: 'The database request failed.',
+  [ErrorCategory.DATABASE_ERROR]: GENERIC_ERROR_MESSAGE.en,
   [ErrorCategory.EXTERNAL_SERVICE_ERROR]: 'An external service is currently unavailable.',
   [ErrorCategory.TIMEOUT]: 'The request took too long to process. Please try again.',
   [ErrorCategory.PAYLOAD_TOO_LARGE]:
     'The request is too large. Attachments are sent as base64, which makes them about a third ' +
     'bigger than the file — compress the file and try again.',
-  [ErrorCategory.APPLICATION_ERROR]: 'An unexpected application error occurred.',
-  [ErrorCategory.UNKNOWN_ERROR]: 'An unexpected error occurred.',
+  [ErrorCategory.APPLICATION_ERROR]: GENERIC_ERROR_MESSAGE.en,
+  [ErrorCategory.UNKNOWN_ERROR]: GENERIC_ERROR_MESSAGE.en,
   [ErrorCategory.SCHEMA_MISMATCH]: 'Success.',
 });
 
@@ -69,15 +74,14 @@ export const CATEGORY_MESSAGE_AR: Readonly<Record<ErrorCategory, string>> = Obje
     'إحدى القيم المُرسلة غير معروفة. يرجى التحقق من كل قيمة مقابل قائمة الاختيار الخاصة بها — ' +
     'اسم الخطاب ولغته يجب أن يكونا زوجًا صحيحًا، ورقم الهاتف وموقع التسليم يجب أن يكونا مسجَّلين مسبقًا.',
   [ErrorCategory.BUSINESS_RULE_ERROR]: 'تعذر إتمام العملية المطلوبة.',
-  [ErrorCategory.DATABASE_ERROR]:
-    'تعذر إتمام عملية قاعدة البيانات. يرجى التواصل مع الدعم الفني إذا استمرت المشكلة.',
+  [ErrorCategory.DATABASE_ERROR]: GENERIC_ERROR_MESSAGE.ar,
   [ErrorCategory.EXTERNAL_SERVICE_ERROR]: 'الخدمة الخارجية غير متاحة حاليًا.',
   [ErrorCategory.TIMEOUT]: 'استغرق الطلب وقتًا طويلاً. يرجى المحاولة مرة أخرى.',
   [ErrorCategory.PAYLOAD_TOO_LARGE]:
     'حجم الطلب كبير جدًا. المرفقات تُرسل بترميز base64 مما يزيد حجمها بنحو الثلث — ' +
     'يرجى ضغط الملف وإعادة المحاولة.',
-  [ErrorCategory.APPLICATION_ERROR]: 'حدث خطأ غير متوقع في التطبيق.',
-  [ErrorCategory.UNKNOWN_ERROR]: 'حدث خطأ غير متوقع.',
+  [ErrorCategory.APPLICATION_ERROR]: GENERIC_ERROR_MESSAGE.ar,
+  [ErrorCategory.UNKNOWN_ERROR]: GENERIC_ERROR_MESSAGE.ar,
   [ErrorCategory.SCHEMA_MISMATCH]: 'تم بنجاح.',
 });
 
@@ -124,7 +128,10 @@ const SQL_QUERY_PATTERN = /\bSELECT\b[\s\S]{0,500}?\bFROM\b/;
 
 /** True when `text` contains internal detail that must not be exposed to clients. */
 export function looksSensitive(text?: string | null): boolean {
-  return !!text && (SENSITIVE_PATTERN.test(text) || SQL_QUERY_PATTERN.test(text));
+  return (
+    !!text &&
+    (containsOracleFlexError(text) || SENSITIVE_PATTERN.test(text) || SQL_QUERY_PATTERN.test(text))
+  );
 }
 
 /**
@@ -141,8 +148,12 @@ export function extractBusinessRaiseText(message?: string | null): string | unde
   return text && !looksSensitive(text) ? text : undefined;
 }
 
+export function containsOracleFlexError(message?: string | null): boolean {
+  return !!message && /FLEX/i.test(message);
+}
+
 export function extractOracleErrorText(message?: string | null): string | undefined {
-  if (!message) return undefined;
+  if (!message || containsOracleFlexError(message)) return undefined;
   const diagnostics = /\b(ORA|PLS)-(\d{3,5}):\s*([\s\S]*?)(?=\b(?:ORA|PLS)-\d{3,5}:|$)/gi;
   for (const match of message.matchAll(diagnostics)) {
     if (match[1].toUpperCase() === 'ORA' && [6512, 6550].includes(Number(match[2]))) continue;
@@ -157,10 +168,18 @@ export function extractOracleErrorText(message?: string | null): string | undefi
   return undefined;
 }
 
-export function sanitizeOracleMessage(message: string | null | undefined): string | null | undefined {
+export function sanitizeOracleMessage(
+  message: string | null | undefined,
+  lang: 'en' | 'ar' = 'en',
+): string | null | undefined {
+  if (containsOracleFlexError(message)) return GENERIC_ERROR_MESSAGE[lang];
   if (!message || !looksSensitive(message)) return message;
   const category = /\bORA-20\d{3}:/i.test(message)
     ? ErrorCategory.BUSINESS_RULE_ERROR
     : ErrorCategory.DATABASE_ERROR;
-  return extractOracleErrorText(message) ?? CATEGORY_MESSAGE[category];
+  const fallback = CATEGORY_MESSAGE[category];
+  return (
+    extractOracleErrorText(message) ??
+    (fallback === GENERIC_ERROR_MESSAGE.en ? GENERIC_ERROR_MESSAGE[lang] : fallback)
+  );
 }

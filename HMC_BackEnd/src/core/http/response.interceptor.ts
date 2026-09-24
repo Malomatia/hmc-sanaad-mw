@@ -12,6 +12,7 @@ import { isSubmitResult } from '@shared/domain/submit-result';
 import { toLang } from '@shared/domain/lang';
 import { localizeArTwins } from '@shared/utils/localize.util';
 import { SanaadEnvelope } from '@shared/interfaces/sanaad-response.interface';
+import { GENERIC_ERROR_MESSAGE } from './error-category';
 
 const SUCCESS_MESSAGES = { en: 'Success', ar: 'تم الأرسال' } as const;
 
@@ -78,11 +79,13 @@ export class ResponseInterceptor implements NestInterceptor<unknown, SanaadEnvel
             preserveSubmitMessages === true || (preserveSubmitMessages === 'success' && succeeded);
           const messageLang = preserveMessage ? successLang : lang;
           const message =
-            succeeded && !preserveMessage
-              ? SUCCESS_MESSAGES[successLang]
-              : messageLang === 'ar'
-                ? (data.errormessageAr ?? data.errormessage)
-                : data.errormessage;
+            !succeeded && data.errormessage === GENERIC_ERROR_MESSAGE.en
+              ? GENERIC_ERROR_MESSAGE[successLang]
+              : succeeded && !preserveMessage
+                ? SUCCESS_MESSAGES[successLang]
+                : messageLang === 'ar'
+                  ? (data.errormessageAr ?? data.errormessage)
+                  : data.errormessage;
           return {
             status: data.status,
             successflag: data.successflag,

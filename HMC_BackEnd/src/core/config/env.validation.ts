@@ -125,6 +125,11 @@ export const envValidationSchema = Joi.object({
   APP_DOWNTIME_START: Joi.string().allow('').default(''),
   APP_DOWNTIME_END: Joi.string().allow('').default(''),
 
+  // Public app settings (GET /app-setting)
+  TERMS_AND_CONDITIONS_STATUS: Joi.boolean().default(false),
+  TERMS_AND_CONDITIONS_URL: Joi.string().uri().allow('').default(''),
+  PRIVACY_POLICY_URL: Joi.string().uri().allow(''),
+
   // Auth framework — MPIN policy
   MPIN_MIN_LENGTH: Joi.number().default(4),
   MPIN_MAX_LENGTH: Joi.number().default(6),

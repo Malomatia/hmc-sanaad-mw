@@ -105,6 +105,7 @@ services:
       OTP_STATIC_VALUE: "${OTP_STATIC_VALUE:-}"
       OTP_CHARSET: "${OTP_CHARSET:-numeric}"
       OTP_IN_RESPONSE: "${OTP_IN_RESPONSE:-false}"
+      OTP_TTL_SECONDS: "${OTP_TTL_SECONDS:-120}"
       MOTC_SMS_DB_HOST: '${MOTC_SMS_DB_HOST:-HSHCL7VVSQ1\SQL1}'
       MOTC_SMS_DB_PORT: "${MOTC_SMS_DB_PORT:-9001}"
       MOTC_SMS_DB_NAME: "${MOTC_SMS_DB_NAME:-MOTC_SMS}"
@@ -157,6 +158,10 @@ services:
       EMAIL_MESSAGE_TEMPLATE_AR: "${EMAIL_MESSAGE_TEMPLATE_AR:-رمز التحقق لتسجيل الدخول في تطبيق سند هو {otp}}"
       # ── App-launch health check (API-1) — AppName matched in the Users DB ──
       APP_NAME: "${APP_NAME:-SanaadHealth}"
+      # ── Public app settings (GET /app-setting) ──
+      TERMS_AND_CONDITIONS_STATUS: "${TERMS_AND_CONDITIONS_STATUS:-false}"
+      TERMS_AND_CONDITIONS_URL: "${TERMS_AND_CONDITIONS_URL:-}"
+      PRIVACY_POLICY_URL: "${PRIVACY_POLICY_URL:-https://www.hamad.qa/EN/Sanad/Pages/Privacy-Policy.html}"
       # ── Auth (JWT) — JWT_SECRET must come from the host env in production
       # and MUST match the gateway's JWT_SECRET (shared validation). ──
       JWT_SECRET: "${JWT_SECRET:-dev-only-secret-change-me}"

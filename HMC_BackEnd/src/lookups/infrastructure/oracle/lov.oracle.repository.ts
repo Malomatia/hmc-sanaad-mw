@@ -147,7 +147,7 @@ export class LovOracleRepository implements LovRepository {
       const value = options.leaveType.trim().toUpperCase();
       if (leaveTypeColumn === 'NAME') {
         conditions.push(`UPPER(${leaveTypeColumn}) LIKE :leaveType`);
-        binds.leaveType = `%${value}%`;
+        binds.leaveType = value;
       } else {
         conditions.push(`UPPER(${leaveTypeColumn}) = :leaveType`);
         binds.leaveType = value;

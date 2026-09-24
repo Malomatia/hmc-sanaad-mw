@@ -9,7 +9,7 @@ import { AllExceptionsFilter } from './all-exceptions.filter';
  * caller after a server bug. These cases pin the 413 and its message.
  */
 describe('gateway: oversized request body', () => {
-  function host(): { host: ArgumentsHost; sent: () => { status: number; body: unknown } } {
+  function host(queryLang?: string, headerLang?: string): { host: ArgumentsHost; sent: () => { status: number; body: unknown } } {
     let status = 0;
     let body: unknown;
     const res = {
@@ -22,7 +22,7 @@ describe('gateway: oversized request body', () => {
         return this;
       },
     };
-    const req = { method: 'POST', url: '/api/v1/dependents' };
+    const req = { method: 'POST', url: '/api/v1/dependents', query: { lang: queryLang }, headers: { lang: headerLang } };
     return {
       host: {
         switchToHttp: () => ({ getResponse: () => res, getRequest: () => req }),
@@ -51,6 +51,30 @@ describe('gateway: oversized request body', () => {
     expect(status).toBe(HttpStatus.PAYLOAD_TOO_LARGE);
     expect((body as { message: string }).message).toMatch(/too large/i);
     expect((body as { message: string }).message).toMatch(/compress/i);
+  });
+
+  it.each([
+    ['ar', undefined, true],
+    [undefined, 'ar', true],
+    ['en', 'ar', false],
+    ['ar', 'en', true],
+    ['unsupported', 'ar', false],
+    [undefined, undefined, false],
+  ] as const)('localizes generic failures for query=%s header=%s', (query, header, arabic) => {
+    for (const error of [new Error('private detail'), new HttpException('private detail', 500), 'unknown']) {
+      const { host: h, sent } = host(query, header);
+      new AllExceptionsFilter().catch(error, h);
+      expect(sent()).toEqual({
+        status: 500,
+        body: {
+          status: 'error',
+          message: arabic
+            ? 'حدث خطأ ما. يرجى المحاولة مرة أخرى. إذا استمرت المشكلة، يرجى التواصل مع فريق دعم عونك.'
+            : 'Something went wrong. Please try again. If the issue persists, contact Ounak Support.',
+          httpStatusCode: 500,
+        },
+      });
+    }
   });
 
   it('leaves other failures on 500', () => {

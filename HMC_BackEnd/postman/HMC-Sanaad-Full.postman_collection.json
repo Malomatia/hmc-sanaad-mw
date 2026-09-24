@@ -231,6 +231,75 @@
           ]
         },
         {
+          "name": "GET /app-setting",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Returns the terms & conditions settings\", function () {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.terms_and_conditions_status).to.be.a(\"boolean\");",
+                  "    pm.expect(body.terms_and_conditions_url).to.be.a(\"string\");",
+                  "    pm.expect(body.privacy_policy_url).to.be.a(\"string\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/app-setting",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "app-setting"
+              ]
+            },
+            "description": "**Purpose:** Public app settings. PUBLIC (no token), unwrapped (no envelope).\n\n`terms_and_conditions_status` (boolean) and `terms_and_conditions_url` (string, empty when unset) come from the backend env `TERMS_AND_CONDITIONS_STATUS` / `TERMS_AND_CONDITIONS_URL`; `privacy_policy_url` from `PRIVACY_POLICY_URL` (default https://www.hamad.qa/EN/Sanad/Pages/Privacy-Policy.html)."
+          },
+          "response": [
+            {
+              "name": "Success (200) — Expected",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/app-setting",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "app-setting"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"terms_and_conditions_status\": true,\n  \"terms_and_conditions_url\": \"https://example.com/terms\",\n  \"privacy_policy_url\": \"https://www.hamad.qa/EN/Sanad/Pages/Privacy-Policy.html\"\n}"
+            }
+          ]
+        },
+        {
           "name": "POST /auth/initiate",
           "event": [
             {

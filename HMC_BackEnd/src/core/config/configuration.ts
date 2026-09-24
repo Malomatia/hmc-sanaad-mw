@@ -132,6 +132,17 @@ export interface AppLaunchConfig {
   appName: string;
 }
 
+/** Public app settings (GET /app-setting): terms & conditions switch + link, privacy policy link. */
+export interface AppSettingsConfig {
+  termsAndConditionsStatus: boolean;
+  termsAndConditionsUrl: string;
+  privacyPolicyUrl: string;
+}
+
+/** Default privacy policy page; `docker-compose.yml` supplies the same value. */
+export const DEFAULT_PRIVACY_POLICY_URL =
+  'https://www.hamad.qa/EN/Sanad/Pages/Privacy-Policy.html';
+
 /**
  * Users/Sanaad SQL Server database - backs the auth cycle (device registration,
  * MPIN, OTP rows) and the API-1 downtime/app-update tables. Legacy tables:
@@ -473,6 +484,7 @@ export interface RootConfig {
   auth: AuthConfig;
   cerner: CernerConfig;
   appLaunch: AppLaunchConfig;
+  appSettings: AppSettingsConfig;
   mpin: MpinConfig;
   otp: OtpConfig;
   ldap: LdapConfig;
@@ -707,6 +719,11 @@ export default (): RootConfig => ({
     downtimeStart: process.env.APP_DOWNTIME_START ?? '',
     downtimeEnd: process.env.APP_DOWNTIME_END ?? '',
     appName: process.env.APP_NAME ?? 'SanaadHealth',
+  },
+  appSettings: {
+    termsAndConditionsStatus: toBool(process.env.TERMS_AND_CONDITIONS_STATUS),
+    termsAndConditionsUrl: process.env.TERMS_AND_CONDITIONS_URL ?? '',
+    privacyPolicyUrl: process.env.PRIVACY_POLICY_URL ?? DEFAULT_PRIVACY_POLICY_URL,
   },
   mpin: {
     minLength: Number(process.env.MPIN_MIN_LENGTH ?? 4),

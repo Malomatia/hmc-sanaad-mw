@@ -1796,3 +1796,153 @@ signature, not a confirmed or deployed Oracle procedure. The approved timecard
 persistence/workflow contract and Oracle version are still needed. The stated
 28–31 limit counts array objects; a date-range entry counts once. Do not register
 the proposed procedure as a confirmed production contract based on this PDF.
+
+## Localized generic errors and Oracle FLEX failures
+
+Backend application/unknown errors and database errors without a usable description
+use `GENERIC_ERROR_MESSAGE` in `core/http/error-category.ts`: the client's exact
+English/Arabic Ounak Support wording. Gateway-originated HTTP 500 errors use the
+same wording. Query `lang` takes precedence over the `lang` header; missing or
+unsupported values default to English. Specific validation, authentication,
+network-timeout, and readable non-FLEX Oracle messages retain their existing text.
+
+Any Oracle error containing `FLEX` (case-insensitive, including FLEX-NULL,
+FLEX-VALUE, and flexfield identifiers) uses this generic message, whether thrown
+or returned through procedure OUT messages. Submit normalization checks English
+and decoded Arabic messages; the response interceptor selects the generic text
+using the request language. Approval request-info/reassign must preserve this
+fallback rather than overwrite it with their usual Not Processed messages.
+Leave calculation and payslip `errorMessage` fields pass language to the shared
+sanitizer. HTTP statuses, success flags, successful-submit messages, and raw
+Oracle diagnostics are unchanged.
+
+Focused regression checks: from `HMC_BackEnd/`, run `npm.cmd test -- --runInBand
+core/http core/database/base.repository.spec.ts modules/leave modules/payslip
+modules/approvals --silent`; from `HMC_Gateway/`, run `npm.cmd test -- --runInBand
+--silent`. Both projects also use `npm.cmd run build`.
+
+## Generic LOV Arabic label pairs
+
+The client has now requested the generic LOV localization pass, superseding the
+remaining deferred label-pair work above. `LovMapper` retains the selected English
+label column and probes its `<field>_AR` / `<field>AR` twins before the legacy
+Arabic-name list. This also covers a label sourced from the code column, as in
+`EMPLOYMENT_STATUS_V` (`FLEX_VALUE` / `FLEX_VALUE_AR`), and arbitrary descriptive
+columns such as `EMP_MARITAL_LOV.MARITAL_STATUS`. Column lookup is case-insensitive,
+Arabic values are URL-decoded, and the response interceptor selects `meaning`
+according to query `lang`. Missing/null/empty Arabic falls back to English;
+`code` and `used_value` remain stable, and source/cached rows are not mutated.
+
+Explicit mapper regressions include `TYPE_OF_PHONE`, `ACCRUAL_PLAN_NAME`,
+`LEAVE_REASON`, `FLEX_VALUE`, `ANUAL_TKT_DEFAULT` (intentional spelling), `COUNTRY`,
+`DELIVERY_LOCATION`, `REASON`, `D_DATA`, `PLACE`, and `MARITAL_STATUS`, each paired
+with `_AR`. Existing suffix-less names such as `VALUEAR` remain supported. The
+fix does not translate English content stored in an Arabic database column.
+Restarting/redeploying the backend clears existing in-memory LOV cache entries.
+
+Regression command from `HMC_BackEnd/`: `npm.cmd test -- --runInBand lookups
+modules/dependents modules/profile modules/school-fees modules/letters
+modules/contact shared/utils/localize.util.spec.ts
+core/http/response.interceptor.spec.ts --silent`, followed by `npm.cmd run build`.
+The HTTP tests exercise `/lookups/lov` for both reported views with mocked Oracle.
+
+## Public device-attestation challenge
+
+`POST /app-integrity/challenge` replaces GET and accepts only the JSON body
+`{ "deviceId": "..." }`: a required non-blank string, maximum 100 characters.
+It requires neither JWT nor attestation headers in either service, including
+integrity `enforce` mode. The backend uses method-level `@Public()` and retains
+`@SkipIntegrity()`; the gateway registers an explicit public controller in its
+pre-auth module before the authenticated wildcard. The gateway throttles this
+route to 60 requests per minute per observed client IP per instance, not by the
+untrusted submitted device identifier. Other app-integrity routes remain JWT
+protected; this does not make iOS registration or login attestation anonymous.
+
+The client confirmed that `deviceId` must be stored in the EXISTING `LoginID`
+column of `HMC_Sanad_AttestChallenge_tbl`, using the bound `@deviceId` value.
+Do not introduce a `DeviceID` column. No schema change is needed; the earlier
+`HMC_BackEnd/tools/app-integrity-device-id.sql` is now a harmless no-op. The DTO
+limit follows the documented `LoginID NVARCHAR(100)` capacity. This mapping is
+specific to challenge issuance: `HMC_Sanad_AttestKey_tbl.LoginID` continues to
+hold the authenticated username. Device IDs are metadata, not authenticated
+identity. Random nonce generation, configurable expiry and atomic single-use
+consumption are unchanged. Issuance returns HTTP 503 if the INSERT fails or
+affects no rows, rather than returning an unusable nonce.
+
+Regression checks: backend `npm.cmd test -- --runInBand modules/app-integrity
+core/config/app-integrity-config.spec.ts`; gateway `npm.cmd run test:e2e --
+--runInBand`. Both projects support a non-emitting build typecheck with
+`npx.cmd --no-install tsc --project tsconfig.build.json --noEmit --incremental false`.
+
+## Anonymous iOS registration and Android self-check (2026-09-23)
+
+`POST /app-integrity/ios/register` and `POST /app-integrity/android/verify` no
+longer require a JWT, in either service and in every integrity mode. The app
+attests on launch, before anyone has logged in, so a session could never be a
+precondition — and on staging it showed: after the challenge went public
+(2026-09-19) the challenge table filled with device-keyed nonces that were
+NEVER consumed (`UsedAt IS NULL` on every row from `19c89fc7-…`,
+`a5b3d106-…`), because the register call that should have spent them was
+answered 401 at the gateway and never reached the backend. `HMC_Sanad_AttestKey_tbl`
+has held 0 rows since the feature shipped. This supersedes "other app-integrity
+routes remain JWT protected" above.
+
+**What replaces the token.** Backend: method-level `@Public()` on both routes
+(the controller keeps `@SkipIntegrity()`). Gateway: explicit `@Public()`
+routes in `modules/auth/app-integrity.controller.ts`, ahead of the wildcard,
+throttled per IP at **20/min** each (challenge stays at 60/min) — each call
+costs a certificate-chain check or a Google API round trip. Validation is the
+same strict DTO as before; the attestation object itself, plus a server-issued
+single-use challenge, is the proof.
+
+**Ownership without a user.** `RegisterAttestationDto` now requires `deviceId`
+(same rules as the challenge DTO). Registration spends the challenge with
+`consume(value, deviceId)` — one UPDATE with `AND LoginID = @deviceId`, so a
+nonce fetched by one device cannot be spent by another. The key is saved with
+`LoginID = 'device:<deviceId>'` (`unboundKeyOwner`, cut to the column's 100
+chars; `LoginID` is NOT NULL and the client declined a device column — the
+prefix is the "unbound" marker, `:` being impossible in a login). The **first
+assertion made WITH a session and a VALID signature** claims the key
+(`AttestKeyStorePort.bind`), and from then on it answers for that user only.
+Assertions with no session (login itself is attested) are judged on the
+signature alone and neither claim nor reject on ownership — previously they
+always failed with "key belongs to another user" because `username` was `''`.
+A shared handset therefore belongs to whoever logged in first; a second
+account on the same phone is refused until the app re-attests. Binding
+happens after `verifyAssertion`, never before.
+
+Regression: backend `npm.cmd test -- --runInBand modules/app-integrity
+core/config/app-integrity-config.spec.ts` (81); gateway `npm.cmd run test:e2e --
+--runInBand` (77). `google-play-integrity.adapter.ts` has a pre-existing unused
+`AppIntegrityConfig` import (reproduces on HEAD).
+
+**Staging state on 2026-09-23** (`GET /health/backend` → `appIntegrity`):
+`mode: observe`, `ios: ok`, **`android: disabled`** — `PLAY_INTEGRITY_SERVICE_ACCOUNT`
+(and optionally `ANDROID_PACKAGE_NAME`) are not set, so `android/verify` always
+answers `"Play Integrity is not configured"`. iOS is configured but has never
+produced a stored key even when the route was reachable (Sep 6–18: 437
+challenges consumed, 0 keys) — the refusal reason is only in the server log;
+the usual causes are a debug build with `APPLE_APP_ATTEST_ALLOW_DEVELOPMENT`
+unset, a simulator (App Attest unsupported), or a bundle/team id mismatch.
+`tools/app-integrity-schema.sql` referenced by the store's warning is NOT in
+the repo; the tables exist on staging with these columns (all NOT NULL unless
+marked): `HMC_Sanad_AttestChallenge_tbl(ChallengeID int, Challenge nvarchar(200),
+LoginID nvarchar(100) NULL, IssuedAt, ExpiresAt, UsedAt NULL)` and
+`HMC_Sanad_AttestKey_tbl(AttestKeyID int, KeyID nvarchar(200), LoginID nvarchar(100),
+PublicKey nvarchar(1000), SignCount bigint, CreatedAt, UpdatedAt)`.
+
+## Public app settings (`GET /app-setting`)
+
+A public GET that needs no JWT and returns an unwrapped (`@SkipEnvelope`) response,
+`{ "terms_and_conditions_status": <boolean>, "terms_and_conditions_url": "<string>",
+"privacy_policy_url": "<string>" }`, read from `TERMS_AND_CONDITIONS_STATUS` (Joi boolean,
+default `false`), `TERMS_AND_CONDITIONS_URL` (URI or empty, default `''`) and
+`PRIVACY_POLICY_URL` (URI or empty). The privacy URL defaults to
+`DEFAULT_PRIVACY_POLICY_URL` (the Sanad Privacy-Policy page), and `docker-compose.yml`
+supplies the same value, so keep the two in sync. These come from the `appSettings`
+config namespace, served by `AppSettingController`/`AppSettingService` in the backend
+auth module. The gateway forwards it through an explicit `@Public()` controller in its
+auth module, before the wildcard. Like `/healthcheck`, it has no `@SkipIntegrity()`.
+The audit action is `view` (GET default), operationId `auth_appSetting`. Tests:
+backend `modules/auth/application/app-setting.service.spec.ts`, gateway e2e
+`forwards GET /app-setting ...`.

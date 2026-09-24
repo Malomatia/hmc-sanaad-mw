@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
 import { MssqlService } from '@core/database/mssql.service';
 import { MssqlQueryError } from '@core/database/mssql.error';
@@ -66,32 +66,32 @@ export class MssqlChallengeStore extends GuardedStore implements ChallengeStoreP
     super(db);
   }
 
-  async issue(username: string): Promise<string> {
+  async issue(deviceId: string): Promise<string> {
     const value = randomBytes(32).toString('base64');
-    await this.guard(CHALLENGE_TABLE, 'issue', () =>
+    const result = await this.guard(CHALLENGE_TABLE, 'issue', () =>
       this.db.execute(
         `INSERT INTO ${CHALLENGE_TABLE} (Challenge, LoginID, IssuedAt, ExpiresAt)
-         VALUES (@value, @username, GETDATE(), DATEADD(millisecond, @ttl, GETDATE()))`,
-        { value, username, ttl: this.ttlMs },
+         VALUES (@value, @deviceId, GETDATE(), DATEADD(millisecond, @ttl, GETDATE()))`,
+        { value, deviceId, ttl: this.ttlMs },
       ),
     );
+    if ((result?.rowsAffected ?? 0) < 1) {
+      throw new ServiceUnavailableException('An attestation challenge could not be issued.');
+    }
     return value;
   }
 
-  async consume(value: string): Promise<boolean> {
-    if (
-      !/^[A-Za-z0-9+/]{43}=$/.test(value) ||
-      Buffer.from(value, 'base64').toString('base64') !== value
-    )
-      return false;
+  async consume(value: string, deviceId?: string): Promise<boolean> {
     // One statement: marking it used IS the check, so a challenge cannot be
-    // spent twice by two requests arriving together.
+    // spent twice by two requests arriving together. The device predicate is
+    // part of the same statement for the same reason.
     const result = await this.guard(CHALLENGE_TABLE, 'consume', () =>
       this.db.execute(
         `UPDATE ${CHALLENGE_TABLE}
             SET UsedAt = GETDATE()
-          WHERE Challenge = @value AND Challenge COLLATE Latin1_General_100_BIN2 = @value AND UsedAt IS NULL AND ExpiresAt > GETDATE()`,
-        { value },
+          WHERE Challenge = @value AND UsedAt IS NULL AND ExpiresAt > GETDATE()` +
+          (deviceId === undefined ? '' : ' AND LoginID = @deviceId'),
+        deviceId === undefined ? { value } : { value, deviceId },
       ),
     );
     return (result?.rowsAffected ?? 0) > 0;
@@ -151,6 +151,16 @@ export class MssqlAttestKeyStore extends GuardedStore implements AttestKeyStoreP
         `UPDATE ${KEY_TABLE} SET SignCount = @signCount, UpdatedAt = GETDATE()
           WHERE KeyID = @keyId`,
         { keyId, signCount },
+      ),
+    );
+  }
+
+  async bind(keyId: string, username: string): Promise<void> {
+    await this.guard(KEY_TABLE, 'bind', () =>
+      this.db.execute(
+        `UPDATE ${KEY_TABLE} SET LoginID = @username, UpdatedAt = GETDATE()
+          WHERE KeyID = @keyId`,
+        { keyId, username },
       ),
     );
   }

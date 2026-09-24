@@ -169,7 +169,7 @@ export class PayslipOracleRepository extends BaseOracleRepository implements Pay
       totalEarnings: trimValue(scalars.p_total_earnings) as string,
       totalDeductions: trimValue(scalars.p_total_deductions) as string,
       successFlag: scalars.p_success_flag,
-      errorMessage: trimValue(sanitizeOracleMessage(scalars.p_error_msg)) as string,
+      errorMessage: trimValue(sanitizeOracleMessage(scalars.p_error_msg, query.lang)) as string,
     };
   }
 }

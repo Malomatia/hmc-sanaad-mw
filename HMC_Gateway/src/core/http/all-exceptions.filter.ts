@@ -12,6 +12,8 @@ interface RequestLike {
   url?: string;
   method?: string;
   correlationId?: string;
+  query?: { lang?: string };
+  headers?: Record<string, string | string[] | undefined>;
 }
 
 /**
@@ -33,7 +35,14 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const req = ctx.getRequest<RequestLike>();
 
     const httpStatus = this.resolveStatus(exception);
-    const message = this.resolveMessage(exception, httpStatus);
+    const header = req?.headers?.lang;
+    const lang = req?.query?.lang ?? (Array.isArray(header) ? header[0] : header);
+    const message =
+      httpStatus === HttpStatus.INTERNAL_SERVER_ERROR
+        ? lang === 'ar'
+          ? 'حدث خطأ ما. يرجى المحاولة مرة أخرى. إذا استمرت المشكلة، يرجى التواصل مع فريق دعم عونك.'
+          : 'Something went wrong. Please try again. If the issue persists, contact Ounak Support.'
+        : this.resolveMessage(exception, httpStatus);
 
     const line = `${httpStatus} ${req?.method ?? ''} ${req?.url ?? ''} cid=${req?.correlationId ?? '-'} :: ${message}`;
     if (httpStatus >= 500) {
@@ -83,10 +92,6 @@ export class AllExceptionsFilter implements ExceptionFilter {
       }
       return exception.message;
     }
-    return httpStatus === HttpStatus.INTERNAL_SERVER_ERROR
-      ? 'Internal server error'
-      : exception instanceof Error
-        ? exception.message
-        : 'Unknown error';
+    return exception instanceof Error ? exception.message : 'Unknown error';
   }
 }

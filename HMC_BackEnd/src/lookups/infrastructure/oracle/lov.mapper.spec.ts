@@ -71,6 +71,60 @@ describe('LovMapper', () => {
     });
   });
 
+  it.each([
+    ['FLEX_VALUE', 'FLEX_VALUE_AR', 'Active', 'نشط'],
+    ['MARITAL_STATUS', 'MARITAL_STATUS_AR', 'Married', 'متزوج'],
+    ['marital_status', 'Marital_Status_Ar', 'Single', 'أعزب'],
+    ['TYPE_OF_PHONE', 'TYPE_OF_PHONE_AR', 'Mobile', 'جوال'],
+    ['ACCRUAL_PLAN_NAME', 'ACCRUAL_PLAN_NAME_AR', 'Annual Leave', 'إجازة سنوية'],
+    ['LEAVE_REASON', 'LEAVE_REASON_AR', 'Birth of child', 'ولادة طفل'],
+    ['ANUAL_TKT_DEFAULT', 'ANUAL_TKT_DEFAULT_AR', 'Yes', 'نعم'],
+    ['COUNTRY', 'COUNTRY_AR', 'Qatar', 'قطر'],
+    ['DELIVERY_LOCATION', 'DELIVERY_LOCATION_AR', 'Office', 'المكتب'],
+    ['REASON', 'REASON_AR', 'Annual renewal', 'تجديد سنوي'],
+    ['D_DATA', 'D_DATA_AR', 'Child', 'طفل'],
+    ['PLACE', 'PLACE_AR', 'Doha', 'الدوحة'],
+    ['CUSTOM_LABEL', 'CUSTOM_LABEL_AR', 'Other', 'أخرى'],
+  ])('derives the Arabic twin of %s without changing submit values', (field, arField, en, ar) => {
+    const source = Object.freeze({ [arField]: encodeURIComponent(ar), [field]: en });
+    const item = map(source);
+    expect(item.meaningAr).toBe(ar);
+    expect(localizeArTwins(item, 'ar')).toEqual({ code: en, meaning: ar, used_value: en });
+    expect(localizeArTwins(item, 'en')).toEqual({ code: en, meaning: en, used_value: en });
+    expect(item.meaning).toBe(en);
+    expect(source[arField]).toBe(encodeURIComponent(ar));
+  });
+
+  it('prefers the selected label twin to an unrelated recognized Arabic field', () => {
+    const item = map({
+      MARITAL_STATUS: 'Married',
+      MARITAL_STATUS_AR: 'متزوج',
+      D_DATA_AR: 'قيمة أخرى',
+    });
+    expect(localizeArTwins(item, 'ar')).toEqual({
+      code: 'Married', meaning: 'متزوج', used_value: 'Married',
+    });
+  });
+
+  it.each(['FLEX_VALUE', 'MARITAL_STATUS'])('keeps English when %s_AR is empty', (field) => {
+    for (const label of [null, undefined, '']) {
+      const item = map({ [field]: 'English label', [`${field}_AR`]: label });
+      expect(localizeArTwins(item, 'ar')).toEqual({
+        code: 'English label', meaning: 'English label', used_value: 'English label',
+      });
+    }
+  });
+
+  it('does not use the Arabic code as the label when a separate meaning exists', () => {
+    const item = map({
+      FLEX_VALUE: 'A',
+      FLEX_VALUE_AR: 'رمز',
+      FLEX_VALUE_MEANING: 'Active',
+      FLEX_VALUE_MEANING_AR: 'نشط',
+    });
+    expect(localizeArTwins(item, 'ar')).toEqual({ code: 'A', meaning: 'نشط', used_value: 'Active' });
+  });
+
   it('decodes the URL-encoded Arabic label', () => {
     expect(map({ CODE: 'QA', VALUE: 'Qatar', VALUEAR: '%D9%82%D8%B7%D8%B1' }).meaningAr).toBe(
       'قطر',

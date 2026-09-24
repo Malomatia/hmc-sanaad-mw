@@ -1,5 +1,5 @@
 import { ConfigService } from '@nestjs/config';
-import { AuditService } from '@core/audit/audit.service';
+
 import { MpinService } from './mpin.service';
 import { MpinStorePort } from '../domain/ports/mpin-store.port';
 import { OtpPort } from '../domain/ports/otp.port';
@@ -37,7 +37,7 @@ function makeService({ authDisabled = false } = {}) {
     validate: jest.fn().mockResolvedValue(IDENTITY),
     authenticate: jest.fn(),
   };
-  const audit = { lifecycle: jest.fn() } as unknown as AuditService;
+
   const config = {
     get: jest.fn((key: string, def?: unknown) => {
       if (key === 'auth.disabled') return authDisabled;
@@ -47,7 +47,7 @@ function makeService({ authDisabled = false } = {}) {
       .fn()
       .mockReturnValue({ minLength: 4, maxLength: 6, maxAttempts: 5, lockoutMinutes: 15 }),
   } as unknown as ConfigService;
-  const service = new MpinService(store, otp, devices, ldap, audit, config);
+  const service = new MpinService(store, otp, devices, ldap, config);
   return { service, store, otp, devices, ldap };
 }
 

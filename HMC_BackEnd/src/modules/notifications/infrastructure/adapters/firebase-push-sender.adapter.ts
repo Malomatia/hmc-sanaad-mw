@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 // firebase-admin v14 is modular — the v13 `import * as admin` namespace is gone.
 import { App } from 'firebase-admin/app';
 import { getMessaging, Messaging } from 'firebase-admin/messaging';
@@ -20,8 +20,6 @@ const BATCH_LIMIT = 500;
  */
 @Injectable()
 export class FirebasePushSender implements PushSenderPort {
-  private static readonly log = new Logger(FirebasePushSender.name);
-
   readonly enabled = true;
   private readonly messaging: Messaging;
 
@@ -49,7 +47,6 @@ export class FirebasePushSender implements PushSenderPort {
         if (r.success) return;
         const code = r.error?.code ?? '';
         if (PERMANENT_FAILURES.has(code)) result.invalidTokens.push(batch[index]);
-        else FirebasePushSender.log.warn(`FCM send failed (${code}): ${r.error?.message ?? ''}`);
       });
     }
     return result;
@@ -63,13 +60,11 @@ export class FirebasePushSender implements PushSenderPort {
  */
 @Injectable()
 export class NoopPushSender implements PushSenderPort {
-  private static readonly log = new Logger(NoopPushSender.name);
   readonly enabled = false;
 
   async send(tokens: readonly string[], message: PushMessage): Promise<PushResult> {
-    NoopPushSender.log.debug(
-      `Push disabled — would have sent "${message.title}" to ${tokens.length} device(s).`,
-    );
+    void tokens;
+    void message;
     return { sent: 0, failed: 0, invalidTokens: [] };
   }
 }

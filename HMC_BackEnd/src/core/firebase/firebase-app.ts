@@ -1,4 +1,3 @@
-import { Logger } from '@nestjs/common';
 import { App, cert, getApps, initializeApp } from 'firebase-admin/app';
 import { FirebaseConfig } from '../config/configuration';
 
@@ -45,10 +44,7 @@ export function resolveFirebaseApp(config: FirebaseConfig): App | undefined {
     );
   } catch (err) {
     // A malformed key is a deployment fault, not a reason to refuse to boot.
-    new Logger('FirebaseApp').error(
-      `Firebase credential was rejected: ${(err as Error).message}. ` +
-        'Push notifications and App Check are disabled.',
-    );
+
     return undefined;
   }
 }

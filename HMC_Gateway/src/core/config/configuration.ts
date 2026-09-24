@@ -10,7 +10,6 @@ export interface AppConfig {
   apiPrefix: string;
   corsOrigins: string[];
   requestTimeoutMs: number;
-  logLevel: string;
 }
 
 /** The upstream HMC_BackEnd this gateway forwards every request to. */
@@ -94,9 +93,6 @@ function loadBackendCaCert(): Buffer | undefined {
   try {
     return fs.readFileSync(path);
   } catch (err) {
-    console.warn(
-      `[configuration] Could not read BACKEND_CA_CERT_PATH="${path}": ${(err as Error).message}`,
-    );
     return undefined;
   }
 }
@@ -108,7 +104,6 @@ export default (): RootConfig => ({
     apiPrefix: process.env.API_PREFIX ?? 'api/v1',
     corsOrigins: (process.env.CORS_ORIGINS ?? '*').split(',').map((s) => s.trim()),
     requestTimeoutMs: Number(process.env.REQUEST_TIMEOUT_MS ?? 35000),
-    logLevel: process.env.LOG_LEVEL ?? 'debug',
   },
   backend: {
     baseUrl: process.env.BACKEND_BASE_URL ?? 'http://localhost:3009',

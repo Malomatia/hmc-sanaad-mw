@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import * as oracledb from 'oracledb';
 import { OracleService } from '@core/database/oracle.service';
 import { OracleSchemaService } from '@core/database/oracle-schema.service';
@@ -78,7 +78,6 @@ const RFMI_PARAMS = [
 @Injectable()
 export class ApprovalsOracleRepository extends BaseOracleRepository implements ApprovalsRepository {
   /** Own logger — the base class keeps its instance private. */
-  private static readonly log = new Logger(ApprovalsOracleRepository.name);
 
   /** username → employee number, resolved once per process. */
   private static readonly employeeNumbers = new Map<string, string | undefined>();
@@ -226,13 +225,6 @@ export class ApprovalsOracleRepository extends BaseOracleRepository implements A
     const itemKey = header?.ITEM_KEY ? String(header.ITEM_KEY) : null;
     const known = !!serviceView && REQUEST_DETAIL_VIEWS.has(serviceView);
 
-    if (serviceView && !known) {
-      ApprovalsOracleRepository.log.warn(
-        `SERVICE_VIEW "${serviceView}" of notification ${approvalId} is not an allow-listed ` +
-          'detail view — returning the request without its payload.',
-      );
-    }
-
     const [detail, attachments] = await Promise.all([
       known && itemKey
         ? this.query<ApprovalRow>(`SELECT * FROM ${serviceView} WHERE ${ITEM_KEY_COLUMN} = :k`, {
@@ -359,8 +351,6 @@ export class ApprovalsOracleRepository extends BaseOracleRepository implements A
       p_comments: cmd.comment,
     });
   }
-
-
 }
 
 /**

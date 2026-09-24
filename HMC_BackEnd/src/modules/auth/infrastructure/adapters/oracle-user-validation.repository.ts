@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import oracledb from 'oracledb';
 import { OracleService } from '@core/database/oracle.service';
 import { ORACLE_OBJECTS } from '@shared/constants/oracle-objects';
@@ -6,8 +6,6 @@ import { OracleUserValidationPort } from '../../domain/ports/oracle-user-validat
 
 @Injectable()
 export class OracleUserValidationRepository implements OracleUserValidationPort {
-  private readonly logger = new Logger(OracleUserValidationRepository.name);
-
   constructor(private readonly ora: OracleService) {}
 
   async validate(username: string): Promise<boolean> {
@@ -24,7 +22,6 @@ export class OracleUserValidationRepository implements OracleUserValidationPort 
       );
       return out.p_is_valid?.trim().toUpperCase() === 'YES';
     } catch {
-      this.logger.warn(`${ORACLE_OBJECTS.USER_VALIDATE_PRC} failed; restricting login functions.`);
       return false;
     }
   }

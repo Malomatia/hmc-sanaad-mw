@@ -1,4 +1,4 @@
-import { BadRequestException, Logger, NotImplementedException } from '@nestjs/common';
+import { BadRequestException, NotImplementedException } from '@nestjs/common';
 import * as oracledb from 'oracledb';
 import { OracleService } from './oracle.service';
 import { OracleSchemaService, ProcedureParam } from './oracle-schema.service';
@@ -18,7 +18,7 @@ import {
   looksSensitive,
 } from '../http/error-category';
 import { SchemaColumnNotFoundException } from './schema-column-not-found.error';
-import { RequestContext } from '../http/request-context';
+
 import { normalizeOracleUsername } from './oracle-username.util';
 
 /**
@@ -53,7 +53,6 @@ export interface ResolvedKeyReadOptions {
 
 export abstract class BaseOracleRepository {
   /** Named after the concrete subclass so log lines identify the adapter. */
-  private readonly logger = new Logger(this.constructor.name);
 
   /**
    * `schema` is optional: adapters that read views whose key column is not
@@ -99,7 +98,10 @@ export abstract class BaseOracleRepository {
 
   protected stringOutBinds(params: readonly string[]): oracledb.BindParameters {
     return Object.fromEntries(
-      params.map((name) => [name, { dir: oracledb.BIND_OUT, type: oracledb.STRING, maxSize: 4000 }]),
+      params.map((name) => [
+        name,
+        { dir: oracledb.BIND_OUT, type: oracledb.STRING, maxSize: 4000 },
+      ]),
     );
   }
 
@@ -266,7 +268,6 @@ export abstract class BaseOracleRepository {
       );
     } catch (err) {
       if (err instanceof SchemaColumnNotFoundException) {
-        this.logSchemaMismatch(err);
         return [];
       }
       throw err;
@@ -313,7 +314,6 @@ export abstract class BaseOracleRepository {
       return rows.flat();
     } catch (err) {
       if (err instanceof SchemaColumnNotFoundException) {
-        this.logSchemaMismatch(err);
         return [];
       }
       throw err;
@@ -321,16 +321,6 @@ export abstract class BaseOracleRepository {
   }
 
   /** Structured, internal-only WARNING for a caught schema mismatch (never a fatal error). */
-  private logSchemaMismatch(err: SchemaColumnNotFoundException): void {
-    const requestId = RequestContext.get()?.correlationId ?? '-';
-    this.logger.warn(
-      `[SCHEMA_MISMATCH] requestId=${requestId} repository=${this.constructor.name} ` +
-        `object=${err.object} missingCandidates=[${err.candidates.join(', ')}] ` +
-        `availableColumns=[${err.availableColumns.join(', ')}] — degrading to an empty result ` +
-        `instead of failing the request.`,
-      err.stack,
-    );
-  }
 
   /**
    * Marks an adapter whose exact Oracle bind signature is not yet captured
@@ -363,7 +353,8 @@ export abstract class BaseOracleRepository {
     options: SubmitProcOptions = {},
   ): Promise<SubmitResult> {
     const declared = await this.schema?.resolveParams(object, params);
-    if (!declared?.length) throw new OracleContractUnavailableException(object, 'program parameters');
+    if (!declared?.length)
+      throw new OracleContractUnavailableException(object, 'program parameters');
     const wrap = options.wrap ?? {};
     const binds: oracledb.BindParameters = {};
     const names: string[] = [];
@@ -385,13 +376,15 @@ export abstract class BaseOracleRepository {
         // The static contract includes a parameter the adapter does not supply.
         // Preserve the existing NULL binding for optional business values, but
         // report the mismatch so the adapter can be brought into agreement.
-        this.logger.warn(`Unmapped Oracle parameter ${object}.${param.name} bound as NULL`);
       }
       if (wrap[param.name]) {
         // Rendered as `p_x => PKG.fn(:p_x)`: the value is bound as a plain
         // string and the PL/SQL function builds the composite the formal
         // actually declares (see SubmitProcOptions.wrap).
-        (binds as Record<string, unknown>)[param.name] = BaseOracleRepository.pick(values, param.name);
+        (binds as Record<string, unknown>)[param.name] = BaseOracleRepository.pick(
+          values,
+          param.name,
+        );
         continue;
       }
       (binds as Record<string, unknown>)[param.name] = BaseOracleRepository.inBind(
@@ -430,9 +423,10 @@ export abstract class BaseOracleRepository {
     cursorParam = 'p_cursor',
   ): Promise<T[]> {
     const declared = await this.schema?.resolveParams(object, params);
-    const cursors = declared?.filter((param) =>
-      param.direction.includes('OUT') && param.dataType.toUpperCase() === 'REF CURSOR',
-    ) ?? [];
+    const cursors =
+      declared?.filter(
+        (param) => param.direction.includes('OUT') && param.dataType.toUpperCase() === 'REF CURSOR',
+      ) ?? [];
     if (!declared?.length || cursors.length !== 1) {
       throw new OracleContractUnavailableException(object, `single REF CURSOR (${cursorParam})`);
     }
@@ -493,8 +487,12 @@ export abstract class BaseOracleRepository {
     const signature = this.schema ? await this.schema.resolveSignature(object, params) : undefined;
     if (!signature) throw new OracleContractUnavailableException(object, 'program parameters');
     if (signature.returnType) {
-      if (!['TABLE', 'VARRAY', 'PL/SQL TABLE'].includes(signature.returnType.dataType.toUpperCase()) ||
-        signature.params.some((param) => param.direction !== 'IN')) {
+      if (
+        !['TABLE', 'VARRAY', 'PL/SQL TABLE'].includes(
+          signature.returnType.dataType.toUpperCase(),
+        ) ||
+        signature.params.some((param) => param.direction !== 'IN')
+      ) {
         throw new OracleContractUnavailableException(object, 'SQL table-function return type');
       }
       const args = signature.params.map((param) =>
@@ -533,7 +531,8 @@ export abstract class BaseOracleRepository {
       ...cursorParams,
       ...scalarOutParams,
     ]);
-    if (!declared?.length) throw new OracleContractUnavailableException(object, 'program parameters');
+    if (!declared?.length)
+      throw new OracleContractUnavailableException(object, 'program parameters');
     const binds: oracledb.BindParameters = {};
     const names: string[] = [];
     const cursorNames: string[] = [];
@@ -544,7 +543,10 @@ export abstract class BaseOracleRepository {
         param.direction.includes('OUT') && param.dataType.toUpperCase() === 'REF CURSOR';
       if (isCursor) {
         cursorNames.push(param.name);
-        (binds as Record<string, unknown>)[param.name] = { dir: oracledb.BIND_OUT, type: oracledb.CURSOR };
+        (binds as Record<string, unknown>)[param.name] = {
+          dir: oracledb.BIND_OUT,
+          type: oracledb.CURSOR,
+        };
         continue;
       }
       if (param.direction.includes('OUT')) {
@@ -559,7 +561,8 @@ export abstract class BaseOracleRepository {
         BaseOracleRepository.pick(values, param.name),
       );
     }
-    if (!cursorNames.length) throw new OracleContractUnavailableException(object, 'REF CURSOR outputs');
+    if (!cursorNames.length)
+      throw new OracleContractUnavailableException(object, 'REF CURSOR outputs');
 
     const namedArgs = names.map((n) => `${n} => :${n}`).join(',\n          ');
     // Not this.call(): a REF CURSOR ResultSet is tied to its connection, and
@@ -582,7 +585,10 @@ export abstract class BaseOracleRepository {
    */
   private static pick(values: Record<string, unknown>, param: string): unknown {
     const bare = param.replace(/^p_/, '');
-    return normalizeOracleUsername(param, values[param] ?? values[bare] ?? values[`p_${bare}`] ?? null);
+    return normalizeOracleUsername(
+      param,
+      values[param] ?? values[bare] ?? values[`p_${bare}`] ?? null,
+    );
   }
 
   /** First value that is non-null/undefined AND non-blank once trimmed to a string. */
@@ -596,7 +602,9 @@ export abstract class BaseOracleRepository {
 
   private static hasValue(values: Record<string, unknown>, param: string): boolean {
     const bare = param.replace(/^p_/, '');
-    return [param, bare, `p_${bare}`].some((key) => Object.prototype.hasOwnProperty.call(values, key));
+    return [param, bare, `p_${bare}`].some((key) =>
+      Object.prototype.hasOwnProperty.call(values, key),
+    );
   }
 
   private static isExpected(params: readonly string[], param: string): boolean {
@@ -636,7 +644,8 @@ export abstract class BaseOracleRepository {
       // NJS-011). Ids beyond the double-precision range would lose digits as a
       // number, so those are handed to Oracle as text and converted server-side.
       const numeric = Number(text);
-      return Number.isSafeInteger(numeric) || (!Number.isInteger(numeric) && Number.isFinite(numeric))
+      return Number.isSafeInteger(numeric) ||
+        (!Number.isInteger(numeric) && Number.isFinite(numeric))
         ? { type, val: numeric }
         : text;
     }
@@ -709,7 +718,8 @@ export abstract class BaseOracleRepository {
     );
     const message =
       [out.p_message, out.p_error_msg, out.msg, out.errormessage]
-        .find((value) => value != null && String(value).trim() !== '')?.toString() ?? '';
+        .find((value) => value != null && String(value).trim() !== '')
+        ?.toString() ?? '';
     const messageAr = out.p_message_ar ?? out.p_error_msg_ar ?? out.errormessage_ar;
     // Different procedures use different success conventions: 'S' (status),
     // 'Y' (p_success_flag, e.g. REASSIGN_PR-style: p_success_flag/p_error_msg/
@@ -751,9 +761,7 @@ export abstract class BaseOracleRepository {
         ? ErrorCategory.BUSINESS_RULE_ERROR
         : ErrorCategory.DATABASE_ERROR;
       const description = extractOracleErrorText(errormessage);
-      this.logger.warn(
-        `Suppressed technical proc message (${category}${oraCode ? ` ORA-${oraCode}` : ''}): ${errormessage}`,
-      );
+
       errormessage = description ?? CATEGORY_MESSAGE[category];
     }
     if (!isSuccess && looksSensitive(safeMessageAr)) {

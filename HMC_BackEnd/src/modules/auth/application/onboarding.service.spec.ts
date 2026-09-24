@@ -5,8 +5,7 @@ import { MotcSmsDbService } from '@core/database/motc-sms-db.service';
 import { MssqlOtpRepository } from '../infrastructure/adapters/mssql-otp.repository';
 import { MotcSmsOtpRepository } from '../infrastructure/adapters/motc-sms-otp.repository';
 import { MotcPushOtpDeliveryAdapter } from '../infrastructure/adapters/motc-push-otp-delivery.adapter';
-import { AuditService } from '@core/audit/audit.service';
-import { safePreview } from '@core/logging/sensitive-data.util';
+
 import { OnboardingService } from './onboarding.service';
 import { LdapUserPort } from '../domain/ports/ldap-user.port';
 import { OtpPort } from '../domain/ports/otp.port';
@@ -55,12 +54,12 @@ function makeService(overrides?: {
     find: jest.fn(),
     touch: jest.fn().mockResolvedValue(undefined),
   } as unknown as jest.Mocked<DeviceRegistryPort>;
-  const audit = { lifecycle: jest.fn() } as unknown as jest.Mocked<AuditService>;
+
   const config = {
     get: jest.fn((key: string, fallback: unknown) => overrides?.config?.[key] ?? fallback),
   } as unknown as ConfigService;
   return {
-    service: new OnboardingService(ldap, otp, devices, audit, config),
+    service: new OnboardingService(ldap, otp, devices, config),
     ldap,
     otp,
     devices,
@@ -86,7 +85,13 @@ describe.each(['legacy', 'motc'] as const)('%s store SMS insertion', (store) => 
       const config = new ConfigService({
         app: { nodeEnv: 'development' },
         auth: { disabled: false },
-        otp: { ...defaults.otp, store, staticValue: '012345', charset: 'numeric', inResponse: true },
+        otp: {
+          ...defaults.otp,
+          store,
+          staticValue: '012345',
+          charset: 'numeric',
+          inResponse: true,
+        },
         sms: {
           ...defaults.sms,
           messageTemplate: 'Register [{otp}].\\n\\nRegistration code: {otp}',
@@ -107,7 +112,10 @@ describe.each(['legacy', 'motc'] as const)('%s store SMS insertion', (store) => 
         execute: jest.fn().mockResolvedValue({ rowsAffected: 1, rows: [{ SeqNo: 42 }] }),
       } as unknown as jest.Mocked<MssqlService>;
       const smsDb = {
-        query: jest.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([{ NextId: 42 }]),
+        query: jest
+          .fn()
+          .mockResolvedValueOnce([])
+          .mockResolvedValueOnce([{ NextId: 42 }]),
         execute: jest.fn().mockResolvedValue({ rowsAffected: 1, rows: [] }),
       } as unknown as jest.Mocked<MotcSmsDbService>;
       const emailDelivery = { sendOtpEmail: jest.fn() };
@@ -121,8 +129,8 @@ describe.each(['legacy', 'motc'] as const)('%s store SMS insertion', (store) => 
             )
           : new MotcSmsOtpRepository(smsDb, emailDelivery, config);
       const { ldap, devices } = makeService();
-      const audit = { lifecycle: jest.fn() } as unknown as AuditService;
-      const service = new OnboardingService(ldap, otp, devices, audit, config);
+
+      const service = new OnboardingService(ldap, otp, devices, config);
 
       const result = await service[method]({ ...DTO, phonenumber: IDENTITY.phoneNumber }, lang);
 
@@ -146,9 +154,18 @@ describe.each(['legacy', 'motc'] as const)('%s store SMS insertion', (store) => 
       expect(emailDelivery.sendOtpEmail).not.toHaveBeenCalled();
       if (store === 'motc') {
         const restarted = new MotcSmsOtpRepository(smsDb, emailDelivery, config);
-        const verify = { username: DTO.username, imei: DTO.imeinumber, requestId: '42', otp: '012345' };
+        const verify = {
+          username: DTO.username,
+          imei: DTO.imeinumber,
+          requestId: '42',
+          otp: '012345',
+        };
         smsDb.query.mockResolvedValue([
-          { MessageID: 42, DiffInSeconds: 10, MessageBody: expectedBody.replace('012345', '987654') },
+          {
+            MessageID: 42,
+            DiffInSeconds: 10,
+            MessageBody: expectedBody.replace('012345', '987654'),
+          },
         ]);
         await expect(restarted.verify(verify)).resolves.toBe(false);
         smsDb.query.mockResolvedValue([
@@ -181,8 +198,7 @@ describe.each(['validateUser', 'sendOtp'] as const)('OTP response for %s', (meth
 
     expect(result).toHaveProperty('otp', code);
     expect(result.requestid).toBe('12345');
-    expect(safePreview(result)).toHaveProperty('otp', '******');
-    expect(JSON.stringify(safePreview(result))).not.toContain(`"otp":"${code}"`);
+
     expect(result).toHaveProperty('otp', code);
   });
 
@@ -274,14 +290,7 @@ describe.each(['en', 'ar'] as const)('Initiate original contacts with lang=%s', 
         emailunmasked: IDENTITY.email,
         employeephonenumberunmasked: IDENTITY.phoneNumber,
       });
-      expect(safePreview(result)).toMatchObject({
-        email: 'MK****@hamad.qa',
-        employeephonenumber: 'XXXXX169',
-        emailunmasked: '******',
-        employeephonenumberunmasked: '******',
-      });
-      expect(JSON.stringify(safePreview(result))).not.toContain(IDENTITY.email);
-      expect(JSON.stringify(safePreview(result))).not.toContain(IDENTITY.phoneNumber);
+
       expect(result).toHaveProperty('emailunmasked', IDENTITY.email);
       expect(result).toHaveProperty('employeephonenumberunmasked', IDENTITY.phoneNumber);
       if (phase === 'Exist') expect(otp.send).not.toHaveBeenCalled();
@@ -292,19 +301,6 @@ describe.each(['en', 'ar'] as const)('Initiate original contacts with lang=%s', 
       }
     },
   );
-});
-
-it('redacts original contact fields recursively without changing the source', () => {
-  const contacts = Object.freeze({
-    emailunmasked: IDENTITY.email,
-    employeephonenumberunmasked: IDENTITY.phoneNumber,
-  });
-
-  expect(safePreview({ rows: [contacts] })).toEqual({
-    rows: [{ emailunmasked: '******', employeephonenumberunmasked: '******' }],
-  });
-  expect(contacts.emailunmasked).toBe(IDENTITY.email);
-  expect(contacts.employeephonenumberunmasked).toBe(IDENTITY.phoneNumber);
 });
 
 it('preserves the original contact format and omits unavailable values in JSON', async () => {
@@ -414,14 +410,17 @@ describe('OnboardingService.validateUser (reworked initiate, 2026-09-03)', () =>
     ['+12', '+XX'],
     ['', undefined],
     [undefined, undefined],
-  ])('shows only the last three phone digits in the response: %s', async (phoneNumber, expected) => {
-    const { service, otp } = makeService({ identity: { phoneNumber } });
+  ])(
+    'shows only the last three phone digits in the response: %s',
+    async (phoneNumber, expected) => {
+      const { service, otp } = makeService({ identity: { phoneNumber } });
 
-    const res = await service.validateUser(DTO);
+      const res = await service.validateUser(DTO);
 
-    expect(res.employeephonenumber).toBe(expected);
-    expect(otp.send).toHaveBeenCalledWith(expect.objectContaining({ phoneNumber }));
-  });
+      expect(res.employeephonenumber).toBe(expected);
+      expect(otp.send).toHaveBeenCalledWith(expect.objectContaining({ phoneNumber }));
+    },
+  );
 
   it('valid unused OTP already exists: keeps it and answers vflag=Pending with remaining minutes', async () => {
     const { service, otp, devices } = makeService();

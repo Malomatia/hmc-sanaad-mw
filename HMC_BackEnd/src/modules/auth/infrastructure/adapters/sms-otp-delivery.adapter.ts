@@ -1,4 +1,4 @@
-import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
@@ -20,7 +20,6 @@ import { Lang } from '@shared/domain/lang';
  */
 @Injectable()
 export class SmsOtpDeliveryAdapter implements OtpDeliveryPort {
-  private readonly logger = new Logger(SmsOtpDeliveryAdapter.name);
   private readonly cfg: SmsConfig;
   private readonly isProduction: boolean;
 
@@ -39,13 +38,11 @@ export class SmsOtpDeliveryAdapter implements OtpDeliveryPort {
     _lang?: Lang,
     smsTemplate?: OtpSmsTemplate,
   ): Promise<void> {
-    const masked = SmsOtpDeliveryAdapter.maskPhone(phoneNumber);
     if (!this.cfg.baseUrl) {
       if (this.isProduction) {
-        this.logger.error('SMS_API_BASE_URL is not configured — cannot deliver OTP.');
         throw new ServiceUnavailableException('The SMS service is currently unavailable.');
       }
-      this.logger.warn(`SMS gateway not configured — OTP (${purpose}) NOT sent to ${masked}.`);
+
       return;
     }
 
@@ -65,12 +62,9 @@ export class SmsOtpDeliveryAdapter implements OtpDeliveryPort {
           },
         ),
       );
-      this.logger.log(`OTP SMS (${purpose}) sent to ${masked}.`);
     } catch (err) {
       // Never include the request payload (raw OTP / full phone) in the error.
-      this.logger.error(
-        `OTP SMS (${purpose}) delivery to ${masked} failed: ${(err as Error).message}`,
-      );
+
       throw new ServiceUnavailableException('The SMS service is currently unavailable.');
     }
   }

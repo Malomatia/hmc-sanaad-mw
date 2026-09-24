@@ -10,7 +10,7 @@ import { MpinService } from './mpin.service';
 import { JwtService, JwtSignOptions } from '@nestjs/jwt';
 import { Role } from '@core/auth/auth-user.interface';
 import { AuthenticatedUser } from '@core/auth/auth-user.interface';
-import { AuditService } from '@core/audit/audit.service';
+
 import { TokenRevocationService } from '@core/auth/token-revocation.service';
 import { AuthService } from './auth.service';
 import { MpinStorePort } from '../domain/ports/mpin-store.port';
@@ -68,7 +68,7 @@ function makeService(overrides: Partial<typeof AUTH_CFG> = {}, identityUsername 
   const oracleUser: jest.Mocked<OracleUserValidationPort> = {
     validate: jest.fn().mockResolvedValue(true),
   };
-  const audit = { lifecycle: jest.fn() } as unknown as AuditService;
+
   const revocation = new TokenRevocationService();
   const config = {
     get: jest.fn((key: string, dflt?: unknown) =>
@@ -84,11 +84,21 @@ function makeService(overrides: Partial<typeof AUTH_CFG> = {}, identityUsername 
     devices,
     employment,
     oracleUser,
-    audit,
+
     revocation,
     config,
   );
-  return { service, jwt, revocation, devices, ldap, mpinStore, employment, functionAccess, oracleUser };
+  return {
+    service,
+    jwt,
+    revocation,
+    devices,
+    ldap,
+    mpinStore,
+    employment,
+    functionAccess,
+    oracleUser,
+  };
 }
 
 const LOGIN = {
@@ -154,8 +164,17 @@ describe('Login invalid-credentials language over HTTP', () => {
 describe('AuthService Oracle user validation', () => {
   const functions: FunctionAccess[] = [
     { functionname: 'Payslip', functioncode: 'frmPayslip', status: FunctionStatus.ENABLED },
-    { functionname: 'Housing', functioncode: 'frmHousing', remarks: 'Housing', status: FunctionStatus.ENABLED },
-    { functionname: 'Staff clinic', functioncode: 'frmStaffclinic', status: FunctionStatus.DISABLED },
+    {
+      functionname: 'Housing',
+      functioncode: 'frmHousing',
+      remarks: 'Housing',
+      status: FunctionStatus.ENABLED,
+    },
+    {
+      functionname: 'Staff clinic',
+      functioncode: 'frmStaffclinic',
+      status: FunctionStatus.DISABLED,
+    },
     { functionname: 'Sogha', functioncode: 'frmSogha', status: FunctionStatus.ENABLED },
     { functionname: 'Banner', functioncode: 'flxbanner', status: FunctionStatus.COMING_SOON },
     { functionname: 'Approvals', functioncode: 'frmApprovals', status: FunctionStatus.ENABLED },
@@ -187,34 +206,38 @@ describe('AuthService Oracle user validation', () => {
     }
   });
 
-  it.each(['NO', 'unavailable', 'timeout', 'disabled'])('restricts the list and both JWTs when Oracle is %s', async (result) => {
-    const { service, functionAccess, oracleUser, jwt } = makeService();
-    const ora = {
-      isConfigured: jest.fn().mockReturnValue(result !== 'disabled'),
-      call: result === 'unavailable' || result === 'timeout'
-        ? jest.fn().mockRejectedValue(new Error(result))
-        : jest.fn().mockResolvedValue({ p_is_valid: 'NO' }),
-    };
-    const repository = new OracleUserValidationRepository(ora as unknown as OracleService);
-    oracleUser.validate.mockImplementation((username) => repository.validate(username));
-    jest.mocked(functionAccess.list).mockResolvedValue(functions);
+  it.each(['NO', 'unavailable', 'timeout', 'disabled'])(
+    'restricts the list and both JWTs when Oracle is %s',
+    async (result) => {
+      const { service, functionAccess, oracleUser, jwt } = makeService();
+      const ora = {
+        isConfigured: jest.fn().mockReturnValue(result !== 'disabled'),
+        call:
+          result === 'unavailable' || result === 'timeout'
+            ? jest.fn().mockRejectedValue(new Error(result))
+            : jest.fn().mockResolvedValue({ p_is_valid: 'NO' }),
+      };
+      const repository = new OracleUserValidationRepository(ora as unknown as OracleService);
+      oracleUser.validate.mockImplementation((username) => repository.validate(username));
+      jest.mocked(functionAccess.list).mockResolvedValue(functions);
 
-    const response = await service.login(LOGIN);
+      const response = await service.login(LOGIN);
 
-    expect(response).toMatchObject({
-      status: 'success',
-      isOrcaleUser: false,
-      functionaccesslist: restricted,
-    });
-    expect(functions).toHaveLength(6);
-    for (const token of [response.token!, response.refreshtoken!]) {
-      expect(jwt.verify(token)).toMatchObject({ functions: restrictedClaims });
-    }
-    const refreshed = await service.refresh({ refreshtoken: response.refreshtoken! });
-    for (const token of [refreshed.token!, refreshed.refreshtoken!]) {
-      expect(jwt.verify(token)).toMatchObject({ functions: restrictedClaims });
-    }
-  });
+      expect(response).toMatchObject({
+        status: 'success',
+        isOrcaleUser: false,
+        functionaccesslist: restricted,
+      });
+      expect(functions).toHaveLength(6);
+      for (const token of [response.token!, response.refreshtoken!]) {
+        expect(jwt.verify(token)).toMatchObject({ functions: restrictedClaims });
+      }
+      const refreshed = await service.refresh({ refreshtoken: response.refreshtoken! });
+      for (const token of [refreshed.token!, refreshed.refreshtoken!]) {
+        expect(jwt.verify(token)).toMatchObject({ functions: restrictedClaims });
+      }
+    },
+  );
 
   it('does not synthesize missing functions for a non-Oracle user', async () => {
     const { service, oracleUser } = makeService();

@@ -17,12 +17,8 @@ import { ResponseInterceptor } from './http/response.interceptor';
 import { TimeoutInterceptor } from './http/timeout.interceptor';
 import { CorrelationIdMiddleware } from './http/correlation-id.middleware';
 import { HealthController } from './health/health.controller';
-import { AuditModule } from './audit/audit.module';
-import { AuditInterceptor } from './audit/audit.interceptor';
+
 import { FunctionAccessGuard } from './auth/function-access.guard';
-import { ApiLogsModule } from './logging/api-logs.module';
-import { ApiLogInterceptor } from './logging/api-log.interceptor';
-import { DevConsoleModule } from './dev-console/dev-console.module';
 
 /**
  * Framework-level cross-cutting concerns wired once for the whole app:
@@ -50,9 +46,6 @@ import { DevConsoleModule } from './dev-console/dev-console.module';
     EmailModule,
     FirebaseModule,
     AuthModule,
-    AuditModule,
-    ApiLogsModule,
-    DevConsoleModule,
   ],
   controllers: [HealthController],
   providers: [
@@ -64,8 +57,7 @@ import { DevConsoleModule } from './dev-console/dev-console.module';
         transform: true,
       }),
     },
-    { provide: APP_INTERCEPTOR, useClass: ApiLogInterceptor },
-    { provide: APP_INTERCEPTOR, useClass: AuditInterceptor },
+
     { provide: APP_INTERCEPTOR, useClass: TimeoutInterceptor },
     { provide: APP_INTERCEPTOR, useClass: ResponseInterceptor },
     { provide: APP_GUARD, useClass: JwtAuthGuard },

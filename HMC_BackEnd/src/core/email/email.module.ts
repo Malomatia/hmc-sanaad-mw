@@ -1,6 +1,5 @@
 import { Global, Module } from '@nestjs/common';
 import { EmailService } from './email.service';
-import { EmailDiagnosticsController } from './email-diagnostics.controller';
 
 /**
  * Global module exposing the SMTP EmailService (nodemailer): the OTP email
@@ -9,7 +8,7 @@ import { EmailDiagnosticsController } from './email-diagnostics.controller';
  */
 @Global()
 @Module({
-  controllers: [EmailDiagnosticsController],
+  controllers: [],
   providers: [EmailService],
   exports: [EmailService],
 })

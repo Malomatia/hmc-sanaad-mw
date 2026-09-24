@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotImplementedException } from '@nestjs/common';
+import { Injectable, NotImplementedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Role } from '@core/auth/auth-user.interface';
 import { MotcSmsDbService } from '@core/database/motc-sms-db.service';
@@ -30,7 +30,6 @@ import { EmployeeIdentity } from '../../domain/auth-identity';
  */
 @Injectable()
 export class MssqlUserRepository implements LdapUserPort {
-  private readonly logger = new Logger(MssqlUserRepository.name);
   private readonly view: string;
 
   private static readonly PHONE_COLUMNS = [
@@ -89,9 +88,6 @@ export class MssqlUserRepository implements LdapUserPort {
     );
     const row = rows[0];
     if (!row) {
-      this.logger.warn(
-        `No ${this.view} row for "${query.username}" — not a live employee, refusing.`,
-      );
       return {
         username: query.username,
         employeeName: query.username,

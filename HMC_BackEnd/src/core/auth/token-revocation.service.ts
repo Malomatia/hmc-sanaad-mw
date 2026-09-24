@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 
 /**
  * In-memory JWT revocation list (jti denylist) behind /auth/logout and the
@@ -14,7 +14,6 @@ import { Injectable, Logger } from '@nestjs/common';
  */
 @Injectable()
 export class TokenRevocationService {
-  private readonly logger = new Logger(TokenRevocationService.name);
   /** jti → revocation-entry expiry (epoch ms). */
   private readonly revoked = new Map<string, number>();
 
@@ -29,7 +28,6 @@ export class TokenRevocationService {
         ? expSeconds * 1000
         : Date.now() + TokenRevocationService.DEFAULT_TTL_MS;
     this.revoked.set(jti, expiresAt);
-    this.logger.log(`Token ${jti} revoked (until ${new Date(expiresAt).toISOString()}).`);
   }
 
   isRevoked(jti: string): boolean {

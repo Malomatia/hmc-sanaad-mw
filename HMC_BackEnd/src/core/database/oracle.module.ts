@@ -1,10 +1,8 @@
 import { Global, Module } from '@nestjs/common';
 import { OracleService } from './oracle.service';
-import { OracleLogStore } from './oracle-log.store';
-import { OracleMetadataService } from './oracle-metadata.service';
+
 import { OracleSchemaService } from './oracle-schema.service';
 import { OracleContractCatalog } from './oracle-contracts';
-import { DiagnosticsController } from './diagnostics.controller';
 
 /**
  * Global module exposing the single OracleService pool to every data-touching
@@ -13,8 +11,8 @@ import { DiagnosticsController } from './diagnostics.controller';
  */
 @Global()
 @Module({
-  controllers: [DiagnosticsController],
-  providers: [OracleService, OracleLogStore, OracleMetadataService, OracleContractCatalog, OracleSchemaService],
-  exports: [OracleService, OracleLogStore, OracleSchemaService],
+  controllers: [],
+  providers: [OracleService, OracleContractCatalog, OracleSchemaService],
+  exports: [OracleService, OracleSchemaService],
 })
 export class OracleModule {}

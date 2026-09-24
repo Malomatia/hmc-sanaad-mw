@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { verifyAssertion, verifyAttestation } from 'node-app-attest';
 import { AppIntegrityConfig } from '@core/config/configuration';
 import { IosAttestationPort } from '../../domain/ports/integrity.ports';
@@ -17,8 +17,6 @@ import { IosAttestationPort } from '../../domain/ports/integrity.ports';
  */
 @Injectable()
 export class AppleAppAttestAdapter implements IosAttestationPort {
-  private static readonly log = new Logger(AppleAppAttestAdapter.name);
-
   constructor(private readonly cfg: AppIntegrityConfig['ios']) {}
 
   get enabled(): boolean {

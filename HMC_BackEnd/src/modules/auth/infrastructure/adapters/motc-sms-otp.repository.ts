@@ -1,4 +1,4 @@
-import { HttpException, HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
+import { HttpException, HttpStatus, Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { timingSafeEqual } from 'node:crypto';
 import { MotcSmsDbService } from '@core/database/motc-sms-db.service';
@@ -54,7 +54,6 @@ const INSERT_RETRIES = 5;
  */
 @Injectable()
 export class MotcSmsOtpRepository implements OtpPort {
-  private readonly logger = new Logger(MotcSmsOtpRepository.name);
   private readonly cfg: OtpConfig;
   private readonly motc: MotcSmsConfig;
   private readonly messageTemplate: string;
@@ -111,18 +110,16 @@ export class MotcSmsOtpRepository implements OtpPort {
 
     const otp = generateOtp(this.cfg);
     // Raw OTP goes only into MessageBody — never logged, never returned.
-    const template = cmd.smsTemplate === 'forget' ? this.forgetMessageTemplate : this.messageTemplate;
+    const template =
+      cmd.smsTemplate === 'forget' ? this.forgetMessageTemplate : this.messageTemplate;
     const messageBody = template.replace(/\{otp\}/g, otp);
     const messageId = await this.insertMessage(cmd, messageBody);
     if (!cmd.phoneNumber && cmd.email) {
       // No mobile: the row is stored for VALIDATION only (emailProcessedState
       // keeps the SMS gateway from pushing it) — delivery happens over SMTP.
       await this.emailDelivery.sendOtpEmail(cmd.email, otp, cmd.purpose, cmd.lang ?? DEFAULT_LANG);
-      this.logger.log(
-        `OTP push row stored (${cmd.purpose}) as MessageID=${messageId} — delivered by email.`,
-      );
     }
-    this.logger.log(`OTP push row queued (${cmd.purpose}) as MessageID=${messageId}.`);
+
     return {
       requestId: String(messageId),
       status: 'NEW',
@@ -145,7 +142,6 @@ export class MotcSmsOtpRepository implements OtpPort {
 
     const failed = this.attempts.get(requestId) ?? 0;
     if (failed >= this.cfg.maxAttempts) {
-      this.logger.warn(`OTP request ${requestId} locked after ${failed} failed attempts.`);
       return false;
     }
 
@@ -215,9 +211,6 @@ export class MotcSmsOtpRepository implements OtpPort {
           DUPLICATE_KEY_ERRORS.has(sqlError) &&
           attempt < INSERT_RETRIES
         ) {
-          this.logger.warn(
-            `MessageID ${messageId} raced a concurrent insert — retrying (${attempt}/${INSERT_RETRIES}).`,
-          );
           continue;
         }
         throw err;
@@ -286,16 +279,14 @@ export class MotcSmsOtpRepository implements OtpPort {
     if (parts.length > 1) {
       return new RegExp(`^${parts[0]}(?<otp>${cls}+)${parts.slice(1).join('\\k<otp>')}$`);
     }
-    this.logger.warn(
-      'SMS_MESSAGE_TEMPLATE has no {otp} placeholder — OTP extraction falls back to the first charset run.',
-    );
+
     return new RegExp(`(${cls}{${this.cfg.length}})`);
   }
 
   private extractOtp(messageBody: string): string | undefined {
     const match = this.otpPattern.exec(messageBody) ?? this.forgetOtpPattern.exec(messageBody);
     if (match) return match[1];
-    this.logger.warn('Stored MessageBody did not match the OTP message template.');
+
     return undefined;
   }
 

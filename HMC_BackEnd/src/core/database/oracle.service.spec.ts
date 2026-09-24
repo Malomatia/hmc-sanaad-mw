@@ -1,6 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 import oracledb = require('oracledb');
-import { OracleLogStore } from './oracle-log.store';
+
 import { OracleService } from './oracle.service';
 
 const methods = ['query', 'call', 'callCursor', 'callMultiCursor'] as const;
@@ -16,20 +16,18 @@ describe.each(methods)('OracleService.%s username binds', (method) => {
   const scalarOutputs = Object.freeze({ p_dusername: 'Destination.Mixed', successflag: 's' });
   const outBinds = Object.freeze({ username: 'Returned.Mixed', ...scalarOutputs });
   let service: OracleService;
-  let logStore: OracleLogStore;
+
   let execute: jest.Mock;
   let close: jest.Mock;
   let getConnection: jest.Mock;
-  let log: jest.SpyInstance;
+
   let cursor: { getRows: jest.Mock; close: jest.Mock };
   let otherCursor: { getRows: jest.Mock; close: jest.Mock };
 
   beforeEach(() => {
-    logStore = new OracleLogStore();
-    service = new OracleService(
-      { getOrThrow: jest.fn().mockReturnValue({ callTimeout: 25000 }) } as unknown as ConfigService,
-      logStore,
-    );
+    service = new OracleService({
+      getOrThrow: jest.fn().mockReturnValue({ callTimeout: 25000 }),
+    } as unknown as ConfigService);
     cursor = {
       getRows: jest.fn().mockResolvedValue(rows),
       close: jest.fn().mockResolvedValue(undefined),
@@ -50,8 +48,6 @@ describe.each(methods)('OracleService.%s username binds', (method) => {
     close = jest.fn().mockResolvedValue(undefined);
     getConnection = jest.fn().mockResolvedValue({ execute, close });
     service['pool'] = { getConnection } as unknown as oracledb.Pool;
-    log = jest.spyOn(service['logger'], 'log').mockImplementation(() => undefined);
-    jest.spyOn(service['logger'], 'debug').mockImplementation(() => undefined);
   });
 
   afterEach(() => {
@@ -74,10 +70,8 @@ describe.each(methods)('OracleService.%s username binds', (method) => {
   function expectUnchangedResponse(result: unknown): void {
     if (method === 'query' || method === 'callCursor') {
       expect(result).toBe(rows);
-      expect(logStore.list().items[0].response).toEqual(rows);
     } else if (method === 'call') {
       expect(result).toBe(outBinds);
-      expect(logStore.list().items[0].response).toEqual(outBinds);
     } else {
       expect(result).toEqual({
         cursors: { first_cursor: rows, second_cursor: otherRows },
@@ -86,11 +80,6 @@ describe.each(methods)('OracleService.%s username binds', (method) => {
       const cursors = (result as { cursors: Record<string, unknown> }).cursors;
       expect(cursors.first_cursor).toBe(rows);
       expect(cursors.second_cursor).toBe(otherRows);
-      expect(logStore.list().items[0].response).toEqual({
-        first_cursor: rows,
-        second_cursor: otherRows,
-        ...scalarOutputs,
-      });
     }
     if (method === 'callCursor' || method === 'callMultiCursor') {
       expect(cursor.getRows).toHaveBeenCalledWith(0);
@@ -196,46 +185,13 @@ describe.each(methods)('OracleService.%s username binds', (method) => {
     expect(output.val).toBe('output.Mixed');
     expect(names).toEqual(['from.Mixed', null, 'another.Mixed']);
 
-    const entry = logStore.list().items[0];
-    expect(entry.binds).toMatchObject({
-      username: 'LOGIN.MIXED',
-      p_username: 'TYPED.MIXED',
-      p_user_name: 'INPUT.MIXED',
-      p_dusername: '<INOUT DESTINATION.MIXED>',
-      approver_user_name: '<OUT>',
-      from_user_name: '["FROM.MIXED",null,"ANOTHER.MIXED"]',
-      to_user_name: 'null',
-      p_to_user_name: 'undefined',
-      requestor_user_name: '37400',
-      user_name: "TO_DATE('2026-09-01', 'YYYY-MM-DD')",
-      p_from_user_name: '<BLOB 5 byte(s)>',
-      u: 'alias.Mixed',
-      k: 'key.Mixed',
-      arg0: 'argument.Mixed',
-      person_id: '037400',
-      first_name: 'Mixed Name',
-      filename: 'Mixed.pdf',
-      password: '***',
-      user_comment: 'Typed Comment',
-    });
-    expect(entry.sql).toBe(sql.replace(/\s+/g, ' ').trim());
-    expect(entry.finalSql).toContain("'LOGIN.MIXED'");
-    expect(entry.finalSql).toContain("'INPUT.MIXED'");
-    expect(entry.finalSql).toContain("'Original.Mixed'");
-    expect(log.mock.calls[0][0]).toContain('username=LOGIN.MIXED');
-    expect(log.mock.calls[0][0]).toContain('p_username=TYPED.MIXED');
-    expect(log.mock.calls[0][0]).toContain('p_user_name=INPUT.MIXED');
-    expect(log.mock.calls[0][0]).toContain('p_dusername=<INOUT DESTINATION.MIXED>');
-    expect(log.mock.calls[0][0]).toContain('approver_user_name=<OUT>');
-    expect(log.mock.calls[0][0]).not.toContain('login.Mixed');
-    expect(log.mock.invocationCallOrder[0]).toBeLessThan(getConnection.mock.invocationCallOrder[0]);
     expectUnchangedResponse(result);
   });
 
-  it('records the normalized inputs on execution failures without changing the caller binds', async () => {
+  it('preserves normalized execution inputs, error mapping and caller binds on failure', async () => {
     const binds = Object.freeze({ username: 'login.Mixed', user_comment: 'Keep Case' });
     const failure = new Error('ORA-20001: business failure');
-    jest.spyOn(service['logger'], 'error').mockImplementation(() => undefined);
+
     execute.mockImplementation(async (statement: string) => {
       if (statement === sql) throw failure;
       return {};
@@ -251,12 +207,7 @@ describe.each(methods)('OracleService.%s username binds', (method) => {
       username: 'LOGIN.MIXED',
       user_comment: 'Keep Case',
     });
-    expect(log.mock.calls[0][0]).toContain('username=LOGIN.MIXED');
-    expect(logStore.list().items[0]).toMatchObject({
-      status: 'error',
-      binds: { username: 'LOGIN.MIXED', user_comment: 'Keep Case' },
-      error: failure.message,
-    });
+
     expect(binds.username).toBe('login.Mixed');
     expect(close).toHaveBeenCalledTimes(1);
   });
@@ -276,12 +227,7 @@ describe.each(methods)('OracleService.%s username binds', (method) => {
     expect(execute.mock.calls[execute.mock.calls.length - 1][0]).toBe(sql);
     expect(execute.mock.calls[execute.mock.calls.length - 1][1]).toBe(binds);
     expect(descriptor.val).toBe('input.Mixed');
-    expect(logStore.list().items[0].binds).toEqual({
-      0: 'login.Mixed',
-      1: '<INOUT input.Mixed>',
-      2: 'null',
-      3: '37400',
-    });
+
     expectUnchangedResponse(result);
   });
 });

@@ -1,19 +1,25 @@
-import { ExecutionContext, INestApplication, ServiceUnavailableException, ValidationPipe } from '@nestjs/common';
+import {
+  ExecutionContext,
+  INestApplication,
+  ServiceUnavailableException,
+  ValidationPipe,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Reflector } from '@nestjs/core';
 import { Test } from '@nestjs/testing';
 import { firstValueFrom, of } from 'rxjs';
 import request from 'supertest';
 import { AuthenticatedUser, Role } from '../auth/auth-user.interface';
-import { ApiLogInterceptor } from '../logging/api-log.interceptor';
-import { ApiLogStore } from '../logging/api-log.store';
-import { ApiLogFileWriter } from '../logging/api-log-file-writer.service';
+
 import { failureResult, successResult } from '@shared/domain/submit-result';
 import {
   ApprovalsService,
   WorklistService,
 } from '@modules/approvals/application/approvals.service';
-import { APPROVALS_REPOSITORY, WORKLIST_REPOSITORY } from '@modules/approvals/domain/approvals.repository';
+import {
+  APPROVALS_REPOSITORY,
+  WORKLIST_REPOSITORY,
+} from '@modules/approvals/domain/approvals.repository';
 import { ApprovalsController } from '@modules/approvals/interface/approvals.controller';
 import { LettersService } from '@modules/letters/application/letters.service';
 import { LettersController } from '@modules/letters/interface/letters.controller';
@@ -127,8 +133,7 @@ describe('letters and approvals HTTP responses', () => {
   const reassign = jest.fn();
   const decide = jest.fn();
   const getSummary = jest.fn();
-  const record = jest.fn();
-  const writer = { write: jest.fn() };
+
   const user: AuthenticatedUser = {
     username: 'AIBRAHIM39',
     employeeNumber: '037400',
@@ -164,13 +169,7 @@ describe('letters and approvals HTTP responses', () => {
     app.useGlobalPipes(
       new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }),
     );
-    app.useGlobalInterceptors(
-      new ApiLogInterceptor(
-        { nextId: () => 1, record } as unknown as ApiLogStore,
-        writer as unknown as ApiLogFileWriter,
-      ),
-      new ResponseInterceptor(new Reflector()),
-    );
+    app.useGlobalInterceptors(new ResponseInterceptor(new Reflector()));
     await app.init();
   });
 
@@ -205,10 +204,6 @@ describe('letters and approvals HTTP responses', () => {
       httpStatusCode: 200,
     });
     expect(submit).toHaveBeenCalledWith(expect.objectContaining(body), user, lang);
-    expect(record).toHaveBeenCalledWith(
-      expect.objectContaining({ responseSummary: expect.objectContaining(response.body) }),
-    );
-    expect(writer.write).toHaveBeenCalledTimes(1);
   });
 
   it('supports the lang header and keeps query precedence for a successful submit', async () => {
@@ -232,16 +227,28 @@ describe('letters and approvals HTTP responses', () => {
       route: 'request-info',
       payload: { itemKey: 'item-1', mode: 'QUESTION', comment: 'Please clarify.' },
       handler: requestInfo,
-      success: { en: 'Request for More Information Processed', ar: 'تمت معالجة طلب مزيد من المعلومات' },
-      failure: { en: 'Request for More Information Not Processed', ar: 'تعذرت معالجة طلب مزيد من المعلومات' },
+      success: {
+        en: 'Request for More Information Processed',
+        ar: 'تمت معالجة طلب مزيد من المعلومات',
+      },
+      failure: {
+        en: 'Request for More Information Not Processed',
+        ar: 'تعذرت معالجة طلب مزيد من المعلومات',
+      },
     },
     {
       action: 'ANSWER',
       route: 'request-info',
       payload: { itemKey: 'item-1', mode: 'ANSWER', comment: 'Here are the details.' },
       handler: requestInfo,
-      success: { en: 'Answer for More Information Processed', ar: 'تمت معالجة الرد على طلب مزيد من المعلومات' },
-      failure: { en: 'Answer for More Information Not Processed', ar: 'تعذرت معالجة الرد على طلب مزيد من المعلومات' },
+      success: {
+        en: 'Answer for More Information Processed',
+        ar: 'تمت معالجة الرد على طلب مزيد من المعلومات',
+      },
+      failure: {
+        en: 'Answer for More Information Not Processed',
+        ar: 'تعذرت معالجة الرد على طلب مزيد من المعلومات',
+      },
     },
     {
       action: 'REASSIGN',
@@ -290,22 +297,23 @@ describe('letters and approvals HTTP responses', () => {
           result: source.result,
         });
         expect(handler).toHaveBeenCalledTimes(1);
-        expect(handler).toHaveBeenCalledWith(expect.objectContaining({
-          ...payload,
-          username: user.username,
-          approvalId: '123',
-          lang: expectedLang,
-        }));
+        expect(handler).toHaveBeenCalledWith(
+          expect.objectContaining({
+            ...payload,
+            username: user.username,
+            approvalId: '123',
+            lang: expectedLang,
+          }),
+        );
         expect(source.errormessage).toBe(succeeded ? 'Procedure success' : 'Procedure failure');
         expect(source.errormessageAr).toBe('نص الإجراء');
-        expect(record).toHaveBeenCalledWith(
-          expect.objectContaining({ responseSummary: expect.objectContaining(response.body) }),
-        );
       },
     );
 
     it.each(['en', 'ar'] as const)('preserves the Oracle fallback for %s', async (lang) => {
-      handler.mockResolvedValueOnce(failureResult(GENERIC_ERROR_MESSAGE.en, GENERIC_ERROR_MESSAGE.ar));
+      handler.mockResolvedValueOnce(
+        failureResult(GENERIC_ERROR_MESSAGE.en, GENERIC_ERROR_MESSAGE.ar),
+      );
       const response = await request(app.getHttpServer())
         .post(`/api/v1/approvals/123/${route}`)
         .set('lang', lang)
@@ -356,7 +364,9 @@ describe('letters and approvals HTTP responses', () => {
       .post('/api/v1/approvals/123/reassign')
       .send({ assignTo: 'OTHER.USER' })
       .expect(200)
-      .expect(({ body: response }) => expect(response.message).toBe('Re-Assign Approval Processed'));
+      .expect(({ body: response }) =>
+        expect(response.message).toBe('Re-Assign Approval Processed'),
+      );
 
     expect(reassign).toHaveBeenCalledWith(expect.objectContaining({ type: 'DELEGATE' }));
   });
@@ -381,39 +391,39 @@ describe('letters and approvals HTTP responses', () => {
       ['en', 'ar', 'en'],
       ['ar', 'en', 'ar'],
       ['unsupported', 'ar', 'en'],
-    ] as const)('localizes success for query=%s header=%s', async (queryLang, headerLang, expectedLang) => {
-      const source = Object.freeze({
-        ...successResult('Procedure success', { notificationId: '123' }),
-        errormessageAr: 'نص الإجراء',
-      });
-      decide.mockResolvedValueOnce(source);
-      const req = request(app.getHttpServer()).post('/api/v1/approvals/123/decision');
-      if (queryLang !== undefined) req.query({ lang: queryLang });
-      if (headerLang !== undefined) req.set('lang', headerLang);
+    ] as const)(
+      'localizes success for query=%s header=%s',
+      async (queryLang, headerLang, expectedLang) => {
+        const source = Object.freeze({
+          ...successResult('Procedure success', { notificationId: '123' }),
+          errormessageAr: 'نص الإجراء',
+        });
+        decide.mockResolvedValueOnce(source);
+        const req = request(app.getHttpServer()).post('/api/v1/approvals/123/decision');
+        if (queryLang !== undefined) req.query({ lang: queryLang });
+        if (headerLang !== undefined) req.set('lang', headerLang);
 
-      const response = await req.send(payload).expect(200);
+        const response = await req.send(payload).expect(200);
 
-      expect(response.body).toEqual({
-        status: 'success',
-        successflag: 'S',
-        message: messages[expectedLang],
-        httpStatusCode: 200,
-        result: source.result,
-      });
-      expect(decide).toHaveBeenCalledTimes(1);
-      expect(decide).toHaveBeenCalledWith({
-        ...payload,
-        itemType: 'HRSSA',
-        username: user.username,
-        approvalId: '123',
-        lang: expectedLang,
-      });
-      expect(source.errormessage).toBe('Procedure success');
-      expect(source.errormessageAr).toBe('نص الإجراء');
-      expect(record).toHaveBeenCalledWith(
-        expect.objectContaining({ responseSummary: expect.objectContaining(response.body) }),
-      );
-    });
+        expect(response.body).toEqual({
+          status: 'success',
+          successflag: 'S',
+          message: messages[expectedLang],
+          httpStatusCode: 200,
+          result: source.result,
+        });
+        expect(decide).toHaveBeenCalledTimes(1);
+        expect(decide).toHaveBeenCalledWith({
+          ...payload,
+          itemType: 'HRSSA',
+          username: user.username,
+          approvalId: '123',
+          lang: expectedLang,
+        });
+        expect(source.errormessage).toBe('Procedure success');
+        expect(source.errormessageAr).toBe('نص الإجراء');
+      },
+    );
 
     it.each([
       ['en', undefined, 'en'],
@@ -422,22 +432,25 @@ describe('letters and approvals HTTP responses', () => {
       [undefined, 'ar', 'en'],
       ['en', 'ar', 'en'],
       ['ar', 'en', 'ar'],
-    ] as const)('keeps failure text and language handling for query=%s header=%s', async (queryLang, headerLang, expectedLang) => {
-      const source = Object.freeze(failureResult('Procedure failure', 'تعذر تنفيذ القرار'));
-      decide.mockResolvedValueOnce(source);
-      const req = request(app.getHttpServer()).post('/api/v1/approvals/123/decision');
-      if (queryLang !== undefined) req.query({ lang: queryLang });
-      if (headerLang !== undefined) req.set('lang', headerLang);
+    ] as const)(
+      'keeps failure text and language handling for query=%s header=%s',
+      async (queryLang, headerLang, expectedLang) => {
+        const source = Object.freeze(failureResult('Procedure failure', 'تعذر تنفيذ القرار'));
+        decide.mockResolvedValueOnce(source);
+        const req = request(app.getHttpServer()).post('/api/v1/approvals/123/decision');
+        if (queryLang !== undefined) req.query({ lang: queryLang });
+        if (headerLang !== undefined) req.set('lang', headerLang);
 
-      const response = await req.send(payload).expect(200);
+        const response = await req.send(payload).expect(200);
 
-      expect(response.body).toEqual({
-        status: 'error',
-        successflag: 'N',
-        message: expectedLang === 'ar' ? source.errormessageAr : source.errormessage,
-        httpStatusCode: 200,
-      });
-    });
+        expect(response.body).toEqual({
+          status: 'error',
+          successflag: 'N',
+          message: expectedLang === 'ar' ? source.errormessageAr : source.errormessage,
+          httpStatusCode: 200,
+        });
+      },
+    );
 
     it.each([
       failureResult('Procedure failure'),
@@ -450,11 +463,13 @@ describe('letters and approvals HTTP responses', () => {
         .post('/api/v1/approvals/123/decision?lang=ar')
         .send(payload)
         .expect(200)
-        .expect(({ body: response }) => expect(response).toMatchObject({
-          status: source.status,
-          successflag: source.successflag,
-          message: 'Procedure failure',
-        }));
+        .expect(({ body: response }) =>
+          expect(response).toMatchObject({
+            status: source.status,
+            successflag: source.successflag,
+            message: 'Procedure failure',
+          }),
+        );
     });
 
     it('preserves exceptions instead of returning a success message', async () => {

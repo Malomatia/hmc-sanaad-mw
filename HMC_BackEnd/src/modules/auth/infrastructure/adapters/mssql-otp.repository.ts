@@ -1,4 +1,4 @@
-import { HttpException, HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
+import { HttpException, HttpStatus, Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { MssqlService } from '@core/database/mssql.service';
@@ -47,7 +47,6 @@ interface OtpRow {
  */
 @Injectable()
 export class MssqlOtpRepository implements OtpPort {
-  private readonly logger = new Logger(MssqlOtpRepository.name);
   private readonly cfg: OtpConfig;
   /** Failed verify attempts per SeqNo (mirrored best-effort into the table). */
   private readonly attempts = new Map<string, number>();
@@ -182,7 +181,6 @@ export class MssqlOtpRepository implements OtpPort {
 
     const failed = this.attempts.get(requestId) ?? 0;
     if (failed >= this.cfg.maxAttempts) {
-      this.logger.warn(`OTP request ${requestId} locked after ${failed} failed attempts.`);
       return false;
     }
 
@@ -236,9 +234,7 @@ export class MssqlOtpRepository implements OtpPort {
           WHERE SeqNo = @seqNo`,
         { seqNo },
       );
-    } catch (err) {
-      this.logger.warn(`Could not persist verify state for SeqNo ${seqNo}: ${(err as Error).message}`);
-    }
+    } catch (err) {}
   }
 
   /** Legacy RequestType values per OTP purpose. */

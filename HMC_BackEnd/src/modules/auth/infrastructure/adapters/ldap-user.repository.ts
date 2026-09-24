@@ -1,9 +1,4 @@
-import {
-  Injectable,
-  Logger,
-  ServiceUnavailableException,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { Injectable, ServiceUnavailableException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Client, Entry } from 'ldapts';
 import { Role } from '@core/auth/auth-user.interface';
@@ -48,7 +43,6 @@ const USER_ATTRIBUTES = [
  */
 @Injectable()
 export class LdapUserRepository implements LdapUserPort {
-  private readonly logger = new Logger(LdapUserRepository.name);
   private readonly cfg: LdapConfig;
 
   constructor(config: ConfigService) {
@@ -150,10 +144,7 @@ export class LdapUserRepository implements LdapUserPort {
 
   /** RFC 4515 escaping to prevent LDAP search-filter injection. */
   private escapeFilter(value: string): string {
-    return value.replace(
-      /[\\*()\0]/g,
-      (c) => `\\${c.charCodeAt(0).toString(16).padStart(2, '0')}`,
-    );
+    return value.replace(/[\\*()\0]/g, (c) => `\\${c.charCodeAt(0).toString(16).padStart(2, '0')}`);
   }
 
   private toIdentity(username: string, entry?: Entry): EmployeeIdentity {
@@ -183,15 +174,13 @@ export class LdapUserRepository implements LdapUserPort {
 
   private wrap(err: unknown): Error {
     const message = err instanceof Error ? err.message : String(err);
-    this.logger.error(`LDAP operation failed: ${message}`);
+
     return new ServiceUnavailableException(`LDAP directory error: ${message}`);
   }
 
   private async safeUnbind(client: Client): Promise<void> {
     try {
       await client.unbind();
-    } catch (err) {
-      this.logger.warn(`LDAP unbind failed: ${(err as Error).message}`);
-    }
+    } catch (err) {}
   }
 }

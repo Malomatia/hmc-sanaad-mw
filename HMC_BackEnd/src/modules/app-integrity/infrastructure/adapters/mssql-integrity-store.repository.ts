@@ -1,4 +1,4 @@
-import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
 import { MssqlService } from '@core/database/mssql.service';
 import { MssqlQueryError } from '@core/database/mssql.error';
@@ -16,7 +16,6 @@ const INVALID_OBJECT_NAME = 208;
  * deployment step, and is reported once rather than on every call.
  */
 abstract class GuardedStore {
-  protected static readonly log = new Logger('AttestationStore');
   private static readonly warned = new Set<string>();
 
   constructor(protected readonly db: MssqlService) {}
@@ -37,14 +36,10 @@ abstract class GuardedStore {
       if (missing) {
         if (!GuardedStore.warned.has(table)) {
           GuardedStore.warned.add(table);
-          GuardedStore.log.warn(
-            `${table} does not exist yet — device attestation cannot be recorded. ` +
-              'Apply tools/app-integrity-schema.sql.',
-          );
         }
         return undefined;
       }
-      GuardedStore.log.warn(`${table} ${operation} failed: ${message}`);
+
       return undefined;
     }
   }

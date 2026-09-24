@@ -1,7 +1,6 @@
 import {
   BadGatewayException,
   Injectable,
-  Logger,
   NotImplementedException,
   ServiceUnavailableException,
 } from '@nestjs/common';
@@ -20,7 +19,6 @@ import { ClinicMasters } from '../../domain/appointments.repository';
  */
 @Injectable()
 export class CernerClient {
-  private readonly logger = new Logger(CernerClient.name);
   private readonly baseUrl: string;
   private readonly timeoutMs: number;
 
@@ -47,7 +45,6 @@ export class CernerClient {
       );
       return { clinics, locations, services };
     } catch (err) {
-      this.logger.error(`Cerner masters failed: ${(err as Error).message}`);
       throw new BadGatewayException(ERROR_MESSAGES.CERNER_UNAVAILABLE);
     }
   }

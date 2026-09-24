@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as sql from 'mssql';
 import { MotcSmsConfig } from '../config/configuration';
@@ -20,15 +20,11 @@ import { MssqlQueryError, MssqlUnavailableException } from './mssql.error';
  */
 @Injectable()
 export class MotcSmsDbService implements OnModuleInit, OnModuleDestroy {
-  private readonly logger = new Logger(MotcSmsDbService.name);
   private pool: sql.ConnectionPool | undefined;
   private readonly cfg: MotcSmsConfig;
   /** Monotonic counter so each call's log lines can be correlated. */
-  private callSeq = 0;
 
   /** Param keys whose values must never be logged (OTP body + phone number). */
-  private static readonly SENSITIVE_PARAM =
-    /(mpin|password|pwd|otp|secret|token|messagebody|toaddress|phone)/i;
 
   constructor(config: ConfigService) {
     this.cfg = config.getOrThrow<MotcSmsConfig>('motcSms');
@@ -36,13 +32,9 @@ export class MotcSmsDbService implements OnModuleInit, OnModuleDestroy {
 
   async onModuleInit(): Promise<void> {
     if (this.cfg.disabled) {
-      this.logger.warn('MOTC_SMS_DB_DISABLED=true — MOTC SMS DB pool not created.');
       return;
     }
     if (!this.cfg.host || !this.cfg.database || !this.cfg.user) {
-      this.logger.warn(
-        'MOTC SMS DB host/database/user missing — pool not created. OTP send/validate will fail.',
-      );
       return;
     }
     // `HOST\INSTANCE` — with a static port (the client-provided setup) the
@@ -65,43 +57,26 @@ export class MotcSmsDbService implements OnModuleInit, OnModuleDestroy {
         requestTimeout: this.cfg.requestTimeoutMs,
         connectionTimeout: this.cfg.connectTimeoutMs,
       }).connect();
-      this.pool.on('error', (err) => this.logger.error(`MOTC SMS DB pool error: ${err.message}`));
-      this.logger.log(
-        `MOTC SMS DB pool created (min=${this.cfg.poolMin}, max=${this.cfg.poolMax}) → ${this.cfg.host}:${this.cfg.port}/${this.cfg.database}`,
-      );
+      this.pool.on('error', () => undefined);
+
       await this.verifyConnectivity();
     } catch (err) {
       // Not rethrown — see the note in OracleService.onModuleInit. getPool()
       // already raises MssqlUnavailableException per request and /health
       // reports motcSmsDb.reachable = false.
-      this.logger.error(
-        `Failed to create MOTC SMS DB pool: ${(err as Error).message} — starting without it; ` +
-          'OTP send/validate will answer 503 until the configuration is fixed.',
-      );
     }
   }
 
   /** Startup probe — logs only, never blocks boot (mirrors MssqlService). */
   private async verifyConnectivity(): Promise<void> {
     try {
-      const started = Date.now();
-      const result = await this.pool!.request().query<{ dbTime: Date }>(
-        'SELECT SYSDATETIMEOFFSET() AS dbTime',
-      );
-      this.logger.log(
-        `MOTC SMS DB connectivity verified in ${Date.now() - started}ms (server time: ${String(result.recordset[0]?.dbTime ?? 'unknown')})`,
-      );
-    } catch (err) {
-      this.logger.error(
-        `MOTC SMS DB pool connected but probe query FAILED — OTP calls will fail: ${(err as Error).message}`,
-      );
-    }
+      await this.pool!.request().query<{ dbTime: Date }>('SELECT SYSDATETIMEOFFSET() AS dbTime');
+    } catch (err) {}
   }
 
   async onModuleDestroy(): Promise<void> {
     if (this.pool) {
       await this.pool.close();
-      this.logger.log('MOTC SMS DB pool closed.');
     }
   }
 
@@ -152,39 +127,22 @@ export class MotcSmsDbService implements OnModuleInit, OnModuleDestroy {
     statement: string,
     params: Record<string, unknown>,
   ): Promise<sql.IResult<Record<string, any>>> {
-    const id = ++this.callSeq;
-    const started = Date.now();
-    const label = this.describeSql(statement);
-    this.logger.log(`[motc#${id}] → ${label} params=${this.formatParams(params)}`);
     const request = this.getPool().request();
     for (const [key, value] of Object.entries(params)) {
       request.input(key, value as sql.ISqlType | unknown);
     }
     try {
       const result = await request.query(statement);
-      const ms = Date.now() - started;
-      const rows = result.recordset?.length ?? 0;
-      this.logger.log(
-        `[motc#${id}] done ${label} ${rows} row(s), ${result.rowsAffected} affected (${ms}ms)`,
-      );
+
       return result;
     } catch (err) {
-      const ms = Date.now() - started;
       const wrapped = MssqlQueryError.from(err);
-      this.logger.error(`[motc#${id}] FAILED ${label} after ${ms}ms: ${wrapped.message}`);
+
       throw wrapped;
     }
   }
 
   /** Short label for a statement: the table read or written. */
-  private describeSql(statement: string): string {
-    const compact = statement.replace(/\s+/g, ' ').trim();
-    const target =
-      /\bfrom\s+([a-z0-9_$.\[\]]+)/i.exec(compact) ??
-      /\b(?:update|insert\s+into|delete\s+from)\s+([a-z0-9_$.\[\]]+)/i.exec(compact);
-    if (target) return target[1].toUpperCase();
-    return compact.length > 60 ? `${compact.slice(0, 57)}...` : compact;
-  }
 
   /** Lightweight readiness check for the /health endpoint. */
   async ping(): Promise<boolean> {
@@ -233,14 +191,18 @@ export class MotcSmsDbService implements OnModuleInit, OnModuleDestroy {
 
     const start = Date.now();
     try {
-      const result = await this.pool.request().query<{ version: string; dbTime: Date }>(
-        'SELECT @@VERSION AS version, SYSDATETIMEOFFSET() AS dbTime',
-      );
+      const result = await this.pool
+        .request()
+        .query<{ version: string; dbTime: Date }>(
+          'SELECT @@VERSION AS version, SYSDATETIMEOFFSET() AS dbTime',
+        );
       diag.latencyMs = Date.now() - start;
       diag.connected = true;
       const row = result.recordset[0];
       diag.server = {
-        version: String(row?.version ?? 'unknown').split('\n')[0].trim(),
+        version: String(row?.version ?? 'unknown')
+          .split('\n')[0]
+          .trim(),
         dbTime: String(row?.dbTime ?? 'unknown'),
       };
       diag.pool = {
@@ -249,25 +211,13 @@ export class MotcSmsDbService implements OnModuleInit, OnModuleDestroy {
         borrowed: this.pool.borrowed,
         pending: this.pool.pending,
       };
-      this.logger.log(`MOTC SMS DB diagnose OK (${diag.latencyMs}ms)`);
     } catch (err) {
       diag.latencyMs = Date.now() - start;
       const wrapped = MssqlQueryError.from(err);
       diag.error = { message: wrapped.message, code: (err as { code?: string }).code };
-      this.logger.error(
-        `MOTC SMS DB diagnose FAILED after ${diag.latencyMs}ms: ${wrapped.message}`,
-      );
     }
     return diag;
   }
 
   /** Loggable `{ k=v, ... }` with secrets redacted. */
-  private formatParams(params: Record<string, unknown>): string {
-    const keys = Object.keys(params);
-    if (keys.length === 0) return '{}';
-    const parts = keys.map((k) =>
-      MotcSmsDbService.SENSITIVE_PARAM.test(k) ? `${k}=***` : `${k}=${String(params[k])}`,
-    );
-    return `{ ${parts.join(', ')} }`;
-  }
 }

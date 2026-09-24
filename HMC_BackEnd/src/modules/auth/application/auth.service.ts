@@ -1,12 +1,11 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService, JwtSignOptions } from '@nestjs/jwt';
 import { randomUUID } from 'node:crypto';
 import { AuthConfig } from '@core/config/configuration';
 import { AuthenticatedUser, Role } from '@core/auth/auth-user.interface';
 import { TokenRevocationService } from '@core/auth/token-revocation.service';
-import { AuditService } from '@core/audit/audit.service';
-import { AuthLifecycleEvent } from '@core/audit/audit-event';
+
 import { DEFAULT_LANG, Lang } from '@shared/domain/lang';
 import { MPIN_STORE_PORT, MpinStorePort } from '../domain/ports/mpin-store.port';
 import { LDAP_USER_PORT, LdapUserPort } from '../domain/ports/ldap-user.port';
@@ -34,7 +33,12 @@ import {
   OracleUserValidationPort,
 } from '../domain/ports/oracle-user-validation.port';
 
-const NON_ORACLE_FUNCTION_CODES = new Set(['frmHousing', 'frmStaffclinic', 'frmSogha', 'flxbanner']);
+const NON_ORACLE_FUNCTION_CODES = new Set([
+  'frmHousing',
+  'frmStaffclinic',
+  'frmSogha',
+  'flxbanner',
+]);
 
 /**
  * API-5 Login + current-identity. Verifies the MPIN (MpinStorePort), resolves the
@@ -53,7 +57,6 @@ const NON_ORACLE_FUNCTION_CODES = new Set(['frmHousing', 'frmStaffclinic', 'frmS
  */
 @Injectable()
 export class AuthService {
-  private readonly logger = new Logger(AuthService.name);
   private readonly devBypass: boolean;
   private readonly staticLogin: boolean;
   private readonly expiresIn: string;
@@ -67,7 +70,7 @@ export class AuthService {
     @Inject(DEVICE_REGISTRY_PORT) private readonly devices: DeviceRegistryPort,
     @Inject(LOGIN_EMPLOYMENT_PORT) private readonly employment: LoginEmploymentPort,
     @Inject(ORACLE_USER_VALIDATION_PORT) private readonly oracleUser: OracleUserValidationPort,
-    private readonly audit: AuditService,
+
     private readonly revocation: TokenRevocationService,
     config: ConfigService,
   ) {
@@ -79,26 +82,15 @@ export class AuthService {
   }
 
   async login(dto: LoginRequestDto, lang: Lang = DEFAULT_LANG): Promise<LoginResponseDto> {
-    const ctx = {
-      username: dto.username,
-      deviceImei: dto.imeinumber,
-      platform: dto.platform,
-      appVersion: dto.version,
-    };
-
     let identity: EmployeeIdentity;
     let functionList: FunctionAccess[];
     let isOrcaleUser = true;
     let employment: LoginEmploymentDetails = {};
 
     if (this.staticLogin) {
-      this.logger.warn(
-        `AUTH_STATIC_LOGIN: static login payload for "${dto.username}" (no MPIN/directory/DB).`,
-      );
       identity = STATIC_LOGIN_IDENTITY;
       functionList = STATIC_FUNCTION_ACCESS;
     } else if (this.devBypass) {
-      this.logger.warn(`DEV bypass: login for "${dto.username}" WITHOUT MPIN verification.`);
       identity = devIdentity(dto.username);
       functionList = DEV_FUNCTION_ACCESS;
     } else {
@@ -108,7 +100,6 @@ export class AuthService {
         mpin: dto.mpin,
       });
       if (!ok) {
-        this.audit.lifecycle(AuthLifecycleEvent.LOGIN_FAILURE, { ...ctx, status: 'error' });
         return {
           status: 'error',
           message: lang === 'ar' ? 'البيانات المدخله غير صحيحه.' : 'Invalid credentials.',
@@ -127,9 +118,7 @@ export class AuthService {
 
       // Stamp the device registration's LastActive. A side effect of an
       // already-successful login: best-effort, never fails the request.
-      this.devices.touch(dto.username, dto.imeinumber).catch((err: Error) => {
-        this.logger.warn(`Could not update LastActive for "${dto.username}": ${err.message}`);
-      });
+      this.devices.touch(dto.username, dto.imeinumber).catch(() => {});
     }
 
     if (!isOrcaleUser) {
@@ -171,8 +160,6 @@ export class AuthService {
     };
     const { token, refreshtoken } = await this.issueTokenPair(baseClaims);
 
-    this.audit.lifecycle(AuthLifecycleEvent.LOGIN_SUCCESS, { ...ctx, status: 'success' });
-
     return {
       status: 'success',
       token,
@@ -212,7 +199,6 @@ export class AuthService {
     }
     const jti = payload.jti as string | undefined;
     if (jti && this.revocation.isRevoked(jti)) {
-      this.logger.warn(`Refresh token ${jti} reused after rotation/logout — rejected.`);
       return { status: 'error', message: 'This refresh token has been revoked.' };
     }
 
@@ -221,10 +207,20 @@ export class AuthService {
 
     // Re-mint from the refresh token's own identity claims (registered claims stripped).
     const { exp, iat, nbf, jti: _jti, typ, ...baseClaims } = payload;
-    void exp; void iat; void nbf; void _jti; void typ;
+    void exp;
+    void iat;
+    void nbf;
+    void _jti;
+    void typ;
     const { token, refreshtoken } = await this.issueTokenPair(baseClaims);
-    this.logger.log(`Token refreshed for "${String(baseClaims.username ?? baseClaims.sub)}".`);
-    return { status: 'success', token, tokenType: 'Bearer', expiresIn: this.expiresIn, refreshtoken };
+
+    return {
+      status: 'success',
+      token,
+      tokenType: 'Bearer',
+      expiresIn: this.expiresIn,
+      refreshtoken,
+    };
   }
 
   /**
@@ -239,14 +235,15 @@ export class AuthService {
 
     if (dto.refreshtoken) {
       try {
-        const payload = await this.jwt.verifyAsync<{ jti?: string; exp?: number }>(dto.refreshtoken);
+        const payload = await this.jwt.verifyAsync<{ jti?: string; exp?: number }>(
+          dto.refreshtoken,
+        );
         if (payload.jti) this.revocation.revoke(payload.jti, payload.exp);
       } catch {
         // An invalid/expired refresh token needs no revocation.
       }
     }
 
-    this.audit.lifecycle(AuthLifecycleEvent.LOGOUT, { username: user.username, status: 'success' });
     return { status: 'success', message: 'Logged out successfully.' };
   }
 

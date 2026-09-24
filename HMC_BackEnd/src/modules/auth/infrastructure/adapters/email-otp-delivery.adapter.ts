@@ -1,7 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { EmailConfig } from '@core/config/configuration';
-import { EmailService, maskEmail } from '@core/email/email.service';
+import { EmailService } from '@core/email/email.service';
 import { DEFAULT_LANG, Lang } from '@shared/domain/lang';
 import { OtpEmailDeliveryPort } from '../../domain/ports/otp-email-delivery.port';
 import { OtpPurpose } from '../../domain/ports/otp.port';
@@ -19,7 +19,6 @@ import { OtpPurpose } from '../../domain/ports/otp.port';
  */
 @Injectable()
 export class EmailOtpDeliveryAdapter implements OtpEmailDeliveryPort {
-  private readonly logger = new Logger(EmailOtpDeliveryAdapter.name);
   private readonly cfg: EmailConfig;
 
   constructor(
@@ -36,13 +35,10 @@ export class EmailOtpDeliveryAdapter implements OtpEmailDeliveryPort {
     lang: Lang = DEFAULT_LANG,
   ): Promise<void> {
     const template = lang === 'ar' ? this.cfg.messageTemplateAr : this.cfg.messageTemplate;
-    const sent = await this.email.send({
+    await this.email.send({
       to: email,
       subject: this.cfg.otpSubject,
       text: template.replace('{otp}', otp),
     });
-    if (sent) {
-      this.logger.log(`OTP email (${purpose}) sent to ${maskEmail(email)}.`);
-    }
   }
 }

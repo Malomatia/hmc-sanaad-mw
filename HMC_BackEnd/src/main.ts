@@ -1,12 +1,11 @@
-import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { ConfigService } from '@nestjs/config';
-import { DocumentBuilder, OpenAPIObject, SwaggerModule } from '@nestjs/swagger';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
 import compression from 'compression';
 import { AppModule } from './app.module';
-import { AppConfig, DiagnosticsConfig } from '@core/config/configuration';
+import { AppConfig } from '@core/config/configuration';
 
 /**
  * Max request body. Sized for a submit carrying several base64 attachments
@@ -19,23 +18,9 @@ const BODY_LIMIT = '25mb';
  * 404 (DiagnosticsEnabledGuard), so drop them from the OpenAPI document too —
  * Swagger must not advertise endpoints that do not exist.
  */
-function stripDiagnosticsPaths(document: OpenAPIObject, apiPrefix: string): void {
-  const base = `/${apiPrefix}`.replace(/\/+$/, '');
-  const gatedPrefixes = [`${base}/diagnostics`, `${base}/api-logs`];
-  const gatedExact = new Set([
-    `${base}/health/db`,
-    `${base}/health/users-db`,
-    `${base}/health/motc-sms-db`,
-  ]);
-  for (const path of Object.keys(document.paths)) {
-    if (gatedExact.has(path) || gatedPrefixes.some((p) => path === p || path.startsWith(`${p}/`))) {
-      delete document.paths[path];
-    }
-  }
-}
 
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { logger: false });
   const config = app.get(ConfigService);
   const appCfg = config.getOrThrow<AppConfig>('app');
 
@@ -79,18 +64,12 @@ async function bootstrap(): Promise<void> {
     .addBearerAuth()
     .build();
   const document = SwaggerModule.createDocument(app, swaggerConfig);
-  if (!config.getOrThrow<DiagnosticsConfig>('diagnostics').enabled) {
-    stripDiagnosticsPaths(document, appCfg.apiPrefix);
-  }
+
   SwaggerModule.setup('docs', app, document, {
     swaggerOptions: { persistAuthorization: true },
   });
 
   await app.listen(appCfg.port);
-  Logger.log(
-    `Sanaad backend listening on http://localhost:${appCfg.port}/${appCfg.apiPrefix} (Swagger: /docs)`,
-    'Bootstrap',
-  );
 }
 
 void bootstrap();

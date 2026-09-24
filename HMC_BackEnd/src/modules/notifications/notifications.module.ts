@@ -1,4 +1,4 @@
-import { Logger, Module } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { APP_INTERCEPTOR } from '@nestjs/core';
 import { App } from 'firebase-admin/app';
 import { FIREBASE_APP } from '@core/firebase/firebase-app';
@@ -47,13 +47,9 @@ import { NotificationsController } from './interface/notifications.controller';
       inject: [FIREBASE_APP],
       useFactory: (app?: App): PushSenderPort => {
         if (!app) {
-          new Logger('NotificationsModule').warn(
-            'FIREBASE_SERVICE_ACCOUNT is not set — push notifications are disabled. ' +
-              'Registrations are still stored.',
-          );
           return new NoopPushSender();
         }
-        new Logger('NotificationsModule').log('Push notifications enabled.');
+
         return new FirebasePushSender(app);
       },
     },

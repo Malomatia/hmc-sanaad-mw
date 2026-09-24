@@ -1,10 +1,4 @@
-import {
-  CanActivate,
-  ExecutionContext,
-  Injectable,
-  Logger,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Reflector } from '@nestjs/core';
 import { AuthenticatedUser } from '@core/auth/auth-user.interface';
@@ -38,7 +32,6 @@ export const ANDROID_REQUEST_HASH_HEADER = 'x-integrity-request-hash';
  */
 @Injectable()
 export class AppIntegrityGuard implements CanActivate {
-  private static readonly log = new Logger(AppIntegrityGuard.name);
   private readonly cfg: AppIntegrityConfig;
 
   constructor(
@@ -48,12 +41,6 @@ export class AppIntegrityGuard implements CanActivate {
   ) {
     this.cfg = config.getOrThrow<AppIntegrityConfig>('appIntegrity');
     if (this.cfg.mode === 'off') return;
-
-    AppIntegrityGuard.log.log(
-      `App integrity is ${this.cfg.mode} ` +
-        `(iOS ${this.cfg.ios.enabled ? 'ready' : 'NOT configured'}, ` +
-        `Android ${this.cfg.android.enabled ? 'ready' : 'NOT configured'}).`,
-    );
   }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -71,11 +58,11 @@ export class AppIntegrityGuard implements CanActivate {
       url?: string;
       user?: AuthenticatedUser;
     }>();
-    const route = req.url ?? '';
+
     const verdict = await this.verify(req);
 
     if (verdict.ok) return true;
-    return this.reject(route, verdict);
+    return this.reject();
   }
 
   private async verify(req: {
@@ -110,13 +97,11 @@ export class AppIntegrityGuard implements CanActivate {
   }
 
   /** Observe -> log what would have happened. Enforce -> 401. */
-  private reject(route: string, verdict: IntegrityVerdict): boolean {
-    const detail = `${verdict.platform}: ${verdict.reason ?? 'verification failed'}`;
+  private reject(): boolean {
     if (this.cfg.mode === 'observe') {
-      AppIntegrityGuard.log.warn(`App integrity (observe) would reject ${route} - ${detail}`);
       return true;
     }
-    AppIntegrityGuard.log.warn(`App integrity rejected ${route} - ${detail}`);
+
     throw new UnauthorizedException('This request did not come from a verified app.');
   }
 }

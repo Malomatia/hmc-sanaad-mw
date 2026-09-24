@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AppLaunchConfig } from '@core/config/configuration';
 import { MssqlService } from '@core/database/mssql.service';
@@ -28,7 +28,6 @@ interface AppUpdateRow {
  */
 @Injectable()
 export class HealthCheckService {
-  private readonly logger = new Logger(HealthCheckService.name);
   private readonly cfg: AppLaunchConfig;
 
   constructor(
@@ -44,9 +43,7 @@ export class HealthCheckService {
       return await this.checkFromDb(req);
     } catch (err) {
       // API-1 must not hard-fail app launches on a DB hiccup — degrade to config.
-      this.logger.error(
-        `Users DB healthcheck failed, using config fallback: ${(err as Error).message}`,
-      );
+
       return this.checkFromConfig(req);
     }
   }

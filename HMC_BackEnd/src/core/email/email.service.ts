@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleDestroy, ServiceUnavailableException } from '@nestjs/common';
+import { Injectable, OnModuleDestroy, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
 import type { Transporter } from 'nodemailer';
@@ -27,7 +27,6 @@ export interface SendEmailCommand {
  */
 @Injectable()
 export class EmailService implements OnModuleDestroy {
-  private readonly logger = new Logger(EmailService.name);
   private readonly cfg: EmailConfig;
   private readonly isProduction: boolean;
   private transporter?: Transporter;
@@ -47,13 +46,11 @@ export class EmailService implements OnModuleDestroy {
    * SMTP; false when SMTP is unconfigured in non-production (masked log-only).
    */
   async send(cmd: SendEmailCommand): Promise<boolean> {
-    const masked = maskEmail(cmd.to);
     if (!this.isConfigured) {
       if (this.isProduction) {
-        this.logger.error('SMTP_HOST is not configured — cannot send email.');
         throw new ServiceUnavailableException('The email service is currently unavailable.');
       }
-      this.logger.warn(`SMTP not configured — email "${cmd.subject}" NOT sent to ${masked}.`);
+
       return false;
     }
 
@@ -64,11 +61,11 @@ export class EmailService implements OnModuleDestroy {
         subject: cmd.subject,
         text: cmd.text,
       });
-      this.logger.log(`Email "${cmd.subject}" sent to ${masked}.`);
+
       return true;
     } catch (err) {
       // Never include the message body (may carry an OTP) in the error.
-      this.logger.error(`Email "${cmd.subject}" to ${masked} failed: ${(err as Error).message}`);
+
       throw new ServiceUnavailableException('The email service is currently unavailable.');
     }
   }

@@ -1,9 +1,4 @@
-import {
-  Injectable,
-  Logger,
-  NotImplementedException,
-  ServiceUnavailableException,
-} from '@nestjs/common';
+import { Injectable, NotImplementedException, ServiceUnavailableException } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
@@ -61,7 +56,6 @@ interface GraphUser {
  */
 @Injectable()
 export class EntraGraphUserRepository implements LdapUserPort {
-  private readonly logger = new Logger(EntraGraphUserRepository.name);
   private readonly cfg: EntraConfig;
   private token?: { value: string; expiresAt: number };
 
@@ -209,7 +203,7 @@ export class EntraGraphUserRepository implements LdapUserPort {
 
   private wrap(stage: string, err: unknown): Error {
     const message = err instanceof Error ? err.message : String(err);
-    this.logger.error(`Entra ID ${stage} failed: ${message}`);
+
     return new ServiceUnavailableException(`Entra ID directory error: ${message}`);
   }
 }

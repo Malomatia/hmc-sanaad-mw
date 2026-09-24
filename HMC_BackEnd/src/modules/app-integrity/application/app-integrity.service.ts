@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { IntegrityVerdict, isUnboundKeyOwner, unboundKeyOwner } from '../domain/attestation';
 import {
@@ -29,8 +29,6 @@ import {
  */
 @Injectable()
 export class AppIntegrityService {
-  private static readonly log = new Logger(AppIntegrityService.name);
-
   constructor(
     @Inject(CHALLENGE_STORE_PORT) private readonly challenges: ChallengeStorePort,
     @Inject(ATTEST_KEY_STORE_PORT) private readonly keys: AttestKeyStorePort,
@@ -109,7 +107,11 @@ export class AppIntegrityService {
     username: string;
   }): Promise<IntegrityVerdict> {
     if (!(await this.challenges.consume(input.challenge))) {
-      return { ok: false, platform: 'ios', reason: 'challenge is unknown, expired or already used' };
+      return {
+        ok: false,
+        platform: 'ios',
+        reason: 'challenge is unknown, expired or already used',
+      };
     }
 
     const stored = await this.keys.find(input.keyId);

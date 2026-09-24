@@ -2,9 +2,7 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { Reflector } from '@nestjs/core';
 import { ResponseInterceptor } from '@core/http/response.interceptor';
-import { ApiLogInterceptor } from '@core/logging/api-log.interceptor';
-import { ApiLogStore } from '@core/logging/api-log.store';
-import { ApiLogFileWriter } from '@core/logging/api-log-file-writer.service';
+
 import request from 'supertest';
 import { AuthService } from '../application/auth.service';
 import { OnboardingService } from '../application/onboarding.service';
@@ -13,8 +11,7 @@ import { AuthController } from './auth.controller';
 
 describe('AuthController', () => {
   let app: INestApplication;
-  const record = jest.fn();
-  const writer = { write: jest.fn() };
+
   const auth = { login: jest.fn() };
   const onboarding = {
     validateUser: jest.fn().mockResolvedValue({ status: 'success' }),
@@ -40,13 +37,7 @@ describe('AuthController', () => {
 
     app = moduleRef.createNestApplication();
     app.setGlobalPrefix('api/v1');
-    app.useGlobalInterceptors(
-      new ApiLogInterceptor(
-        { nextId: () => 1, record } as unknown as ApiLogStore,
-        writer as unknown as ApiLogFileWriter,
-      ),
-      new ResponseInterceptor(new Reflector()),
-    );
+    app.useGlobalInterceptors(new ResponseInterceptor(new Reflector()));
     app.useGlobalPipes(
       new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }),
     );
@@ -59,7 +50,7 @@ describe('AuthController', () => {
     await app?.close();
   });
 
-  it('returns original initiate contacts on the wire but redacts both log sinks', async () => {
+  it('preserves the original initiate response without log interceptors', async () => {
     const response = {
       status: 'success',
       vflag: 'Exist',
@@ -75,17 +66,6 @@ describe('AuthController', () => {
       .send(body)
       .expect(200)
       .expect(response);
-
-    expect(record).toHaveBeenCalledTimes(1);
-    const entry = record.mock.calls[0][0];
-    expect(entry.responseSummary).toEqual({
-      ...response,
-      emailunmasked: '******',
-      employeephonenumberunmasked: '******',
-    });
-    expect(writer.write).toHaveBeenCalledWith(entry);
-    expect(JSON.stringify(entry)).not.toContain(response.emailunmasked);
-    expect(JSON.stringify(entry)).not.toContain(response.employeephonenumberunmasked);
   });
 
   describe('POST /auth/login', () => {

@@ -1848,3 +1848,38 @@ auth module, before the wildcard. Like `/healthcheck`, it has no `@SkipIntegrity
 The audit action is `view` (GET default), operationId `auth_appSetting`. Tests:
 backend `modules/auth/application/app-setting.service.spec.ts`, gateway e2e
 `forwards GET /app-setting ...`.
+
+## Pentest source branch (`pentest-code-version`)
+
+This branch intentionally removes ALL application logging, including ordinary
+Nest Logger/console emitters, API request/response capture, Oracle call buffers,
+file logging and SQL Server audit writes. Both `main.ts` bootstraps set
+`logger: false` for framework output. Authentication checks, OTP/MPIN validation,
+JWT revocation, business Oracle calls and notification delivery remain intact;
+only their logging/audit side effects are removed. Database log tables and existing
+records are not dropped or modified. Integrity `observe` still permits requests,
+but cannot emit observations in this log-free variant.
+
+Removed from source/DI and the maintained Postman collection: `/diagnostics/*`,
+`/api-logs/*`, `/dev-console/*`, `/health/db`, `/health/users-db`,
+`/health/motc-sms-db`, and `/notifications/device-token/test`. `/health` is minimal
+liveness (status/uptime/timestamp), not a credential/configuration diagnostic.
+Mobile auth/app-integrity routes, `/healthcheck`, `/app-setting`, ordinary push
+device registration/unregistration, and business Swagger documentation remain.
+The old diagnostics/dev-console/SQL-console/log-level env switches cannot restore
+the deleted surfaces. Older logging/diagnostic notes above describe other branches,
+not the pentest source variant.
+
+Regression coverage: `core/pentest-surface.spec.ts` checks source and Postman
+exclusions; `core/health/health-feature-status.spec.ts` boots the real module graph
+with mocked databases/email/Firebase and checks removed routes return 404 while
+business routes remain JWT protected. Clean builds are required so stale compiled
+controllers cannot survive. Hand over current source rather than old ZIPs; exclude
+`.env`, `.git`, runtime logs and node_modules.
+
+A temporary checkout of the unchanged HEAD reproduced 10 existing failures across
+`modules/auth/infrastructure/adapters/mssql-function-access.repository.spec.ts`
+(extra StatusCode bind), `shared/dto/oracle-submit.dto.spec.ts` (three empty-string
+expectations), and `core/database/oracle-username-paths.spec.ts` (six USERNAME vs
+USER_NAME assertions). These are unrelated to the logging/diagnostics removal;
+do not weaken business validation or change SQL contracts merely to hide them.

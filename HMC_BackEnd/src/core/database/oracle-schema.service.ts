@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import * as oracledb from 'oracledb';
 import type { OracleArgumentInfo } from './oracle-metadata.service';
 import { OracleContractCatalog } from './oracle-contracts';
@@ -51,7 +51,6 @@ export interface ProcedureSignature {
  */
 @Injectable()
 export class OracleSchemaService {
-  private readonly logger = new Logger(OracleSchemaService.name);
   /** object → upper-cased supported column names. */
   private readonly columnCache = new Map<string, Set<string>>();
   /** object → column name → registered data type (populated with columnCache). */
@@ -61,7 +60,10 @@ export class OracleSchemaService {
 
   constructor(
     @Inject(OracleContractCatalog)
-    private readonly contracts: Pick<OracleContractCatalog, 'describeColumns' | 'describeArguments'>,
+    private readonly contracts: Pick<
+      OracleContractCatalog,
+      'describeColumns' | 'describeArguments'
+    >,
   ) {}
 
   /**
@@ -132,7 +134,8 @@ export class OracleSchemaService {
       this.paramCache.set(key, await this.readSignatures(object));
     }
     const signatures = this.paramCache.get(key);
-    if (!signatures?.length) throw new OracleContractUnavailableException(object, 'program parameters');
+    if (!signatures?.length)
+      throw new OracleContractUnavailableException(object, 'program parameters');
     return this.selectSignature(object, signatures, expectedParams);
   }
 
@@ -188,7 +191,8 @@ export class OracleSchemaService {
       // FUNCTION return row (`position === 0`, `name === null`): it's needed
       // to tell a function apart from a procedure.
       const relevant = described.filter((a) => a.objectName === target && a.dataLevel === 0);
-      if (!relevant.length) throw new OracleContractUnavailableException(object, 'program parameters');
+      if (!relevant.length)
+        throw new OracleContractUnavailableException(object, 'program parameters');
 
       const grouped = new Map<string, OracleArgumentInfo[]>();
       for (const arg of relevant) {
@@ -220,7 +224,6 @@ export class OracleSchemaService {
         };
       });
     } catch (err) {
-      this.logger.warn(`Could not load the static signature of ${object}: ${(err as Error).message}`);
       throw err;
     }
   }
@@ -242,12 +245,19 @@ export class OracleSchemaService {
       }, 0),
     }));
     const bestScore = Math.max(...scored.map((entry) => entry.score));
-    const matches = scored.filter((entry) => entry.score === bestScore).map((entry) => entry.signature);
+    const matches = scored
+      .filter((entry) => entry.score === bestScore)
+      .map((entry) => entry.signature);
     if (matches.length === 1) return matches[0];
 
-    const shapes = new Set(matches.map((s) => s.params.map((p) => `${p.name}:${p.dataType}:${p.direction}`).join('|')));
+    const shapes = new Set(
+      matches.map((s) => s.params.map((p) => `${p.name}:${p.dataType}:${p.direction}`).join('|')),
+    );
     if (shapes.size === 1) return matches[0];
-    throw new OracleContractUnavailableException(object, `unambiguous overload [${expectedParams.join(', ')}]`);
+    throw new OracleContractUnavailableException(
+      object,
+      `unambiguous overload [${expectedParams.join(', ')}]`,
+    );
   }
 
   private toParam(arg: OracleArgumentInfo): ProcedureParam {
@@ -291,7 +301,6 @@ export class OracleSchemaService {
       names = new Set(columns.map((c) => c.name.toUpperCase()));
       for (const c of columns) types.set(c.name.toUpperCase(), c.dataType.toUpperCase());
     } catch (err) {
-      this.logger.warn(`Could not load the static columns of ${object}: ${(err as Error).message}`);
       throw err;
     }
     this.columnCache.set(key, names);

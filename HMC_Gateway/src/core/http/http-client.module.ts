@@ -1,4 +1,4 @@
-import { Global, Logger, Module } from '@nestjs/common';
+import { Global, Module } from '@nestjs/common';
 import { HttpModule } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import * as https from 'node:https';
@@ -14,16 +14,11 @@ import { BackendConfig } from '../config/configuration';
  */
 export function buildBackendHttpsAgent(backend: BackendConfig): https.Agent | undefined {
   if (!backend.baseUrl.startsWith('https://')) return undefined;
-  const logger = new Logger(HttpClientModule.name);
+
   if (!backend.tlsRejectUnauthorized) {
-    logger.warn(
-      'BACKEND_TLS_REJECT_UNAUTHORIZED=false — backend TLS certificate validation is DISABLED. ' +
-        'Prefer providing BACKEND_CA_CERT / BACKEND_CA_CERT_PATH and re-enabling validation.',
-    );
     return new https.Agent({ rejectUnauthorized: false });
   }
   if (backend.caCert) {
-    logger.log('Backend HTTPS: trusting the CA from BACKEND_CA_CERT / BACKEND_CA_CERT_PATH.');
     return new https.Agent({ rejectUnauthorized: true, ca: backend.caCert });
   }
   return undefined; // default Node trust store

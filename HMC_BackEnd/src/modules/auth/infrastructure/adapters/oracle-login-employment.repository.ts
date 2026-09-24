@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { OracleService } from '@core/database/oracle.service';
 import { ORACLE_OBJECTS } from '@shared/constants/oracle-objects';
 import { EmployeeIdentity } from '../../domain/auth-identity';
@@ -9,8 +9,6 @@ import {
 
 @Injectable()
 export class OracleLoginEmploymentRepository implements LoginEmploymentPort {
-  private readonly logger = new Logger(OracleLoginEmploymentRepository.name);
-
   constructor(private readonly ora: OracleService) {}
 
   async resolve(identity: EmployeeIdentity): Promise<LoginEmploymentDetails> {
@@ -40,7 +38,6 @@ export class OracleLoginEmploymentRepository implements LoginEmploymentPort {
         jobTitleAr: text(row?.JOB_AR) ?? defaults.jobTitleAr,
       };
     } catch {
-      this.logger.warn(`${view} lookup failed; using employee-master fallback.`);
       return defaults;
     }
   }

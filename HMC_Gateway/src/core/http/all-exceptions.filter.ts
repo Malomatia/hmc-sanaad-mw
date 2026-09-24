@@ -1,11 +1,4 @@
-import {
-  ArgumentsHost,
-  Catch,
-  ExceptionFilter,
-  HttpException,
-  HttpStatus,
-  Logger,
-} from '@nestjs/common';
+import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus } from '@nestjs/common';
 import { Response } from 'express';
 
 interface RequestLike {
@@ -27,8 +20,6 @@ interface RequestLike {
  */
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
-  private readonly logger = new Logger('ExceptionFilter');
-
   catch(exception: unknown, host: ArgumentsHost): void {
     const ctx = host.switchToHttp();
     const res = ctx.getResponse<Response>();
@@ -43,13 +34,6 @@ export class AllExceptionsFilter implements ExceptionFilter {
           ? 'حدث خطأ ما. يرجى المحاولة مرة أخرى. إذا استمرت المشكلة، يرجى التواصل مع فريق دعم عونك.'
           : 'Something went wrong. Please try again. If the issue persists, contact Ounak Support.'
         : this.resolveMessage(exception, httpStatus);
-
-    const line = `${httpStatus} ${req?.method ?? ''} ${req?.url ?? ''} cid=${req?.correlationId ?? '-'} :: ${message}`;
-    if (httpStatus >= 500) {
-      this.logger.error(line, exception instanceof Error ? exception.stack : undefined);
-    } else {
-      this.logger.warn(line);
-    }
 
     res.status(httpStatus).json({
       status: 'error',

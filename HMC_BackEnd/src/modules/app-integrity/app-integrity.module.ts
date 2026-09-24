@@ -1,4 +1,4 @@
-import { Logger, Module } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import { MssqlService } from '@core/database/mssql.service';
@@ -48,7 +48,10 @@ import { AppIntegrityGuard } from './interface/app-integrity.guard';
       provide: CHALLENGE_STORE_PORT,
       inject: [MssqlService, ConfigService],
       useFactory: (db: MssqlService, config: ConfigService) =>
-        new MssqlChallengeStore(db, config.getOrThrow<AppIntegrityConfig>('appIntegrity').challengeTtlMs),
+        new MssqlChallengeStore(
+          db,
+          config.getOrThrow<AppIntegrityConfig>('appIntegrity').challengeTtlMs,
+        ),
     },
     {
       provide: IOS_ATTESTATION_PORT,
@@ -56,11 +59,6 @@ import { AppIntegrityGuard } from './interface/app-integrity.guard';
       useFactory: (config: ConfigService): IosAttestationPort => {
         const cfg = config.getOrThrow<AppIntegrityConfig>('appIntegrity');
         if (!cfg.ios.enabled) {
-          if (cfg.mode !== 'off') {
-            new Logger('AppIntegrityModule').warn(
-              'APPLE_TEAM_ID / APPLE_BUNDLE_ID are not set — iOS attestation cannot be verified.',
-            );
-          }
           return new DisabledIosAttestation();
         }
         return new AppleAppAttestAdapter(cfg.ios);
@@ -72,12 +70,6 @@ import { AppIntegrityGuard } from './interface/app-integrity.guard';
       useFactory: (config: ConfigService): AndroidIntegrityPort => {
         const cfg = config.getOrThrow<AppIntegrityConfig>('appIntegrity');
         if (!cfg.android.enabled) {
-          if (cfg.mode !== 'off') {
-            new Logger('AppIntegrityModule').warn(
-              'ANDROID_PACKAGE_NAME / PLAY_INTEGRITY_SERVICE_ACCOUNT are not set — ' +
-                'Play Integrity cannot be verified.',
-            );
-          }
           return new DisabledAndroidIntegrity();
         }
         return new GooglePlayIntegrityAdapter(cfg.android.packageName, cfg.android.serviceAccount!);

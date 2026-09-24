@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
+import { Inject, Injectable, OnModuleDestroy } from '@nestjs/common';
 import {
   REQUEST_LOOKUP_PORT,
   RequestLookupPort,
@@ -49,7 +49,6 @@ const WORKLIST_CLAIM_TTL_MS = 600000;
  */
 @Injectable()
 export class RequestNotifier implements OnModuleDestroy {
-  private static readonly log = new Logger(RequestNotifier.name);
   private readonly worklistQueue: WorklistJob[] = [];
   private readonly worklistClaims = new Map<string, WorklistClaim>();
   private readonly worklistTimers = new Map<ReturnType<typeof setTimeout>, () => void>();
@@ -80,13 +79,9 @@ export class RequestNotifier implements OnModuleDestroy {
       deadline: event.succeededAt + WORKLIST_JOB_TTL_MS,
     };
     if (!this.worklistJobActive(job)) {
-      RequestNotifier.log.warn('Expired worklist notification job skipped.');
       return;
     }
     if (this.worklistQueue.length >= WORKLIST_QUEUE_LIMIT) {
-      RequestNotifier.log.warn(
-        'Worklist notification queue is full; submission notification skipped.',
-      );
       return;
     }
     this.worklistQueue.push(job);
@@ -107,12 +102,11 @@ export class RequestNotifier implements OnModuleDestroy {
     ) {
       const job = this.worklistQueue.shift()!;
       if (!this.worklistJobActive(job)) {
-        RequestNotifier.log.warn('Expired or disabled worklist notification job skipped.');
         continue;
       }
       this.activeWorklistJobs++;
       void this.pollWorklist(job)
-        .catch(() => RequestNotifier.log.warn('Worklist notification job failed.'))
+        .catch(() => undefined)
         .finally(() => {
           this.activeWorklistJobs--;
           this.drainWorklist();
@@ -130,13 +124,10 @@ export class RequestNotifier implements OnModuleDestroy {
       await this.waitForWorklist(Math.min(delay, job.deadline - Date.now()));
       if (!this.worklistJobActive(job)) return;
       const rows = await this.requests.findWorklistNotifications(job.username).catch(() => {
-        RequestNotifier.log.warn('Worklist notification lookup failed.');
         return undefined;
       });
       if (!this.worklistJobActive(job)) return;
-      RequestNotifier.log.log(
-        `Worklist discovery for ${job.username}: ${rows?.length ?? 0} row(s).`,
-      );
+
       for (const row of rows ?? []) {
         if (!this.worklistJobActive(job)) return;
         const recipient = row.recipient.trim();
@@ -153,9 +144,7 @@ export class RequestNotifier implements OnModuleDestroy {
             job.requesterName || row.requesterName,
             request,
           );
-          RequestNotifier.log.log(
-            `Worklist notification ${row.notificationId}: dispatching to ${recipient}.`,
-          );
+
           await this.notifications.notifyUser(recipient, {
             title: 'New request awaiting your approval',
             body: `${requesterName} sent you ${this.requestName(request)} for Approval`,
@@ -167,7 +156,6 @@ export class RequestNotifier implements OnModuleDestroy {
             },
           });
         } catch {
-          RequestNotifier.log.warn('Worklist notification dispatch failed.');
         } finally {
           claim.inFlight = false;
           claim.expiresAt = Date.now() + WORKLIST_CLAIM_TTL_MS;
@@ -191,9 +179,6 @@ export class RequestNotifier implements OnModuleDestroy {
       };
       const timer = setTimeout(
         () => {
-          RequestNotifier.log.warn(
-            `Worklist notification ${notificationId}: request-name lookup timed out; using fallback.`,
-          );
           finish();
         },
         Math.min(WORKLIST_DETAILS_TIMEOUT_MS, Math.max(0, job.deadline - Date.now())),
@@ -243,8 +228,6 @@ export class RequestNotifier implements OnModuleDestroy {
     if (existing && (existing.inFlight || existing.expiresAt > now)) return undefined;
     this.worklistClaims.delete(key);
     if (this.worklistClaims.size >= WORKLIST_CLAIM_LIMIT) {
-      if (!this.claimsFullWarned)
-        RequestNotifier.log.warn('Worklist notification registry is full; dispatch skipped.');
       this.claimsFullWarned = true;
       return undefined;
     }
@@ -431,8 +414,6 @@ export class RequestNotifier implements OnModuleDestroy {
   private async safely<T>(operation: string, work: () => Promise<T>): Promise<T | undefined> {
     try {
       return await work();
-    } catch (err) {
-      RequestNotifier.log.warn(`Notification (${operation}) failed: ${(err as Error).message}`);
-    }
+    } catch (err) {}
   }
 }

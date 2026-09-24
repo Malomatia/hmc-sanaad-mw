@@ -1,10 +1,4 @@
-import {
-  CanActivate,
-  ExecutionContext,
-  Injectable,
-  Logger,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Reflector } from '@nestjs/core';
 import { createHash } from 'node:crypto';
@@ -53,7 +47,6 @@ const SHA256_HEX = /^[a-f0-9]{64}$/i;
  */
 @Injectable()
 export class IntegrityPreCheckGuard implements CanActivate {
-  private static readonly log = new Logger(IntegrityPreCheckGuard.name);
   private readonly cfg: IntegrityConfig;
 
   constructor(
@@ -61,9 +54,6 @@ export class IntegrityPreCheckGuard implements CanActivate {
     config: ConfigService,
   ) {
     this.cfg = config.getOrThrow<IntegrityConfig>('integrity');
-    if (this.cfg.mode !== 'off') {
-      IntegrityPreCheckGuard.log.log(`Gateway integrity pre-check is ${this.cfg.mode}.`);
-    }
   }
 
   canActivate(context: ExecutionContext): boolean {
@@ -87,7 +77,7 @@ export class IntegrityPreCheckGuard implements CanActivate {
 
     const problem = this.inspect(req);
     if (!problem) return true;
-    return this.reject(req.originalUrl ?? '', problem);
+    return this.reject();
   }
 
   /** The reason to refuse, or undefined when the request looks plausible. */
@@ -143,12 +133,11 @@ export class IntegrityPreCheckGuard implements CanActivate {
   }
 
   /** Observe → say what would have happened. Enforce → 401. */
-  private reject(route: string, reason: string): boolean {
+  private reject(): boolean {
     if (this.cfg.mode === 'observe') {
-      IntegrityPreCheckGuard.log.warn(`Integrity (observe) would reject ${route} — ${reason}`);
       return true;
     }
-    IntegrityPreCheckGuard.log.warn(`Integrity rejected ${route} — ${reason}`);
+
     throw new UnauthorizedException('This request did not come from a verified app.');
   }
 }

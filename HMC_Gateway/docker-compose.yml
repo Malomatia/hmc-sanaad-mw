@@ -48,7 +48,6 @@ services:
       # rooted, sideloaded, simulators).
       GATEWAY_INTEGRITY_MODE: "${GATEWAY_INTEGRITY_MODE:-off}"
       REQUEST_TIMEOUT_MS: "${REQUEST_TIMEOUT_MS:-35000}"
-      LOG_LEVEL: "${LOG_LEVEL:-debug}"
     # Host:container port mapping stays in sync with GATEWAY_PORT in .env.
     ports:
       - "${GATEWAY_PORT:-443}:${GATEWAY_PORT:-443}"

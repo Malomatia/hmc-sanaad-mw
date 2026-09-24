@@ -36,11 +36,8 @@ export class HealthController {
     try {
       const res = await firstValueFrom(this.http.get(url, { timeout: 5000 }));
       return { status: 'ok', backendStatus: res.status, backend: res.data };
-    } catch (err) {
-      return {
-        status: 'error',
-        message: err instanceof Error ? err.message : 'Backend unreachable',
-      };
+    } catch {
+      return { status: 'error', message: 'Backend unavailable.' };
     }
   }
 }

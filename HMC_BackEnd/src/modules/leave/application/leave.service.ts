@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { formatOracleDisplayDate, parseOracleDate } from '@shared/utils/date.util';
 import { Lang } from '@shared/domain/lang';
@@ -23,8 +23,6 @@ import {
  */
 @Injectable()
 export class LeaveService {
-  private readonly logger = new Logger(LeaveService.name);
-
   constructor(
     @Inject(LEAVE_REPOSITORY) private readonly repo: LeaveRepository,
     private readonly lookups: LookupsService,
@@ -69,7 +67,9 @@ export class LeaveService {
         (value.toUpperCase() !== formatOracleDisplayDate(date) &&
           value !== date.toISOString().slice(0, 10))
       ) {
-        throw new BadRequestException(`${index === 0 ? 'Start_date' : 'end_date'} is not a valid date.`);
+        throw new BadRequestException(
+          `${index === 0 ? 'Start_date' : 'end_date'} is not a valid date.`,
+        );
       }
       return date;
     });
@@ -80,11 +80,19 @@ export class LeaveService {
     return { duration: days ?? null, ...result };
   }
 
-  amend(fields: Record<string, unknown>, user: AuthenticatedUser, lang: Lang): Promise<SubmitResult> {
+  amend(
+    fields: Record<string, unknown>,
+    user: AuthenticatedUser,
+    lang: Lang,
+  ): Promise<SubmitResult> {
     return this.repo.amend({ username: user.username, lang, fields });
   }
 
-  cancel(fields: Record<string, unknown>, user: AuthenticatedUser, lang: Lang): Promise<SubmitResult> {
+  cancel(
+    fields: Record<string, unknown>,
+    user: AuthenticatedUser,
+    lang: Lang,
+  ): Promise<SubmitResult> {
     return this.repo.cancel({ username: user.username, lang, fields });
   }
 
@@ -146,33 +154,41 @@ export class LeaveService {
   // ── Aggregated LOVs (fan-out; parallelized) ───────────────
   async requestLov(lang: Lang): Promise<Record<string, LovItem[]>> {
     const t = this.config.get<number>('app.aggregateReadTimeoutMs', 20000);
-    const [numOfChild, leaveClass, examCentre, bereavement, contractYear, types, reasons, leaveType] =
-      await Promise.all([
-        this.settle('NUM_OF_CHILD_V', t, [] as LovItem[], () =>
-          this.lookups.getByObject(ORACLE_OBJECTS.NUM_OF_CHILD_V, lang),
-        ),
-        this.settle('LEAV_CLASS_V', t, [] as LovItem[], () =>
-          this.lookups.getByObject(ORACLE_OBJECTS.LEAV_CLASS_V, lang),
-        ),
-        this.settle('EXAM_CENTRE_V', t, [] as LovItem[], () =>
-          this.lookups.getByObject(ORACLE_OBJECTS.EXAM_CENTRE_V, lang),
-        ),
-        this.settle('BEREAV_RELAT_V', t, [] as LovItem[], () =>
-          this.lookups.getByObject(ORACLE_OBJECTS.BEREAV_RELAT_V, lang),
-        ),
-        this.settle('CONTRACT_YEARS_V', t, [] as LovItem[], () =>
-          this.lookups.getByObject(ORACLE_OBJECTS.CONTRACT_YEARS_V, lang),
-        ),
-        this.settle('ABSENCE_TYPE_V', t, [] as LovItem[], () =>
-          this.lookups.getByObject(ORACLE_OBJECTS.ABSENCE_TYPE_V, lang),
-        ),
-        this.settle('ABSENCE_REASON_V', t, [] as LovItem[], () =>
-          this.lookups.getByObject(ORACLE_OBJECTS.ABSENCE_REASON_V, lang),
-        ),
-        this.settle('LEAVE_TYPE_V', t, [] as LovItem[], () =>
-          this.lookups.getByObject(ORACLE_OBJECTS.LEAVE_TYPE_V, lang),
-        ),
-      ]);
+    const [
+      numOfChild,
+      leaveClass,
+      examCentre,
+      bereavement,
+      contractYear,
+      types,
+      reasons,
+      leaveType,
+    ] = await Promise.all([
+      this.settle('NUM_OF_CHILD_V', t, [] as LovItem[], () =>
+        this.lookups.getByObject(ORACLE_OBJECTS.NUM_OF_CHILD_V, lang),
+      ),
+      this.settle('LEAV_CLASS_V', t, [] as LovItem[], () =>
+        this.lookups.getByObject(ORACLE_OBJECTS.LEAV_CLASS_V, lang),
+      ),
+      this.settle('EXAM_CENTRE_V', t, [] as LovItem[], () =>
+        this.lookups.getByObject(ORACLE_OBJECTS.EXAM_CENTRE_V, lang),
+      ),
+      this.settle('BEREAV_RELAT_V', t, [] as LovItem[], () =>
+        this.lookups.getByObject(ORACLE_OBJECTS.BEREAV_RELAT_V, lang),
+      ),
+      this.settle('CONTRACT_YEARS_V', t, [] as LovItem[], () =>
+        this.lookups.getByObject(ORACLE_OBJECTS.CONTRACT_YEARS_V, lang),
+      ),
+      this.settle('ABSENCE_TYPE_V', t, [] as LovItem[], () =>
+        this.lookups.getByObject(ORACLE_OBJECTS.ABSENCE_TYPE_V, lang),
+      ),
+      this.settle('ABSENCE_REASON_V', t, [] as LovItem[], () =>
+        this.lookups.getByObject(ORACLE_OBJECTS.ABSENCE_REASON_V, lang),
+      ),
+      this.settle('LEAVE_TYPE_V', t, [] as LovItem[], () =>
+        this.lookups.getByObject(ORACLE_OBJECTS.LEAVE_TYPE_V, lang),
+      ),
+    ]);
     return {
       numOfChild,
       leaveClass,
@@ -225,18 +241,10 @@ export class LeaveService {
     fallback: T,
     factory: () => Promise<T>,
   ): Promise<T> {
-    const read = factory().catch((err: unknown) => {
-      this.logger.warn(
-        `[READ_DEGRADED] object=${object} failed: ${(err as Error).message} — returning fallback`,
-      );
-      return fallback;
-    });
+    const read = factory().catch(() => fallback);
     let timer: NodeJS.Timeout | undefined;
     const deadline = new Promise<T>((resolve) => {
       timer = setTimeout(() => {
-        this.logger.warn(
-          `[READ_DEGRADED] object=${object} exceeded ${timeoutMs}ms — returning fallback`,
-        );
         resolve(fallback);
       }, timeoutMs);
     });

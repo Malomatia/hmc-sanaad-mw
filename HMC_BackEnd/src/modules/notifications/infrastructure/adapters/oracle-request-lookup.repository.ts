@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { OracleService } from '@core/database/oracle.service';
 import { OracleSchemaService } from '@core/database/oracle-schema.service';
 import { BaseOracleRepository } from '@core/database/base.repository';
@@ -31,7 +31,6 @@ export class OracleRequestLookupRepository
   extends BaseOracleRepository
   implements RequestLookupPort
 {
-  private static readonly log = new Logger(OracleRequestLookupRepository.name);
   /** employee number → login, resolved once per process. */
   private static readonly logins = new Map<string, string>();
 
@@ -172,9 +171,6 @@ export class OracleRequestLookupRepository
     try {
       return await work();
     } catch (err) {
-      OracleRequestLookupRepository.log.warn(
-        `Notification lookup (${operation}) failed: ${(err as Error).message}`,
-      );
       return undefined;
     }
   }

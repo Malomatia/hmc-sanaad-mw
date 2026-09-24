@@ -34,7 +34,7 @@ describe('NotificationsService', () => {
     expect(send).toHaveBeenCalledWith(['tok-phone', 'tok-tablet'], MESSAGE);
   });
 
-  it('logs the notification, recipient, device count and FCM acceptance without tokens or message contents', async () => {
+  it('delivers notifications without emitting application logs', async () => {
     const log = jest.spyOn(Logger.prototype, 'log').mockImplementation();
     try {
       const { service } = make([{ token: 'private-device-token' }]);
@@ -43,10 +43,7 @@ describe('NotificationsService', () => {
         body: 'Private body',
         data: { notificationId: '123' },
       });
-      expect(log).toHaveBeenCalledWith(
-        'Push notification 123 to AIBRAHIM39: 1 registered device(s).',
-      );
-      expect(log).toHaveBeenCalledWith('Push notification 123 to AIBRAHIM39: 1 accepted by FCM.');
+      expect(log).not.toHaveBeenCalled();
       expect(JSON.stringify(log.mock.calls)).not.toMatch(
         /private-device-token|Private title|Private body/,
       );

@@ -5,16 +5,12 @@ import * as Joi from 'joi';
  * See .env.example for the full list.
  */
 export const envValidationSchema = Joi.object({
-  NODE_ENV: Joi.string()
-    .valid('development', 'test', 'production')
-    .default('development'),
+  NODE_ENV: Joi.string().valid('development', 'test', 'production').default('development'),
   PORT: Joi.number().default(443),
   API_PREFIX: Joi.string().default('api/v1'),
   CORS_ORIGINS: Joi.string().default('*'),
 
-  SANAAD_GATEWAY_BASE_URL: Joi.string()
-    .uri()
-    .default('https://apigwuat.api.hamad.qa/sanaad'),
+  SANAAD_GATEWAY_BASE_URL: Joi.string().uri().default('https://apigwuat.api.hamad.qa/sanaad'),
 
   // Oracle
   ORACLE_USER: Joi.string().allow('').default(''),
@@ -27,7 +23,7 @@ export const envValidationSchema = Joi.object({
   ORACLE_CALL_TIMEOUT_MS: Joi.number().min(1).default(25000),
   ORACLE_DISABLED: Joi.boolean().default(false),
   // Enables POST /diagnostics/oracle/sql (SELECT-only console; 403 in production).
-  ORACLE_SQL_ENABLED: Joi.boolean().default(true),
+
   // Thick mode: requires Oracle Client libraries installed at runtime.
   ORACLE_THICK_MODE: Joi.boolean().default(true),
   ORACLE_CLIENT_LIB_DIR: Joi.string().allow('').default(''),
@@ -59,7 +55,7 @@ export const envValidationSchema = Joi.object({
   MOTC_SMS_DB_ENCRYPT: Joi.boolean().default(true),
   MOTC_SMS_DB_TRUST_SERVER_CERT: Joi.boolean().default(false),
   MOTC_SMS_DB_DISABLED: Joi.boolean().default(false),
-  MOTC_SMS_SQL_ENABLED: Joi.boolean().default(true),
+
   MOTC_SMS_TABLE: Joi.string().default('MOTC_SMS_PushTable'),
   MOTC_SMS_EMPLOYEE_MASTER_VIEW: Joi.string().default('HMC_SND_LIV_EMP_MASTER_VW'),
   MOTC_SMS_APP_ID: Joi.string().allow('').default(''),
@@ -183,21 +179,12 @@ export const envValidationSchema = Joi.object({
 
   // Master switch for /diagnostics/*, /api-logs/* and the /health/db,
   // /health/users-db, /health/motc-sms-db connection tests (404 when false).
-  DIAGNOSTICS_ENABLED: Joi.boolean().default(true),
 
   // Internal dev console (SQL worksheet + API tester) — hidden from Swagger.
   // Works with no configuration: ON by default and READ-ONLY until the UI
   // switch is flipped. Set DEV_CONSOLE_ENABLED=false to remove the routes.
-  DEV_CONSOLE_ENABLED: Joi.boolean().default(true),
-  DEV_CONSOLE_TOKEN: Joi.string().allow('').default(''),
-  DEV_CONSOLE_ALLOW_WRITE: Joi.boolean().default(false),
-  DEV_CONSOLE_MAX_ROWS: Joi.number().min(1).max(10000).default(500),
-  DEV_CONSOLE_TIMEOUT_MS: Joi.number().min(1000).default(60000),
 
   // Misc
   REQUEST_TIMEOUT_MS: Joi.number().default(30000),
   LOV_CACHE_TTL_MS: Joi.number().min(0).default(300000),
-  LOG_LEVEL: Joi.string()
-    .valid('error', 'warn', 'log', 'debug', 'verbose')
-    .default('debug'),
 });

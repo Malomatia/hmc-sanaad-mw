@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as oracledb from 'oracledb';
 import { OracleService } from '@core/database/oracle.service';
@@ -39,7 +39,6 @@ import { LovMapper } from './lov.mapper';
 const EMPLOYEE_SCOPING_CANDIDATES = [EMP_KEY_COLUMN, 'emp_num', PERSON_ID_COLUMN] as const;
 @Injectable()
 export class LovOracleRepository implements LovRepository {
-  private static readonly logger = new Logger(LovOracleRepository.name);
   private readonly cache = new Map<string, { expiresAt: number; items: LovItem[] }>();
   private readonly pending = new Map<string, Promise<LovItem[]>>();
   private readonly cacheTtlMs: number;
@@ -98,7 +97,12 @@ export class LovOracleRepository implements LovRepository {
       ),
     ];
     const requiresScope = SCOPED_ORACLE_LOVS.has(object);
-    if (requiresScope && !supplied.length && !options.personId?.trim() && !options.userName?.trim()) {
+    if (
+      requiresScope &&
+      !supplied.length &&
+      !options.personId?.trim() &&
+      !options.userName?.trim()
+    ) {
       throw new BadRequestException('A caller identifier is required for this lookup.');
     }
     const keyColumn = supplied.length ? await this.userColumnOf(object) : undefined;
@@ -107,11 +111,20 @@ export class LovOracleRepository implements LovRepository {
       options.personId && (await this.schema.hasColumn(object, PERSON_ID_COLUMN))
         ? PERSON_ID_COLUMN
         : undefined;
-    if ((requiresScope || keyColumn) && !scopeValues.length && !personIdColumn && options.userName === undefined) {
+    if (
+      (requiresScope || keyColumn) &&
+      !scopeValues.length &&
+      !personIdColumn &&
+      options.userName === undefined
+    ) {
       return [];
     }
     if (requiresScope && !keyColumn && !personIdColumn && options.userName === undefined) return [];
-    if (personIdColumn && !(await this.matchable(object, personIdColumn, [options.personId!])).length) return [];
+    if (
+      personIdColumn &&
+      !(await this.matchable(object, personIdColumn, [options.personId!])).length
+    )
+      return [];
     const searchColumn = options.search ? await this.searchColumnOf(object) : undefined;
     const typeColumn = options.dataType ? await this.typeColumnOf(object) : undefined;
     const leaveTypeColumn = options.leaveType ? await this.leaveTypeColumnOf(object) : undefined;
@@ -155,9 +168,7 @@ export class LovOracleRepository implements LovRepository {
     }
     const where = conditions.length ? ` WHERE ${conditions.join(' AND ')}` : '';
     const limit = options.limit;
-    const pagination = limit
-      ? ' ORDER BY 1 OFFSET :offset ROWS FETCH NEXT :limit ROWS ONLY'
-      : '';
+    const pagination = limit ? ' ORDER BY 1 OFFSET :offset ROWS FETCH NEXT :limit ROWS ONLY' : '';
     if (limit) {
       binds.offset = options.offset ?? 0;
       binds.limit = limit;
@@ -172,10 +183,6 @@ export class LovOracleRepository implements LovRepository {
       .query<Record<string, any>>(`SELECT * FROM ${object}${where}${pagination}`, binds)
       .catch((err: unknown) => {
         if (extractOraCode((err as Error)?.message) === ORA_OBJECT_NOT_FOUND) {
-          LovOracleRepository.logger.error(
-            `LOV object ${object} does not exist in the database (ORA-00942) — the LOV registry ` +
-              'points at a name Oracle does not know. Check lov-names.ts / oracle-objects.ts.',
-          );
         }
         throw err;
       });

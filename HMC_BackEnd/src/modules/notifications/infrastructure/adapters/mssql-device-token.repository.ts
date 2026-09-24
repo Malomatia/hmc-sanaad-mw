@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { MssqlService } from '@core/database/mssql.service';
 import { MssqlQueryError } from '@core/database/mssql.error';
 import { DeviceToken, DevicePlatform } from '../../domain/device-token';
@@ -25,7 +25,6 @@ const INVALID_OBJECT_NAME = 208;
  */
 @Injectable()
 export class MssqlDeviceTokenRepository implements DeviceTokenStorePort {
-  private static readonly log = new Logger(MssqlDeviceTokenRepository.name);
   /** Logged once, not per call — a missing table is a deployment step. */
   private static warned = false;
 
@@ -86,9 +85,7 @@ export class MssqlDeviceTokenRepository implements DeviceTokenStorePort {
     });
   }
 
-  async removeDevices(
-    devices: readonly { username: string; imei: string }[],
-  ): Promise<void> {
+  async removeDevices(devices: readonly { username: string; imei: string }[]): Promise<void> {
     if (!devices.length) return;
     await this.guard('removeDevices', async () => {
       // Keyed on (LoginID, IMEINumber) — the pair the unique index already
@@ -104,10 +101,7 @@ export class MssqlDeviceTokenRepository implements DeviceTokenStorePort {
         binds[`i${i}`] = imei;
         return `(LoginID = @u${i} AND IMEINumber = @i${i})`;
       });
-      await this.db.execute(
-        `DELETE FROM ${TABLE} WHERE ${predicates.join(' OR ')}`,
-        binds,
-      );
+      await this.db.execute(`DELETE FROM ${TABLE} WHERE ${predicates.join(' OR ')}`, binds);
     });
   }
 
@@ -134,14 +128,10 @@ export class MssqlDeviceTokenRepository implements DeviceTokenStorePort {
       if (missingTable) {
         if (!MssqlDeviceTokenRepository.warned) {
           MssqlDeviceTokenRepository.warned = true;
-          MssqlDeviceTokenRepository.log.warn(
-            `${TABLE} does not exist yet — push registrations are being discarded. ` +
-              'Apply tools/notifications-schema.sql.',
-          );
         }
         return undefined;
       }
-      MssqlDeviceTokenRepository.log.warn(`Device-token ${operation} failed: ${message}`);
+
       return undefined;
     }
   }

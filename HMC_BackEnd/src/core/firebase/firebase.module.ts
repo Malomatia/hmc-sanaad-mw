@@ -1,4 +1,4 @@
-import { Global, Logger, Module } from '@nestjs/common';
+import { Global, Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { FirebaseConfig } from '../config/configuration';
 import { FIREBASE_APP, resolveFirebaseApp } from './firebase-app';
@@ -20,9 +20,7 @@ import { FIREBASE_APP, resolveFirebaseApp } from './firebase-app';
       useFactory: (config: ConfigService) => {
         const firebase = config.getOrThrow<FirebaseConfig>('firebase');
         const app = resolveFirebaseApp(firebase);
-        if (app) {
-          new Logger('FirebaseModule').log(`Firebase ready (project ${firebase.projectId}).`);
-        }
+
         return app;
       },
     },

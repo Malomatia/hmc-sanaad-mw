@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { MssqlService } from '@core/database/mssql.service';
 import { AuthConfig } from '@core/config/configuration';
@@ -34,7 +34,6 @@ import { FunctionAccess, FunctionStatus } from '../../domain/auth-identity';
  */
 @Injectable()
 export class MssqlFunctionAccessRepository implements FunctionAccessPort {
-  private readonly logger = new Logger(MssqlFunctionAccessRepository.name);
   private readonly view: string;
   private readonly appName: string;
   private readonly appId: number;
@@ -89,16 +88,12 @@ export class MssqlFunctionAccessRepository implements FunctionAccessPort {
       rows = await this.db.query<Record<string, unknown>>(
         `SELECT A.FunctionName, A.FunctionCode, A.Description, A.StatusCode
            FROM ${this.view} A WHERE A.AppID = @appId AND A.StatusCode = @StatusCode`,
-        { appId: this.appId , StatusCode:1},
+        { appId: this.appId, StatusCode: 1 },
       );
     } catch (err) {
-      this.logger.warn(
-        `Documented AppMaster query failed (${(err as Error).message}) — falling back to SELECT * with tolerant column mapping.`,
-      );
       rows = await this.db.query<Record<string, unknown>>(`SELECT * FROM ${this.view}`);
     }
     if (rows.length === 0) {
-      this.logger.warn(`${this.view} returned no rows — functionaccesslist will be empty.`);
       return [];
     }
 
@@ -121,13 +116,6 @@ export class MssqlFunctionAccessRepository implements FunctionAccessPort {
     if (appCol && this.appName) {
       const scoped = rows.filter((r) => sameText(r[appCol], this.appName));
       if (scoped.length > 0) rows = scoped;
-      else
-        this.logger.warn(
-          `${this.view}.${appCol} has no rows for APP_NAME="${this.appName}" — returning the unfiltered list.`,
-        );
-    }
-    if (!statusCol) {
-      this.logger.warn(`${this.view} has no status column — treating every function as ENABLED.`);
     }
 
     return rows.map((r) => ({

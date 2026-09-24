@@ -4,7 +4,7 @@ import * as sql from 'mssql';
 import { OracleService } from './oracle.service';
 import { MssqlService } from './mssql.service';
 import { MotcSmsDbService } from './motc-sms-db.service';
-import { OracleLogStore } from './oracle-log.store';
+
 import { OracleUnavailableException } from './oracle.error';
 import { MssqlUnavailableException } from './mssql.error';
 
@@ -86,10 +86,7 @@ describe('database boot resilience', () => {
   });
 
   it('starts without Oracle when the pool cannot be created', async () => {
-    const service = new OracleService(
-      config('oracle', ORACLE_CFG),
-      new OracleLogStore(),
-    );
+    const service = new OracleService(config('oracle', ORACLE_CFG));
 
     await expect(service.onModuleInit()).resolves.toBeUndefined();
 
@@ -117,7 +114,9 @@ describe('database boot resilience', () => {
     // The database comes back: the next lazy attempt succeeds.
     const query = jest.fn().mockResolvedValue({ recordset: [{ ok: 1 }], rowsAffected: [0] });
     (sql.ConnectionPool as unknown as jest.Mock).mockImplementation(() => ({
-      connect: jest.fn().mockResolvedValue({ on: jest.fn(), request: () => ({ input: jest.fn(), query }) }),
+      connect: jest
+        .fn()
+        .mockResolvedValue({ on: jest.fn(), request: () => ({ input: jest.fn(), query }) }),
     }));
 
     await expect(service.query('SELECT 1 AS ok')).resolves.toEqual([{ ok: 1 }]);
@@ -125,14 +124,10 @@ describe('database boot resilience', () => {
   });
 
   it('names the missing USERS_DB_* vars when unconfigured', async () => {
-    const service = new MssqlService(
-      config('usersDb', { ...MSSQL_CFG, host: '', user: '' }),
-    );
+    const service = new MssqlService(config('usersDb', { ...MSSQL_CFG, host: '', user: '' }));
     await service.onModuleInit();
 
-    await expect(service.query('SELECT 1 AS ok')).rejects.toThrow(
-      /USERS_DB_HOST, USERS_DB_USER/,
-    );
+    await expect(service.query('SELECT 1 AS ok')).rejects.toThrow(/USERS_DB_HOST, USERS_DB_USER/);
     expect(service.isConfigured()).toBe(false);
   });
 
@@ -146,7 +141,7 @@ describe('database boot resilience', () => {
   });
 
   it('reports the real reason on /health instead of dying silently', async () => {
-    const service = new OracleService(config('oracle', ORACLE_CFG), new OracleLogStore());
+    const service = new OracleService(config('oracle', ORACLE_CFG));
     await service.onModuleInit();
 
     const diag = await service.diagnose();
@@ -158,13 +153,10 @@ describe('database boot resilience', () => {
    * same on /health — telling them apart is the whole point of isConfigured().
    */
   it('separates a broken database from a disabled one', async () => {
-    const broken = new OracleService(config('oracle', ORACLE_CFG), new OracleLogStore());
+    const broken = new OracleService(config('oracle', ORACLE_CFG));
     await broken.onModuleInit();
 
-    const off = new OracleService(
-      config('oracle', { ...ORACLE_CFG, disabled: true }),
-      new OracleLogStore(),
-    );
+    const off = new OracleService(config('oracle', { ...ORACLE_CFG, disabled: true }));
     await off.onModuleInit();
 
     // neither has a pool, so both are equally unusable...
@@ -181,12 +173,10 @@ describe('database boot resilience', () => {
     const CLOSED = new Error('NJS-065: connection pool was closed');
 
     function makeOracle(overrides: Record<string, unknown> = {}) {
-      const logs = new OracleLogStore();
       const service = new OracleService(
         config('oracle', { ...ORACLE_CFG, callTimeout: 25000, ...overrides }),
-        logs,
       );
-      return { service, logs };
+      return { service };
     }
 
     function makePool() {
@@ -233,7 +223,7 @@ describe('database boot resilience', () => {
     });
 
     it('stops after two failures, cools down, then recovers on a later request', async () => {
-      const { service, logs } = makeOracle();
+      const { service } = makeOracle();
       const results = Promise.allSettled(
         Array.from({ length: 8 }, () => service.query('SELECT 1')),
       );
@@ -246,8 +236,6 @@ describe('database boot resilience', () => {
         }
       }
       expect(createPool).toHaveBeenCalledTimes(2);
-      expect(logs.list().items).toHaveLength(8);
-      expect(logs.list().items.every((entry) => entry.status === 'error')).toBe(true);
 
       await expect(service.query('SELECT 1')).rejects.toBeInstanceOf(OracleUnavailableException);
       await jest.advanceTimersByTimeAsync(1999);
@@ -478,15 +466,14 @@ describe('database boot resilience', () => {
     it.each(['query', 'call', 'callCursor', 'callMultiCursor'] as const)(
       'preserves 503 and records the acquisition failure for %s',
       async (method) => {
-        const { service, logs } = makeOracle({ disabled: true });
+        const { service } = makeOracle({ disabled: true });
         const operation =
           method === 'callMultiCursor'
             ? service.callMultiCursor('BEGIN submit_request; END;', {}, [])
             : service[method]('SELECT 1', {});
 
         await expect(operation).rejects.toBeInstanceOf(OracleUnavailableException);
-        expect(logs.list().items).toHaveLength(1);
-        expect(logs.list().items[0].status).toBe('error');
+
         expect(createPool).not.toHaveBeenCalled();
       },
     );
@@ -554,10 +541,7 @@ describe('database boot resilience', () => {
   });
 
   it('treats missing credentials as not configured', async () => {
-    const service = new OracleService(
-      config('oracle', { ...ORACLE_CFG, dsn: '' }),
-      new OracleLogStore(),
-    );
+    const service = new OracleService(config('oracle', { ...ORACLE_CFG, dsn: '' }));
     await expect(service.onModuleInit()).resolves.toBeUndefined();
     expect(service.isConfigured()).toBe(false);
   });

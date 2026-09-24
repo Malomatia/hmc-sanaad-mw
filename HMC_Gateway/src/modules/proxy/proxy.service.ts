@@ -1,4 +1,4 @@
-import { BadGatewayException, GatewayTimeoutException, Injectable, Logger } from '@nestjs/common';
+import { BadGatewayException, GatewayTimeoutException, Injectable } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { AxiosError, AxiosRequestConfig } from 'axios';
@@ -53,8 +53,6 @@ const FORWARD_RESPONSE_HEADERS = ['content-type', 'content-disposition', 'conten
  */
 @Injectable()
 export class ProxyService {
-  private readonly logger = new Logger(ProxyService.name);
-
   constructor(
     private readonly http: HttpService,
     private readonly config: ConfigService,
@@ -83,7 +81,7 @@ export class ProxyService {
     try {
       response = await firstValueFrom(this.http.request(axiosConfig));
     } catch (err) {
-      this.handleNetworkError(err as AxiosError, req);
+      this.handleNetworkError(err as AxiosError);
       return;
     }
 
@@ -126,13 +124,11 @@ export class ProxyService {
     return headers;
   }
 
-  private handleNetworkError(err: AxiosError, req: Request): never {
-    const detail = `${req.method} ${req.originalUrl} :: ${err.message}`;
+  private handleNetworkError(err: AxiosError): never {
     if (err.code === 'ECONNABORTED' || err.message?.toLowerCase().includes('timeout')) {
-      this.logger.error(`Backend request timed out — ${detail}`);
       throw new GatewayTimeoutException('The upstream service timed out. Please try again.');
     }
-    this.logger.error(`Backend request failed — ${detail}`, err.stack);
+
     throw new BadGatewayException('The upstream service is currently unavailable.');
   }
 }

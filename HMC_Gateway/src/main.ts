@@ -1,4 +1,3 @@
-import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { ConfigService } from '@nestjs/config';
@@ -20,7 +19,7 @@ const BODY_LIMIT = '25mb';
 type RawBodyRequest = { rawBody?: Buffer };
 
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { logger: false });
   const config = app.get(ConfigService);
   const appCfg = config.getOrThrow<AppConfig>('app');
 
@@ -70,10 +69,6 @@ async function bootstrap(): Promise<void> {
   });
 
   await app.listen(appCfg.port);
-  Logger.log(
-    `Gateway listening on http://localhost:${appCfg.port}/${appCfg.apiPrefix} (Swagger: /docs)`,
-    'Bootstrap',
-  );
 }
 
 void bootstrap();

@@ -35,5 +35,4 @@ export const envValidationSchema = Joi.object({
 
   // Misc
   REQUEST_TIMEOUT_MS: Joi.number().default(35000),
-  LOG_LEVEL: Joi.string().valid('error', 'warn', 'log', 'debug', 'verbose').default('debug'),
 });

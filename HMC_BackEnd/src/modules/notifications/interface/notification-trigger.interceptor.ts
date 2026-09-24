@@ -1,4 +1,4 @@
-import { CallHandler, ExecutionContext, Injectable, Logger, NestInterceptor } from '@nestjs/common';
+import { CallHandler, ExecutionContext, Injectable, NestInterceptor } from '@nestjs/common';
 import { catchError, defer, Observable, of, switchMap, tap, timeout } from 'rxjs';
 import { AuthenticatedUser } from '@core/auth/auth-user.interface';
 import { DecisionOutcome, RequestNotifier } from '../application/request-notifier.service';
@@ -55,7 +55,6 @@ const SUBMIT_ROUTE = /\/(apply|cancel|return|amend|personal|create|update|add|de
  */
 @Injectable()
 export class NotificationTriggerInterceptor implements NestInterceptor {
-  private static readonly log = new Logger(NotificationTriggerInterceptor.name);
   private static readonly LOOKUP_TIMEOUT_MS = 2000;
 
   constructor(private readonly notifier: RequestNotifier) {}
@@ -106,9 +105,6 @@ export class NotificationTriggerInterceptor implements NestInterceptor {
     return defer(() => this.notifier.captureRequest(action[1])).pipe(
       timeout(NotificationTriggerInterceptor.LOOKUP_TIMEOUT_MS),
       catchError(() => {
-        NotificationTriggerInterceptor.log.warn(
-          'Notification context lookup failed or timed out; continuing the action.',
-        );
         return of({} as RequestParticipants);
       }),
       switchMap((snapshot) => proceed(snapshot)),

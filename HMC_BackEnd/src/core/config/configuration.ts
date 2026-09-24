@@ -15,14 +15,14 @@ export interface AppConfig {
    * Per-sub-read deadline (ms) for endpoints that fan out several Oracle reads
    * in parallel (e.g. leave defaults). Kept well under `requestTimeoutMs` so one
    * slow view degrades to a partial result instead of a whole-request timeout.
- */
+   */
   aggregateReadTimeoutMs: number;
   lovCacheTtlMs: number;
-  logLevel: string;
+
   /**
    * Identity provider for the auth journey: LDAPS, Entra ID (Graph), or the
    * legacy Users DB itself (`usersdb` - HMC_Sanad_DeviceRegn_tbl, no directory).
- */
+   */
   directory: 'ldap' | 'entra' | 'usersdb';
 }
 
@@ -39,8 +39,8 @@ export interface OracleConfig {
   /**
    * Enables POST /diagnostics/oracle/sql (ad-hoc SELECT-only console over the
    * XXHMC_SND_* schema). Ignored in production - always 403 there.
- */
-  sqlConsoleEnabled: boolean;
+   */
+
   /** Use node-oracledb Thick mode (requires Oracle Client libraries at runtime). */
   thickMode: boolean;
   /** Optional path to the Oracle Client / Instant Client libraries for Thick mode. */
@@ -60,18 +60,6 @@ export interface OracleConfig {
  *   DEV_CONSOLE_TOKEN=<secret> -> require `x-console-token` / `?token=`
  *   DEV_CONSOLE_ALLOW_WRITE=true -> start already in write mode
  */
-export interface DevConsoleConfig {
-  /** Master switch (DEV_CONSOLE_ENABLED). Defaults to ON - set `false` to remove the routes. */
-  enabled: boolean;
-  /** Shared secret required in the `x-console-token` header / `?token=`. Empty = no token check. */
-  token: string;
-  /** Initial write mode. Off = SELECT/WITH/EXPLAIN only; the UI can switch it at runtime. */
-  allowWrite: boolean;
-  /** Hard cap on rows returned by one statement. */
-  maxRows: number;
-  /** Per-statement Oracle call timeout (ms). */
-  timeoutMs: number;
-}
 
 /**
  * Master switch for the observability/test surface: the diagnostics APIs
@@ -84,10 +72,6 @@ export interface DevConsoleConfig {
  * (USERS_DB_SQL_ENABLED, MOTC_SMS_SQL_ENABLED, DEV_CONSOLE_ENABLED) still
  * apply on top when this is on.
  */
-export interface DiagnosticsConfig {
-  /** DIAGNOSTICS_ENABLED - defaults to true; set false to remove the routes. */
-  enabled: boolean;
-}
 
 export interface AuthConfig {
   jwtSecret: string;
@@ -102,7 +86,7 @@ export interface AuthConfig {
    * returns a fixed AIBRAHIM39 payload whose FULL user data (employee fields +
    * functionaccesslist) is also embedded in the signed JWT (`userdata` claim).
    * Off by default; never enable in production.
- */
+   */
   staticLogin: boolean;
   /**
    * Users-DB view/table holding the login `functionaccesslist` (module name/
@@ -110,7 +94,7 @@ export interface AuthConfig {
    * `SELECT FunctionName, FunctionCode, Description, StatusCode FROM
    *  HMC_Sanad_AppMaster_VW WHERE AppID = 1`; columns are resolved tolerantly
    * when that projection fails.
- */
+   */
   functionAccessView: string;
   /** AppID filter of the documented AppMaster query (Sanaad = 1). */
   functionAccessAppId: number;
@@ -140,8 +124,7 @@ export interface AppSettingsConfig {
 }
 
 /** Default privacy policy page; `docker-compose.yml` supplies the same value. */
-export const DEFAULT_PRIVACY_POLICY_URL =
-  'https://www.hamad.qa/EN/Sanad/Pages/Privacy-Policy.html';
+export const DEFAULT_PRIVACY_POLICY_URL = 'https://www.hamad.qa/EN/Sanad/Pages/Privacy-Policy.html';
 
 /**
  * Users/Sanaad SQL Server database - backs the auth cycle (device registration,
@@ -167,13 +150,12 @@ export interface UsersDbConfig {
    * IGNORED since 2026-08-31 (client request): the Users DB pool is always
    * created directly - eagerly at boot, retried lazily on first use. Kept only
    * so existing .env/compose files with USERS_DB_DISABLED don't break parsing.
- */
+   */
   disabled: boolean;
   /**
    * Enables POST /diagnostics/users-db/sql (ad-hoc SELECT console). Ignored in
    * production - the endpoint is always 403 there regardless of this flag.
- */
-  sqlConsoleEnabled: boolean;
+   */
 }
 
 /**
@@ -216,8 +198,8 @@ export interface MotcSmsConfig {
    * POST /diagnostics/motc-sms-db/sql (ad-hoc SELECT console). TEMPORARILY
    * ignored (client request 2026-09-03): the console is ungated like the
    * Oracle one - restore the flag + production checks before hardening.
- */
-  sqlConsoleEnabled: boolean;
+   */
+
   /** Push/outbox table name (interpolated as an identifier - validated). */
   table: string;
   /**
@@ -225,12 +207,12 @@ export interface MotcSmsConfig {
    * AUTH_DIRECTORY=usersdb identity adapter: /auth/initiate resolves the
    * username against it (UserName column) and a user absent from the view is
    * refused. Interpolated as an identifier (validated).
- */
+   */
   employeeMasterView: string;
   /**
    * <AppId> of the client's INSERT - written to ServiceID, ApplicationID and
    * (unless fromAddress overrides it) FromAddress.
- */
+   */
   appId: string;
   /** FromAddress column; empty = use appId (mirrors the client's INSERT). */
   fromAddress: string;
@@ -250,7 +232,7 @@ export interface MotcSmsConfig {
    * adapter uses them to correlate OTP rows to username (1) + device IMEI (2),
    * which is what makes DB-side validation per-user possible. Setting static
    * values disables that correlation (verification then keys on MessageID only).
- */
+   */
   businessParam1: string;
   businessParam2: string;
   /**
@@ -258,7 +240,7 @@ export interface MotcSmsConfig {
    * validation exactly like an SMS OTP, but with a state the SMS gateway does
    * NOT push (we deliver by SMTP ourselves). Default '1' (= already
    * processed); confirm the gateway's skip value with the MOTC team.
- */
+   */
   emailProcessedState: string;
 }
 
@@ -305,26 +287,26 @@ export interface OtpConfig {
    * TESTING AID (client request 2026-09-03): when non-empty, every generated
    * OTP is this fixed value (e.g. 123456) instead of a random one, so the
    * journey can be exercised without reading the SMS. Empty = random.
- */
+   */
   staticValue: string;
   /**
    * Alphabet of a generated OTP: `numeric` (default, digits only) or
    * `alphanumeric` (uppercase letters + digits, ambiguous I/O/0/1 excluded
    * for SMS readability).
- */
+   */
   charset: 'numeric' | 'alphanumeric';
   /**
    * How the OTP SMS is delivered when the store is `legacy`: `motc` (default)
    * INSERTs into MOTC_SMS_PushTable (the gateway fires the SMS); `http` uses
    * the generic HTTP adapter (SMS_API_* config).
- */
+   */
   delivery: 'motc' | 'http';
   /**
    * Where OTPs are stored and validated: `legacy` (default since 2026-09-03)
    * = HMC_RHAP_OTP_tbl in the Users DB (MssqlOtpRepository), delivery via
    * OTP_DELIVERY; `motc` = the MOTC_SMS push table doubles as store AND
    * delivery (MotcSmsOtpRepository).
- */
+   */
   store: 'motc' | 'legacy';
 }
 
@@ -342,7 +324,7 @@ export interface LdapConfig {
    * UPN domain suffix for direct binds (`username@upnDomain`), e.g. HMC.ORG.QA.
    * Defaults to `host`. Used by `authenticate()`, which binds directly as the
    * user - no service-account search needed.
- */
+   */
   upnDomain: string;
   /** Search base, e.g. DC=hmc,DC=org,DC=qa. Used by `validate()` only. */
   baseDn: string;
@@ -362,7 +344,7 @@ export interface LdapConfig {
    * if both are set. Required to set `tlsRejectUnauthorized: true` against an
    * internal/self-signed AD CA; leave unset only for a quick connectivity
    * test (with tlsRejectUnauthorized=false).
- */
+   */
   caCert?: Buffer;
   /** Bind/search timeout in milliseconds. */
   timeoutMs: number;
@@ -412,7 +394,7 @@ export interface FirebaseConfig {
    * Whether a value was SUPPLIED at all, regardless of whether it parsed.
    * With only `enabled`, "DevOps never set it" and "they set it but it
    * arrived truncated" are the same answer — and the fixes are opposite.
- */
+   */
   credentialProvided: boolean;
   /** Length of the inline value, so a truncated paste is visible at a glance. */
   credentialLength: number;
@@ -453,7 +435,7 @@ export interface AppIntegrityConfig {
     /**
      * Accept attestations produced by the App Attest DEVELOPMENT environment.
      * Xcode debug builds emit those, and a production server must reject them.
- */
+     */
     allowDevelopment: boolean;
     /** Configured enough to verify anything. */
     enabled: boolean;
@@ -464,7 +446,7 @@ export interface AppIntegrityConfig {
      * Service account with the `playintegrity` scope. NOT the Firebase key -
      * decoding an integrity token is a separate Google API with its own
      * authorization.
- */
+     */
     serviceAccount?: FirebaseServiceAccount;
     enabled: boolean;
   };
@@ -475,8 +457,7 @@ export interface AppIntegrityConfig {
 export interface RootConfig {
   app: AppConfig;
   oracle: OracleConfig;
-  devConsole: DevConsoleConfig;
-  diagnostics: DiagnosticsConfig;
+
   usersDb: UsersDbConfig;
   motcSms: MotcSmsConfig;
   sms: SmsConfig;
@@ -516,7 +497,6 @@ function loadFirebaseServiceAccount(): FirebaseServiceAccount | undefined {
   return loadServiceAccount(
     process.env.FIREBASE_SERVICE_ACCOUNT,
     process.env.FIREBASE_SERVICE_ACCOUNT_PATH,
-    'FIREBASE_SERVICE_ACCOUNT',
   );
 }
 
@@ -524,21 +504,15 @@ function loadFirebaseServiceAccount(): FirebaseServiceAccount | undefined {
 function loadServiceAccount(
   inline: string | undefined,
   path: string | undefined,
-  label: string,
 ): FirebaseServiceAccount | undefined {
   let raw: string | undefined;
   if (inline) {
     // A base64 blob has no braces; raw JSON does.
-    raw = inline.trim().startsWith('{')
-      ? inline
-      : Buffer.from(inline, 'base64').toString('utf8');
+    raw = inline.trim().startsWith('{') ? inline : Buffer.from(inline, 'base64').toString('utf8');
   } else if (path) {
     try {
       raw = fs.readFileSync(path, 'utf8');
     } catch (err) {
-      console.warn(
-        `[configuration] Could not read ${label}_PATH="${path}": ${(err as Error).message}`,
-      );
       return undefined;
     }
   }
@@ -547,13 +521,14 @@ function loadServiceAccount(
   try {
     const parsed = JSON.parse(raw) as Partial<FirebaseServiceAccount>;
     if (!parsed.project_id || !parsed.client_email || !parsed.private_key) {
-      console.warn(`[configuration] ${label} is missing required fields.`);
       return undefined;
     }
     // `\n` survives an env var only escaped; the SDK needs real newlines.
-    return { ...parsed, private_key: parsed.private_key.replace(/\\n/g, '\n') } as FirebaseServiceAccount;
+    return {
+      ...parsed,
+      private_key: parsed.private_key.replace(/\\n/g, '\n'),
+    } as FirebaseServiceAccount;
   } catch {
-    console.warn(`[configuration] ${label} is not valid JSON.`);
     return undefined;
   }
 }
@@ -573,9 +548,6 @@ function loadLdapCaCert(): Buffer | undefined {
   try {
     return fs.readFileSync(path);
   } catch (err) {
-    console.warn(
-      `[configuration] Could not read LDAP_CA_CERT_PATH="${path}": ${(err as Error).message}`,
-    );
     return undefined;
   }
 }
@@ -586,13 +558,12 @@ export default (): RootConfig => ({
     port: Number(process.env.PORT ?? 3000),
     apiPrefix: process.env.API_PREFIX ?? 'api/v1',
     corsOrigins: (process.env.CORS_ORIGINS ?? '*').split(',').map((s) => s.trim()),
-    gatewayBaseUrl:
-      process.env.SANAAD_GATEWAY_BASE_URL ?? 'https://apigwuat.api.hamad.qa/sanaad',
+    gatewayBaseUrl: process.env.SANAAD_GATEWAY_BASE_URL ?? 'https://apigwuat.api.hamad.qa/sanaad',
     requestTimeoutMs: Number(process.env.REQUEST_TIMEOUT_MS ?? 30000),
     // Set directly for now (not env-driven). Kept under `requestTimeoutMs`.
     aggregateReadTimeoutMs: 20000,
     lovCacheTtlMs: Number(process.env.LOV_CACHE_TTL_MS ?? 300000),
-    logLevel: process.env.LOG_LEVEL ?? 'debug',
+
     directory:
       process.env.AUTH_DIRECTORY === 'entra'
         ? 'entra'
@@ -611,23 +582,11 @@ export default (): RootConfig => ({
     callTimeout: Number(process.env.ORACLE_CALL_TIMEOUT_MS ?? 25000),
     disabled: toBool(process.env.ORACLE_DISABLED),
     // Default ON (client request): production is still a hard 403 regardless.
-    sqlConsoleEnabled: toBool(process.env.ORACLE_SQL_ENABLED ?? 'true'),
+
     thickMode: toBool(process.env.ORACLE_THICK_MODE ?? 'true'),
     libDir: process.env.ORACLE_CLIENT_LIB_DIR || undefined,
   },
-  devConsole: {
-    // Default ON so the console needs no environment setup anywhere.
-    enabled: toBool(process.env.DEV_CONSOLE_ENABLED ?? 'true'),
-    token: process.env.DEV_CONSOLE_TOKEN ?? '',
-    allowWrite: toBool(process.env.DEV_CONSOLE_ALLOW_WRITE),
-    maxRows: Number(process.env.DEV_CONSOLE_MAX_ROWS ?? 500),
-    timeoutMs: Number(process.env.DEV_CONSOLE_TIMEOUT_MS ?? 60000),
-  },
-  diagnostics: {
-    // Default ON (matches current behavior); set false to hide the whole
-    // diagnostics/logs/db-test surface.
-    enabled: toBool(process.env.DIAGNOSTICS_ENABLED ?? 'true'),
-  },
+
   usersDb: {
     host: process.env.USERS_DB_HOST ?? '',
     port: Number(process.env.USERS_DB_PORT ?? 1433),
@@ -641,7 +600,6 @@ export default (): RootConfig => ({
     encrypt: toBool(process.env.USERS_DB_ENCRYPT ?? 'true'),
     trustServerCertificate: toBool(process.env.USERS_DB_TRUST_SERVER_CERT ?? 'false'),
     disabled: toBool(process.env.USERS_DB_DISABLED),
-    sqlConsoleEnabled: toBool(process.env.USERS_DB_SQL_ENABLED),
   },
   motcSms: {
     host: process.env.MOTC_SMS_DB_HOST ?? '',
@@ -656,7 +614,7 @@ export default (): RootConfig => ({
     encrypt: toBool(process.env.MOTC_SMS_DB_ENCRYPT ?? 'true'),
     trustServerCertificate: toBool(process.env.MOTC_SMS_DB_TRUST_SERVER_CERT ?? 'false'),
     disabled: toBool(process.env.MOTC_SMS_DB_DISABLED),
-    sqlConsoleEnabled: toBool(process.env.MOTC_SMS_SQL_ENABLED),
+
     table: process.env.MOTC_SMS_TABLE ?? 'MOTC_SMS_PushTable',
     employeeMasterView: process.env.MOTC_SMS_EMPLOYEE_MASTER_VIEW ?? 'HMC_SND_LIV_EMP_MASTER_VW',
     appId: process.env.MOTC_SMS_APP_ID ?? '',
@@ -788,7 +746,7 @@ export default (): RootConfig => ({
       // quoted or line-wrapped. Chasing the wrong one costs a deploy cycle.
       credentialProvided: Boolean(
         process.env.FIREBASE_SERVICE_ACCOUNT?.trim() ||
-          process.env.FIREBASE_SERVICE_ACCOUNT_PATH?.trim(),
+        process.env.FIREBASE_SERVICE_ACCOUNT_PATH?.trim(),
       ),
       credentialLength: process.env.FIREBASE_SERVICE_ACCOUNT?.trim().length ?? 0,
     };
@@ -806,7 +764,6 @@ export default (): RootConfig => ({
     const androidKey = loadServiceAccount(
       process.env.PLAY_INTEGRITY_SERVICE_ACCOUNT,
       process.env.PLAY_INTEGRITY_SERVICE_ACCOUNT_PATH,
-      'PLAY_INTEGRITY_SERVICE_ACCOUNT',
     );
     return {
       // Anything unrecognised means off: a typo must not silently enforce.

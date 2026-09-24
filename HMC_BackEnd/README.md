@@ -4,6 +4,21 @@ NestJS + TypeScript backend that re-exposes the **71 Sanaad Business-to-Employee
 
 > Blueprint: see `../Docs_Ai/` (Architecture, Layers, Domains, API, Repository Pattern, Database, ...).
 
+## Pentest source variant
+
+The `pentest-code-version` branch excludes all application log emitters, API/SQL
+log capture, file logging, database audit writes, SQL consoles and developer-only
+HTTP endpoints. Nest framework logging is disabled in both services. These features
+are removed from the source, not enabled conditionally by environment settings.
+
+The maintained `postman/HMC-Sanaad-Full.postman_collection.json` no longer includes
+`Internal - Diagnostics (dev only)` or detailed database-health requests. Business
+APIs, authentication, app attestation, mobile healthcheck and Swagger documentation
+remain. `GET /health` returns only status, uptime and timestamp.
+
+Use a clean build of both projects before handover. Do not include `.env`, `.git`,
+old source archives, runtime logs or `node_modules` in a source-code handover.
+
 ## Stack
 
 - **NestJS v11** (feature-first modules, Clean Architecture per module)

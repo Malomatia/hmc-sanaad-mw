@@ -1,15 +1,10 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { DeviceToken } from '../domain/device-token';
 import {
   DEVICE_TOKEN_STORE_PORT,
   DeviceTokenStorePort,
 } from '../domain/ports/device-token-store.port';
-import {
-  PUSH_SENDER_PORT,
-  PushMessage,
-  PushResult,
-  PushSenderPort,
-} from '../domain/ports/push-sender.port';
+import { PUSH_SENDER_PORT, PushMessage, PushSenderPort } from '../domain/ports/push-sender.port';
 
 /**
  * Push notifications: registration of a device, and delivery to a person.
@@ -20,8 +15,6 @@ import {
  */
 @Injectable()
 export class NotificationsService {
-  private static readonly log = new Logger(NotificationsService.name);
-
   constructor(
     @Inject(DEVICE_TOKEN_STORE_PORT) private readonly store: DeviceTokenStorePort,
     @Inject(PUSH_SENDER_PORT) private readonly sender: PushSenderPort,
@@ -50,19 +43,6 @@ export class NotificationsService {
    * deployment actually deliver a notification?" had no answer short of the
    * boot log or waiting for a dead token to disappear from the table.
    */
-  async sendTest(
-    username: string,
-    message: PushMessage,
-  ): Promise<PushResult & { devices: number }> {
-    const devices = await this.store.findByUsername(username);
-    if (!devices.length) return { sent: 0, failed: 0, invalidTokens: [], devices: 0 };
-
-    const result = await this.sender.send(
-      devices.map((d) => d.token),
-      message,
-    );
-    return { ...result, devices: devices.length };
-  }
 
   /**
    * Notify every device a user has registered.
@@ -75,12 +55,7 @@ export class NotificationsService {
   async notifyUser(username: string, message: PushMessage): Promise<void> {
     try {
       const devices = await this.store.findByUsername(username);
-      const context = message.data?.notificationId
-        ? `Push notification ${message.data.notificationId}`
-        : 'Push';
-      NotificationsService.log.log(
-        `${context} to ${username}: ${devices.length} registered device(s).`,
-      );
+
       if (!devices.length) return;
 
       const result = await this.sender.send(
@@ -96,17 +71,6 @@ export class NotificationsService {
         .filter((d) => dead.has(d.token))
         .map(({ username: owner, imei }) => ({ username: owner, imei }));
       if (staleDevices.length) await this.store.removeDevices(staleDevices);
-
-      if (result.sent)
-        NotificationsService.log.log(`${context} to ${username}: ${result.sent} accepted by FCM.`);
-      if (result.failed) {
-        NotificationsService.log.warn(
-          `Push to ${username}: ${result.sent} sent, ${result.failed} failed, ` +
-            `${result.invalidTokens.length} token(s) pruned.`,
-        );
-      }
-    } catch (err) {
-      NotificationsService.log.warn(`Push to ${username} failed: ${(err as Error).message}`);
-    }
+    } catch (err) {}
   }
 }

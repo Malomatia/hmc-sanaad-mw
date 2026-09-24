@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as sql from 'mssql';
 import { UsersDbConfig } from '../config/configuration';
@@ -49,16 +49,13 @@ export interface MssqlDiagnostics {
  */
 @Injectable()
 export class MssqlService implements OnModuleInit, OnModuleDestroy {
-  private readonly logger = new Logger(MssqlService.name);
   private pool: sql.ConnectionPool | undefined;
   /** In-flight creation attempt — shared so concurrent queries don't stampede. */
   private creating: Promise<sql.ConnectionPool> | undefined;
   private readonly cfg: UsersDbConfig;
   /** Monotonic counter so each call's log lines can be correlated. */
-  private callSeq = 0;
 
   /** Param keys whose values must never be logged. */
-  private static readonly SENSITIVE_PARAM = /(mpin|password|pwd|otp|secret|token)/i;
 
   constructor(config: ConfigService) {
     this.cfg = config.getOrThrow<UsersDbConfig>('usersDb');
@@ -70,12 +67,7 @@ export class MssqlService implements OnModuleInit, OnModuleDestroy {
     // ensurePool() retries on first use anyway.
     try {
       await this.ensurePool();
-    } catch (err) {
-      this.logger.error(
-        `Users DB pool not created at boot: ${(err as Error).message} — ` +
-          'auth-cycle DB calls will retry the connection on demand.',
-      );
-    }
+    } catch (err) {}
   }
 
   /** USERS_DB_* env vars without which no connection is possible. */
@@ -119,15 +111,12 @@ export class MssqlService implements OnModuleInit, OnModuleDestroy {
 
     try {
       const pool = await this.creating;
-      pool.on('error', (err) => this.logger.error(`Users DB pool error: ${err.message}`));
+      pool.on('error', () => undefined);
       this.pool = pool;
-      this.logger.log(
-        `Users DB pool created (min=${this.cfg.poolMin}, max=${this.cfg.poolMax}) → ${this.cfg.host}:${this.cfg.port}/${this.cfg.database}`,
-      );
+
       await this.verifyConnectivity();
       return pool;
     } catch (err) {
-      this.logger.error(`Failed to create Users DB pool: ${(err as Error).message}`);
       throw new MssqlUnavailableException(
         `The users database is currently unavailable: ${(err as Error).message}`,
       );
@@ -143,24 +132,13 @@ export class MssqlService implements OnModuleInit, OnModuleDestroy {
    */
   private async verifyConnectivity(): Promise<void> {
     try {
-      const started = Date.now();
-      const result = await this.pool!.request().query<{ dbTime: Date }>(
-        'SELECT SYSDATETIMEOFFSET() AS dbTime',
-      );
-      this.logger.log(
-        `Users DB connectivity verified in ${Date.now() - started}ms (server time: ${String(result.recordset[0]?.dbTime ?? 'unknown')})`,
-      );
-    } catch (err) {
-      this.logger.error(
-        `Users DB pool connected but probe query FAILED — auth-cycle calls will fail: ${(err as Error).message}`,
-      );
-    }
+      await this.pool!.request().query<{ dbTime: Date }>('SELECT SYSDATETIMEOFFSET() AS dbTime');
+    } catch (err) {}
   }
 
   async onModuleDestroy(): Promise<void> {
     if (this.pool) {
       await this.pool.close();
-      this.logger.log('Users DB pool closed.');
     }
   }
 
@@ -199,39 +177,22 @@ export class MssqlService implements OnModuleInit, OnModuleDestroy {
     statement: string,
     params: Record<string, unknown>,
   ): Promise<sql.IResult<Record<string, any>>> {
-    const id = ++this.callSeq;
-    const started = Date.now();
-    const label = this.describeSql(statement);
-    this.logger.log(`[mssql#${id}] → ${label} params=${this.formatParams(params)}`);
     const request = (await this.ensurePool()).request();
     for (const [key, value] of Object.entries(params)) {
       request.input(key, value as sql.ISqlType | unknown);
     }
     try {
       const result = await request.query(statement);
-      const ms = Date.now() - started;
-      const rows = result.recordset?.length ?? 0;
-      this.logger.log(
-        `[mssql#${id}] done ${label} ${rows} row(s), ${result.rowsAffected} affected (${ms}ms)`,
-      );
+
       return result;
     } catch (err) {
-      const ms = Date.now() - started;
       const wrapped = MssqlQueryError.from(err);
-      this.logger.error(`[mssql#${id}] FAILED ${label} after ${ms}ms: ${wrapped.message}`);
+
       throw wrapped;
     }
   }
 
   /** Short label for a statement: the table read or written. */
-  private describeSql(statement: string): string {
-    const compact = statement.replace(/\s+/g, ' ').trim();
-    const target =
-      /\bfrom\s+([a-z0-9_$.\[\]]+)/i.exec(compact) ??
-      /\b(?:update|insert\s+into|delete\s+from)\s+([a-z0-9_$.\[\]]+)/i.exec(compact);
-    if (target) return target[1].toUpperCase();
-    return compact.length > 60 ? `${compact.slice(0, 57)}...` : compact;
-  }
 
   /** Lightweight readiness check for the /health endpoint (creates the pool on demand). */
   async ping(): Promise<boolean> {
@@ -280,14 +241,18 @@ export class MssqlService implements OnModuleInit, OnModuleDestroy {
 
     const start = Date.now();
     try {
-      const result = await pool.request().query<{ version: string; dbTime: Date }>(
-        'SELECT @@VERSION AS version, SYSDATETIMEOFFSET() AS dbTime',
-      );
+      const result = await pool
+        .request()
+        .query<{ version: string; dbTime: Date }>(
+          'SELECT @@VERSION AS version, SYSDATETIMEOFFSET() AS dbTime',
+        );
       diag.latencyMs = Date.now() - start;
       diag.connected = true;
       const row = result.recordset[0];
       diag.server = {
-        version: String(row?.version ?? 'unknown').split('\n')[0].trim(),
+        version: String(row?.version ?? 'unknown')
+          .split('\n')[0]
+          .trim(),
         dbTime: String(row?.dbTime ?? 'unknown'),
       };
       diag.pool = {
@@ -296,23 +261,13 @@ export class MssqlService implements OnModuleInit, OnModuleDestroy {
         borrowed: pool.borrowed,
         pending: pool.pending,
       };
-      this.logger.log(`Users DB diagnose OK (${diag.latencyMs}ms)`);
     } catch (err) {
       diag.latencyMs = Date.now() - start;
       const wrapped = MssqlQueryError.from(err);
       diag.error = { message: wrapped.message, code: (err as { code?: string }).code };
-      this.logger.error(`Users DB diagnose FAILED after ${diag.latencyMs}ms: ${wrapped.message}`);
     }
     return diag;
   }
 
   /** Loggable `{ k=v, ... }` with secrets redacted. */
-  private formatParams(params: Record<string, unknown>): string {
-    const keys = Object.keys(params);
-    if (keys.length === 0) return '{}';
-    const parts = keys.map((k) =>
-      MssqlService.SENSITIVE_PARAM.test(k) ? `${k}=***` : `${k}=${String(params[k])}`,
-    );
-    return `{ ${parts.join(', ')} }`;
-  }
 }

@@ -17,7 +17,11 @@ Run from `HMC_BackEnd/`.
 | Tests | `npm.cmd test` |
 | Lint | `npx.cmd eslint src --ext .ts` |
 
-Known environment issues, both pre-existing:
+Known environment issues, all pre-existing:
+
+- Jest does not exit on its own after the run (a leaked open handle), so a
+  run looks hung. Add `--forceExit`, e.g. `npx.cmd jest src/modules/auth
+  --forceExit`; the auth suite alone takes ~8 minutes on this machine.
 
 - `npm.cmd run lint` crashes with `TypeError: expand is not a function` (a
   `minimatch` / `brace-expansion` resolution problem inside ESLint 8). Passing the

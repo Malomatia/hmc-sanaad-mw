@@ -103,6 +103,7 @@ describe.each(['legacy', 'motc'] as const)('%s store SMS insertion', (store) => 
         },
       });
       const usersDb = {
+        dialect: 'mssql',
         query: jest.fn().mockResolvedValue([]),
         execute: jest.fn().mockResolvedValue({ rowsAffected: 1, rows: [{ SeqNo: 42 }] }),
       } as unknown as jest.Mocked<UsersDbService>;

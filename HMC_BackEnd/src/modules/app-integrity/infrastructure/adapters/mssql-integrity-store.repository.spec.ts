@@ -4,7 +4,10 @@ import { MssqlAttestKeyStore, MssqlChallengeStore } from './mssql-integrity-stor
 
 describe('MssqlChallengeStore', () => {
   const execute = jest.fn();
-  const store = new MssqlChallengeStore({ execute } as unknown as UsersDbService, 300000);
+  const store = new MssqlChallengeStore(
+    { dialect: 'mssql', execute } as unknown as UsersDbService,
+    300000,
+  );
 
   beforeEach(() => {
     execute.mockReset().mockResolvedValue({ rowsAffected: 1, rows: [] });
@@ -67,7 +70,7 @@ describe('MssqlChallengeStore', () => {
 
 describe('MssqlAttestKeyStore', () => {
   const execute = jest.fn();
-  const store = new MssqlAttestKeyStore({ execute } as unknown as UsersDbService);
+  const store = new MssqlAttestKeyStore({ dialect: 'mssql', execute } as unknown as UsersDbService);
 
   beforeEach(() => {
     execute.mockReset().mockResolvedValue({ rowsAffected: 1, rows: [] });

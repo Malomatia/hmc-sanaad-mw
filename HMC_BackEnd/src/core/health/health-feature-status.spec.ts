@@ -2,7 +2,7 @@ import { ConfigService } from '@nestjs/config';
 import type { App } from 'firebase-admin/app';
 import { HealthController } from './health.controller';
 import { OracleService } from '../database/oracle.service';
-import { MssqlService } from '../database/mssql.service';
+import { UsersDbService } from '../database/users-db/users-db.service';
 import { MotcSmsDbService } from '../database/motc-sms-db.service';
 import { AppIntegrityConfig } from '../config/configuration';
 
@@ -22,7 +22,7 @@ describe('/health reporting the feature credentials', () => {
       isEnabled: () => ok,
       isConfigured: () => ok,
       ping: async () => ok,
-    }) as unknown as OracleService & MssqlService & MotcSmsDbService;
+    }) as unknown as OracleService & UsersDbService & MotcSmsDbService;
 
   function make(
     firebase: App | undefined,

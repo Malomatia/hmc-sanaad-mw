@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { MssqlService } from '@core/database/mssql.service';
+import { UsersDbService } from '@core/database/users-db/users-db.service';
 import { AuthConfig } from '@core/config/configuration';
 import { FunctionAccessPort } from '../../domain/ports/function-access.port';
 import { FunctionAccess, FunctionStatus } from '../../domain/auth-identity';
@@ -66,7 +66,7 @@ export class MssqlFunctionAccessRepository implements FunctionAccessPort {
   ];
 
   constructor(
-    private readonly db: MssqlService,
+    private readonly db: UsersDbService,
     config: ConfigService,
   ) {
     const auth = config.getOrThrow<AuthConfig>('auth');

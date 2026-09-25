@@ -1,15 +1,34 @@
 import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
-import { MssqlService } from '@core/database/mssql.service';
-import { MssqlQueryError } from '@core/database/mssql.error';
+import { SQL_NOW, UsersDbDialect, UsersDbService } from '@core/database/users-db/users-db.service';
+import { SqlQueryError } from '@core/database/sql.error';
 import { AttestKey } from '../../domain/attestation';
 import { AttestKeyStorePort, ChallengeStorePort } from '../../domain/ports/integrity.ports';
 
 const CHALLENGE_TABLE = 'HMC_Sanad_AttestChallenge_tbl';
 const KEY_TABLE = 'HMC_Sanad_AttestKey_tbl';
 
-/** SQL Server "Invalid object name" — the table has not been created. */
-const INVALID_OBJECT_NAME = 208;
+/** Challenge expiry, `@ttl` milliseconds from now. */
+const EXPIRES_AT: Record<UsersDbDialect, string> = {
+  mssql: 'DATEADD(millisecond, @ttl, GETDATE())',
+  mysql: 'DATE_ADD(NOW(3), INTERVAL @ttl * 1000 MICROSECOND)',
+};
+
+/** MySQL has no MERGE; its upsert relies on the UNIQUE KeyID constraint. */
+const SAVE_KEY: Record<UsersDbDialect, string> = {
+  mssql: `MERGE ${KEY_TABLE} AS target
+          USING (SELECT @keyId AS KeyID) AS source ON target.KeyID = source.KeyID
+         WHEN MATCHED THEN
+              UPDATE SET LoginID = @username, PublicKey = @publicKey,
+                         SignCount = @signCount, UpdatedAt = GETDATE()
+         WHEN NOT MATCHED THEN
+              INSERT (KeyID, LoginID, PublicKey, SignCount, CreatedAt, UpdatedAt)
+              VALUES (@keyId, @username, @publicKey, @signCount, GETDATE(), GETDATE());`,
+  mysql: `INSERT INTO ${KEY_TABLE} (KeyID, LoginID, PublicKey, SignCount, CreatedAt, UpdatedAt)
+       VALUES (@keyId, @username, @publicKey, @signCount, NOW(), NOW())
+       ON DUPLICATE KEY UPDATE LoginID = @username, PublicKey = @publicKey,
+              SignCount = @signCount, UpdatedAt = NOW()`,
+};
 
 /**
  * Shared guard for both stores: a table that does not exist yet is a
@@ -19,7 +38,7 @@ abstract class GuardedStore {
   protected static readonly log = new Logger('AttestationStore');
   private static readonly warned = new Set<string>();
 
-  constructor(protected readonly db: MssqlService) {}
+  constructor(protected readonly db: UsersDbService) {}
 
   protected async guard<T>(
     table: string,
@@ -31,8 +50,7 @@ abstract class GuardedStore {
     } catch (err) {
       const message = (err as Error)?.message ?? '';
       const missing =
-        (err instanceof MssqlQueryError && err.sqlErrorNumber === INVALID_OBJECT_NAME) ||
-        /invalid object name/i.test(message);
+        (err instanceof SqlQueryError && err.missingObject) || /invalid object name/i.test(message);
 
       if (missing) {
         if (!GuardedStore.warned.has(table)) {
@@ -60,7 +78,7 @@ abstract class GuardedStore {
 @Injectable()
 export class MssqlChallengeStore extends GuardedStore implements ChallengeStorePort {
   constructor(
-    db: MssqlService,
+    db: UsersDbService,
     private readonly ttlMs: number,
   ) {
     super(db);
@@ -71,7 +89,7 @@ export class MssqlChallengeStore extends GuardedStore implements ChallengeStoreP
     const result = await this.guard(CHALLENGE_TABLE, 'issue', () =>
       this.db.execute(
         `INSERT INTO ${CHALLENGE_TABLE} (Challenge, LoginID, IssuedAt, ExpiresAt)
-         VALUES (@value, @deviceId, GETDATE(), DATEADD(millisecond, @ttl, GETDATE()))`,
+         VALUES (@value, @deviceId, ${SQL_NOW[this.db.dialect]}, ${EXPIRES_AT[this.db.dialect]})`,
         { value, deviceId, ttl: this.ttlMs },
       ),
     );
@@ -88,8 +106,8 @@ export class MssqlChallengeStore extends GuardedStore implements ChallengeStoreP
     const result = await this.guard(CHALLENGE_TABLE, 'consume', () =>
       this.db.execute(
         `UPDATE ${CHALLENGE_TABLE}
-            SET UsedAt = GETDATE()
-          WHERE Challenge = @value AND UsedAt IS NULL AND ExpiresAt > GETDATE()` +
+            SET UsedAt = ${SQL_NOW[this.db.dialect]}
+          WHERE Challenge = @value AND UsedAt IS NULL AND ExpiresAt > ${SQL_NOW[this.db.dialect]}` +
           (deviceId === undefined ? '' : ' AND LoginID = @deviceId'),
         deviceId === undefined ? { value } : { value, deviceId },
       ),
@@ -110,14 +128,7 @@ export class MssqlAttestKeyStore extends GuardedStore implements AttestKeyStoreP
   async save(key: AttestKey): Promise<void> {
     await this.guard(KEY_TABLE, 'save', () =>
       this.db.execute(
-        `MERGE ${KEY_TABLE} AS target
-          USING (SELECT @keyId AS KeyID) AS source ON target.KeyID = source.KeyID
-         WHEN MATCHED THEN
-              UPDATE SET LoginID = @username, PublicKey = @publicKey,
-                         SignCount = @signCount, UpdatedAt = GETDATE()
-         WHEN NOT MATCHED THEN
-              INSERT (KeyID, LoginID, PublicKey, SignCount, CreatedAt, UpdatedAt)
-              VALUES (@keyId, @username, @publicKey, @signCount, GETDATE(), GETDATE());`,
+        SAVE_KEY[this.db.dialect],
         {
           keyId: key.keyId,
           username: key.username,
@@ -148,7 +159,7 @@ export class MssqlAttestKeyStore extends GuardedStore implements AttestKeyStoreP
   async updateSignCount(keyId: string, signCount: number): Promise<void> {
     await this.guard(KEY_TABLE, 'updateSignCount', () =>
       this.db.execute(
-        `UPDATE ${KEY_TABLE} SET SignCount = @signCount, UpdatedAt = GETDATE()
+        `UPDATE ${KEY_TABLE} SET SignCount = @signCount, UpdatedAt = ${SQL_NOW[this.db.dialect]}
           WHERE KeyID = @keyId`,
         { keyId, signCount },
       ),
@@ -158,7 +169,7 @@ export class MssqlAttestKeyStore extends GuardedStore implements AttestKeyStoreP
   async bind(keyId: string, username: string): Promise<void> {
     await this.guard(KEY_TABLE, 'bind', () =>
       this.db.execute(
-        `UPDATE ${KEY_TABLE} SET LoginID = @username, UpdatedAt = GETDATE()
+        `UPDATE ${KEY_TABLE} SET LoginID = @username, UpdatedAt = ${SQL_NOW[this.db.dialect]}
           WHERE KeyID = @keyId`,
         { keyId, username },
       ),

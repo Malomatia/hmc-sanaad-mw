@@ -1,6 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 import configuration from '@core/config/configuration';
-import { MssqlService } from '@core/database/mssql.service';
+import { UsersDbService } from '@core/database/users-db/users-db.service';
 import { MotcSmsDbService } from '@core/database/motc-sms-db.service';
 import { MssqlOtpRepository } from '../infrastructure/adapters/mssql-otp.repository';
 import { MotcSmsOtpRepository } from '../infrastructure/adapters/motc-sms-otp.repository';
@@ -105,7 +105,7 @@ describe.each(['legacy', 'motc'] as const)('%s store SMS insertion', (store) => 
       const usersDb = {
         query: jest.fn().mockResolvedValue([]),
         execute: jest.fn().mockResolvedValue({ rowsAffected: 1, rows: [{ SeqNo: 42 }] }),
-      } as unknown as jest.Mocked<MssqlService>;
+      } as unknown as jest.Mocked<UsersDbService>;
       const smsDb = {
         query: jest.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([{ NextId: 42 }]),
         execute: jest.fn().mockResolvedValue({ rowsAffected: 1, rows: [] }),

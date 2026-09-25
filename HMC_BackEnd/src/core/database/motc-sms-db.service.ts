@@ -2,8 +2,8 @@ import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/commo
 import { ConfigService } from '@nestjs/config';
 import * as sql from 'mssql';
 import { MotcSmsConfig } from '../config/configuration';
-import { MssqlDiagnostics, MssqlExecuteResult } from './mssql.service';
-import { MssqlQueryError, MssqlUnavailableException } from './mssql.error';
+import { UsersDbDiagnostics, UsersDbExecuteResult } from './users-db/users-db.service';
+import { SqlQueryError, SqlUnavailableException } from './sql.error';
 
 /**
  * Connection pool for the MOTC SMS gateway SQL Server (`MOTC_SMS` database,
@@ -11,7 +11,7 @@ import { MssqlQueryError, MssqlUnavailableException } from './mssql.error';
  * database next to Oracle and the Users DB; it holds `MOTC_SMS_PushTable`,
  * the government SMS outbox that now carries (and validates) the login OTPs.
  *
- * Same boot semantics as MssqlService: MOTC_SMS_DB_DISABLED=true or missing
+ * Same boot semantics as the Users DB service: MOTC_SMS_DB_DISABLED=true or missing
  * host/database/user skips pool creation and calls fail with a typed
  * unavailable exception. Parameterized primitives only (named `@params`).
  *
@@ -72,7 +72,7 @@ export class MotcSmsDbService implements OnModuleInit, OnModuleDestroy {
       await this.verifyConnectivity();
     } catch (err) {
       // Not rethrown — see the note in OracleService.onModuleInit. getPool()
-      // already raises MssqlUnavailableException per request and /health
+      // already raises SqlUnavailableException per request and /health
       // reports motcSmsDb.reachable = false.
       this.logger.error(
         `Failed to create MOTC SMS DB pool: ${(err as Error).message} — starting without it; ` +
@@ -81,7 +81,7 @@ export class MotcSmsDbService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  /** Startup probe — logs only, never blocks boot (mirrors MssqlService). */
+  /** Startup probe — logs only, never blocks boot (mirrors UsersDbService). */
   private async verifyConnectivity(): Promise<void> {
     try {
       const started = Date.now();
@@ -122,7 +122,7 @@ export class MotcSmsDbService implements OnModuleInit, OnModuleDestroy {
 
   private getPool(): sql.ConnectionPool {
     if (!this.pool) {
-      throw new MssqlUnavailableException('The SMS gateway database is currently unavailable.');
+      throw new SqlUnavailableException('The SMS gateway database is currently unavailable.');
     }
     return this.pool;
   }
@@ -140,7 +140,7 @@ export class MotcSmsDbService implements OnModuleInit, OnModuleDestroy {
   async execute<T = Record<string, any>>(
     statement: string,
     params: Record<string, unknown> = {},
-  ): Promise<MssqlExecuteResult<T>> {
+  ): Promise<UsersDbExecuteResult<T>> {
     const result = await this.run(statement, params);
     return {
       rowsAffected: result.rowsAffected.reduce((a, b) => a + b, 0),
@@ -170,7 +170,7 @@ export class MotcSmsDbService implements OnModuleInit, OnModuleDestroy {
       return result;
     } catch (err) {
       const ms = Date.now() - started;
-      const wrapped = MssqlQueryError.from(err);
+      const wrapped = SqlQueryError.from(err);
       this.logger.error(`[motc#${id}] FAILED ${label} after ${ms}ms: ${wrapped.message}`);
       throw wrapped;
     }
@@ -199,10 +199,10 @@ export class MotcSmsDbService implements OnModuleInit, OnModuleDestroy {
 
   /**
    * Full connectivity probe for /health/motc-sms-db. Never throws — failures
-   * are captured in `error`. Mirrors MssqlService.diagnose.
+   * are captured in `error`. Mirrors UsersDbService.diagnose.
    */
-  async diagnose(): Promise<MssqlDiagnostics> {
-    const diag: MssqlDiagnostics = {
+  async diagnose(): Promise<UsersDbDiagnostics> {
+    const diag: UsersDbDiagnostics = {
       enabled: this.pool !== undefined,
       connected: false,
       latencyMs: null,
@@ -252,7 +252,7 @@ export class MotcSmsDbService implements OnModuleInit, OnModuleDestroy {
       this.logger.log(`MOTC SMS DB diagnose OK (${diag.latencyMs}ms)`);
     } catch (err) {
       diag.latencyMs = Date.now() - start;
-      const wrapped = MssqlQueryError.from(err);
+      const wrapped = SqlQueryError.from(err);
       diag.error = { message: wrapped.message, code: (err as { code?: string }).code };
       this.logger.error(
         `MOTC SMS DB diagnose FAILED after ${diag.latencyMs}ms: ${wrapped.message}`,

@@ -1,10 +1,10 @@
 import { ServiceUnavailableException } from '@nestjs/common';
-import { MssqlService } from '@core/database/mssql.service';
+import { UsersDbService } from '@core/database/users-db/users-db.service';
 import { MssqlAttestKeyStore, MssqlChallengeStore } from './mssql-integrity-store.repository';
 
 describe('MssqlChallengeStore', () => {
   const execute = jest.fn();
-  const store = new MssqlChallengeStore({ execute } as unknown as MssqlService, 300000);
+  const store = new MssqlChallengeStore({ execute } as unknown as UsersDbService, 300000);
 
   beforeEach(() => {
     execute.mockReset().mockResolvedValue({ rowsAffected: 1, rows: [] });
@@ -67,7 +67,7 @@ describe('MssqlChallengeStore', () => {
 
 describe('MssqlAttestKeyStore', () => {
   const execute = jest.fn();
-  const store = new MssqlAttestKeyStore({ execute } as unknown as MssqlService);
+  const store = new MssqlAttestKeyStore({ execute } as unknown as UsersDbService);
 
   beforeEach(() => {
     execute.mockReset().mockResolvedValue({ rowsAffected: 1, rows: [] });

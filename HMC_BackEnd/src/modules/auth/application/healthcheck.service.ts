@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AppLaunchConfig } from '@core/config/configuration';
-import { MssqlService } from '@core/database/mssql.service';
+import { SQL_NOW, UsersDbService } from '@core/database/users-db/users-db.service';
 import { HealthCheckRequestDto, HealthCheckResponseDto } from '../interface/dto/healthcheck.dto';
 
 /** Active downtime window row (legacy healthcheck query projection). */
@@ -32,7 +32,7 @@ export class HealthCheckService {
   private readonly cfg: AppLaunchConfig;
 
   constructor(
-    private readonly db: MssqlService,
+    private readonly db: UsersDbService,
     config: ConfigService,
   ) {
     this.cfg = config.getOrThrow<AppLaunchConfig>('appLaunch');
@@ -60,7 +60,7 @@ export class HealthCheckService {
            LEFT OUTER JOIN HMC_Sanad_AppMaster_Tbl B ON B.ID = A.APPID
            LEFT OUTER JOIN HMC_Sanad_DTReason_Mast_tbl C ON C.ReasonCode = A.ReasonCode
           WHERE B.AppName = @appName
-            AND GETDATE() BETWEEN A.SchDownStartTime AND A.SchDownEndTime
+            AND ${SQL_NOW[this.db.dialect]} BETWEEN A.SchDownStartTime AND A.SchDownEndTime
             AND A.Status = 1`,
         { appName },
       ),

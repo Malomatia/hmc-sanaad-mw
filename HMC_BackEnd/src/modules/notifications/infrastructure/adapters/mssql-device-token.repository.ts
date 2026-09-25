@@ -1,14 +1,32 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { MssqlService } from '@core/database/mssql.service';
-import { MssqlQueryError } from '@core/database/mssql.error';
+import { UsersDbDialect, UsersDbService } from '@core/database/users-db/users-db.service';
+import { SqlQueryError } from '@core/database/sql.error';
 import { DeviceToken, DevicePlatform } from '../../domain/device-token';
 import { DeviceTokenStorePort } from '../../domain/ports/device-token-store.port';
 
 /** Kept next to `HMC_Sanad_DeviceRegn_tbl`, keyed the same way. */
 const TABLE = 'HMC_Sanad_DeviceToken_tbl';
 
-/** SQL Server "Invalid object name" — i.e. the table has not been created. */
-const INVALID_OBJECT_NAME = 208;
+/**
+ * One row per device. MySQL has no MERGE; its upsert relies on the UNIQUE
+ * (LoginID, IMEINumber) key from tools/notifications-schema.sql.
+ */
+const UPSERT: Record<UsersDbDialect, string> = {
+  mssql: `MERGE ${TABLE} AS target
+          USING (SELECT @username AS LoginID, @imei AS IMEINumber) AS source
+             ON target.LoginID = source.LoginID AND target.IMEINumber = source.IMEINumber
+         WHEN MATCHED THEN
+              UPDATE SET DeviceTokenValue = @token, Platform = @platform,
+                         AppVersion = @appVersion, UpdatedAt = GETDATE()
+         WHEN NOT MATCHED THEN
+              INSERT (LoginID, IMEINumber, DeviceTokenValue, Platform, AppVersion, UpdatedAt)
+              VALUES (@username, @imei, @token, @platform, @appVersion, GETDATE());`,
+  mysql: `INSERT INTO ${TABLE}
+              (LoginID, IMEINumber, DeviceTokenValue, Platform, AppVersion, UpdatedAt)
+       VALUES (@username, @imei, @token, @platform, @appVersion, NOW())
+       ON DUPLICATE KEY UPDATE DeviceTokenValue = @token, Platform = @platform,
+              AppVersion = @appVersion, UpdatedAt = NOW()`,
+};
 
 /**
  * FCM tokens in the Sanaad SQL Server, alongside the device-binding table this
@@ -29,22 +47,14 @@ export class MssqlDeviceTokenRepository implements DeviceTokenStorePort {
   /** Logged once, not per call — a missing table is a deployment step. */
   private static warned = false;
 
-  constructor(private readonly db: MssqlService) {}
+  constructor(private readonly db: UsersDbService) {}
 
   async save(token: DeviceToken): Promise<void> {
     await this.guard('save', async () => {
       // One row per device: re-registering the same device replaces its token
       // rather than leaving the previous one behind to fail forever.
       await this.db.execute(
-        `MERGE ${TABLE} AS target
-          USING (SELECT @username AS LoginID, @imei AS IMEINumber) AS source
-             ON target.LoginID = source.LoginID AND target.IMEINumber = source.IMEINumber
-         WHEN MATCHED THEN
-              UPDATE SET DeviceTokenValue = @token, Platform = @platform,
-                         AppVersion = @appVersion, UpdatedAt = GETDATE()
-         WHEN NOT MATCHED THEN
-              INSERT (LoginID, IMEINumber, DeviceTokenValue, Platform, AppVersion, UpdatedAt)
-              VALUES (@username, @imei, @token, @platform, @appVersion, GETDATE());`,
+        UPSERT[this.db.dialect],
         {
           username: token.username,
           imei: token.imei,
@@ -128,8 +138,7 @@ export class MssqlDeviceTokenRepository implements DeviceTokenStorePort {
     } catch (err) {
       const message = (err as Error)?.message ?? '';
       const missingTable =
-        (err instanceof MssqlQueryError && err.sqlErrorNumber === INVALID_OBJECT_NAME) ||
-        /invalid object name/i.test(message);
+        (err instanceof SqlQueryError && err.missingObject) || /invalid object name/i.test(message);
 
       if (missingTable) {
         if (!MssqlDeviceTokenRepository.warned) {

@@ -3,7 +3,7 @@ import { firstValueFrom, of, throwError } from 'rxjs';
 import { NotificationTriggerInterceptor } from './notification-trigger.interceptor';
 import { RequestNotifier } from '../application/request-notifier.service';
 import { NotificationsService } from '../application/notifications.service';
-import { MssqlService } from '@core/database/mssql.service';
+import { UsersDbService } from '@core/database/users-db/users-db.service';
 import { MssqlDeviceTokenRepository } from '../infrastructure/adapters/mssql-device-token.repository';
 import { PushSenderPort } from '../domain/ports/push-sender.port';
 import { RequestLookupPort } from '../domain/ports/request-lookup.port';
@@ -487,7 +487,7 @@ describe('NotificationTriggerInterceptor', () => {
         );
       const send = jest.fn().mockResolvedValue({ sent: 2, failed: 0, invalidTokens: [] });
       const notifications = new NotificationsService(
-        new MssqlDeviceTokenRepository({ query } as unknown as MssqlService),
+        new MssqlDeviceTokenRepository({ query } as unknown as UsersDbService),
         { send, enabled: true } as unknown as PushSenderPort,
       );
       const notifier = new RequestNotifier(notifications, lookup);

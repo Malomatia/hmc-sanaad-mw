@@ -37,7 +37,7 @@ const FORWARD_REQUEST_HEADERS = [
  * here and the filename never reached the app — the same class of fault as
  * the request headers above.
  */
-const FORWARD_RESPONSE_HEADERS = ['content-type', 'content-disposition', 'content-length'];
+const FORWARD_RESPONSE_HEADERS = ['content-type', 'content-disposition', 'content-length', 'retry-after'];
 
 /**
  * Forwards an inbound request to HMC_BackEnd unchanged and relays the

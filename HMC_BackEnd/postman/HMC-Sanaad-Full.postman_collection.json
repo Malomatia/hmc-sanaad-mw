@@ -30,6 +30,61 @@
       "key": "refreshtoken",
       "value": "",
       "type": "string"
+    },
+    {
+      "key": "username",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "deviceid",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "mpin",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "newmpin",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "otp",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "resetotp",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "requestid",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "resetrequestid",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "enrollmenttoken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "enrollmentexpiresat",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "platform",
+      "value": "Android",
+      "type": "string"
     }
   ],
   "item": [
@@ -248,21 +303,38 @@
           "name": "POST /auth/initiate",
           "event": [
             {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "function save(key, value) {",
+                  "  pm.collectionVariables.set(key, value);",
+                  "  if (pm.environment.name) pm.environment.set(key, value);",
+                  "}",
+                  "if (!pm.variables.get('username') || String(pm.variables.get('username')).includes('{{')) throw new Error('Set username before sending this request.');",
+                  "if (!pm.variables.get('deviceid') || String(pm.variables.get('deviceid')).includes('{{')) throw new Error('Set deviceid before sending this request.');",
+                  "save('requestid', '');",
+                  "save('enrollmenttoken', '');",
+                  "save('enrollmentexpiresat', '');"
+                ]
+              }
+            },
+            {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"Status is 200\", function () {",
-                  "    pm.response.to.have.status(200);",
-                  "});",
-                  "",
-                  "pm.test(\"Response time is less than 5 seconds\", function () {",
-                  "    pm.expect(pm.response.responseTime).to.be.below(5000);",
-                  "});",
-                  "",
-                  "pm.test(\"Response is valid JSON\", function () {",
-                  "    pm.response.to.be.json;",
-                  "});"
+                  "function save(key, value) {",
+                  "  pm.collectionVariables.set(key, value);",
+                  "  if (pm.environment.name) pm.environment.set(key, value);",
+                  "}",
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Business success', () => pm.expect(body.status).to.eql('success'));",
+                  "if (pm.response.code === 200 && body.status === 'success') {",
+                  "  if (typeof body.requestid === 'string' && body.requestid) save('requestid', body.requestid);",
+                  "  pm.test('No pre-auth identity disclosure', () => ['employeeusername','employeename','employeenumber','email','emailunmasked','employeephonenumber','employeephonenumberunmasked','department','jobname','newuser','vflag','employeeflag','devicestatus'].forEach(key => pm.expect(body).not.to.have.property(key)));",
+                  "}"
                 ]
               }
             }
@@ -295,18 +367,69 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"username\": \"hmc12345\",\n  \"imeinumber\": \"356789012345678\",\n  \"platform\": \"Android\",\n  \"devicemodel\": \"SM-G965F\",\n  \"osversion\": \"13\",\n  \"appname\": \"Sanaad\",\n  \"version\": \"1.0.0\",\n  \"sysdate\": \"2026-01-02T14:20:00\"\n}",
+              "raw": "{\n  \"username\": \"{{username}}\",\n  \"deviceid\": \"{{deviceid}}\",\n  \"platform\": \"{{platform}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
                 }
               }
             },
-            "description": "**Purpose:** API-2 — User validate + send OTP. PUBLIC.\n\n**Reworked flow (client changes 2026-09-03..06):**\n1. Username checked against `HMC_SND_LIV_EMP_MASTER_VW` (MOTC_SMS DB, `UserName` column). Unknown → `status=error`, `Invalid Username.` (Arabic when header `lang: ar`).\n2. Device registration read from `HMC_Sanad_DeviceRegn_tbl` (LoginID+IMEINumber). Registered WITH an MPIN → full identity from both tables, `newuser=No`, `vflag=Exist`, NO OTP.\n3. Otherwise a missing registration row is created (MPIN NULL, Status `Inactive`, MobileType/DeviceModel/OSVersion from `platform`/`devicemodel`/`osversion`, Department = the view's FACILITY_NAME, AddedBy=NODEJS), then the OTP is UPSERTED into `HMC_RHAP_OTP_tbl` (one row per user+device): fresh code → `vflag=New`; a still-valid unused one is kept → `vflag=Pending` (same `requestid`, no new SMS).\n\n**Response keys:** `vflag` New|Pending|Exist · `otpmode` SMS (MOTC push table) | Email (SMTP fallback when the view has no MOBILE_NUMBER) · `elapsedtimeinmins` = minutes the OTP is still valid (full TTL for New, remaining for Pending) · `employeephonenumber`/`email` are MASKED (`5537XXXX`, `MK****@hamad.qa`).\n\n**Testing:** `OTP_STATIC_VALUE` (e.g. 123456) pins every generated OTP; `requestid` = the OTP row's SeqNo — echo it on `/auth/otp/validate`."
+            "description": "Begin first registration. Response is generic for existing, new and unknown users: no employee identity, contact, registration flags or OTP channel. A real challenge is issued only for eligible first enrollment. Enter the delivered OTP into the otp variable, then validate it. requestid is opaque, not SeqNo. Do not use this route to discover account existence.\n\nExamples labeled Expected are contract fixtures, not live verification. Keep {{baseUrl}} as the existing /api/v1 URL. Retained legacy response examples below are historical only."
           },
           "response": [
             {
-              "name": "New user — OTP sent (vflag=New)",
+              "name": "Expected — hardened authentication contract (not live-tested)",
+              "originalRequest": {
+                "auth": {
+                  "type": "noauth"
+                },
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "lang",
+                    "value": "en",
+                    "description": "Response message language: en | ar (default en)."
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/auth/initiate",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "auth",
+                    "initiate"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"username\": \"{{username}}\",\n  \"deviceid\": \"{{deviceid}}\",\n  \"platform\": \"{{platform}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Begin first registration. Response is generic for existing, new and unknown users: no employee identity, contact, registration flags or OTP channel. A real challenge is issued only for eligible first enrollment. Enter the delivered OTP into the otp variable, then validate it. requestid is opaque, not SeqNo. Do not use this route to discover account existence.\n\nExamples labeled Expected are contract fixtures, not live verification. Keep {{baseUrl}} as the existing /api/v1 URL. Retained legacy response examples below are historical only."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"status\": \"success\",\n  \"message\": \"If eligible, a verification code will be sent to your registered contact.\",\n  \"requestid\": \"<opaque-request-id>\"\n}"
+            },
+            {
+              "name": "Historical — New user — OTP sent (vflag=New)",
               "originalRequest": {
                 "method": "POST",
                 "header": [],
@@ -343,7 +466,7 @@
               "body": "{\n  \"status\": \"success\",\n  \"message\": \"OTP sent successfully\",\n  \"employeeusername\": \"MKHOJA\",\n  \"employeename\": \"Mouna Bent Abdelkerim Khoja\",\n  \"employeenumber\": \"011759\",\n  \"jobname\": \"Cardiac and Cardiovascular Surgery Technologist.H\",\n  \"email\": \"MK****@hamad.qa\",\n  \"department\": \"Cardiothoracic Surgery.Heart Hospital\",\n  \"employeeflag\": \"Yes\",\n  \"employeephonenumber\": \"5537XXXX\",\n  \"devicestatus\": \"Inactive\",\n  \"newuser\": \"Yes\",\n  \"vflag\": \"New\",\n  \"otpmode\": \"SMS\",\n  \"elapsedtimeinmins\": 5,\n  \"requestid\": \"335\"\n}"
             },
             {
-              "name": "Existing user — no OTP (vflag=Exist)",
+              "name": "Historical — Existing user — no OTP (vflag=Exist)",
               "originalRequest": {
                 "method": "POST",
                 "header": [],
@@ -380,7 +503,7 @@
               "body": "{\n  \"status\": \"success\",\n  \"employeeusername\": \"MKHOJA\",\n  \"employeename\": \"Mouna Bent Abdelkerim Khoja\",\n  \"employeenumber\": \"011759\",\n  \"jobname\": \"Cardiac and Cardiovascular Surgery Technologist.H\",\n  \"email\": \"MK****@hamad.qa\",\n  \"department\": \"Cardiothoracic Surgery.Heart Hospital\",\n  \"employeeflag\": \"Yes\",\n  \"employeephonenumber\": \"5537XXXX\",\n  \"devicestatus\": \"Active\",\n  \"newuser\": \"No\",\n  \"vflag\": \"Exist\"\n}"
             },
             {
-              "name": "OTP still valid — kept (vflag=Pending)",
+              "name": "Historical — OTP still valid — kept (vflag=Pending)",
               "originalRequest": {
                 "method": "POST",
                 "header": [],
@@ -417,7 +540,7 @@
               "body": "{\n  \"status\": \"success\",\n  \"message\": \"An OTP was already sent and is still valid\",\n  \"employeeusername\": \"MKHOJA\",\n  \"employeename\": \"Mouna Bent Abdelkerim Khoja\",\n  \"employeenumber\": \"011759\",\n  \"jobname\": \"Cardiac and Cardiovascular Surgery Technologist.H\",\n  \"email\": \"MK****@hamad.qa\",\n  \"department\": \"Cardiothoracic Surgery.Heart Hospital\",\n  \"employeeflag\": \"Yes\",\n  \"employeephonenumber\": \"5537XXXX\",\n  \"devicestatus\": \"Inactive\",\n  \"newuser\": \"Yes\",\n  \"vflag\": \"Pending\",\n  \"otpmode\": \"SMS\",\n  \"elapsedtimeinmins\": 4,\n  \"requestid\": \"335\"\n}"
             },
             {
-              "name": "Unknown username (200, status=error)",
+              "name": "Historical — Unknown username (200, status=error)",
               "originalRequest": {
                 "method": "POST",
                 "header": [
@@ -459,7 +582,7 @@
               "body": "{\n  \"status\": \"error\",\n  \"message\": \"Invalid Username.\"\n}"
             },
             {
-              "name": "Validation Error (400) — username/imeinumber required",
+              "name": "Historical — Validation Error (400) — username/imeinumber required",
               "originalRequest": {
                 "method": "POST",
                 "header": [
@@ -506,13 +629,38 @@
           "name": "POST /auth/send-otp",
           "event": [
             {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "function save(key, value) {",
+                  "  pm.collectionVariables.set(key, value);",
+                  "  if (pm.environment.name) pm.environment.set(key, value);",
+                  "}",
+                  "if (!pm.variables.get('username') || String(pm.variables.get('username')).includes('{{')) throw new Error('Set username before sending this request.');",
+                  "if (!pm.variables.get('deviceid') || String(pm.variables.get('deviceid')).includes('{{')) throw new Error('Set deviceid before sending this request.');",
+                  "save('requestid', '');",
+                  "save('enrollmenttoken', '');",
+                  "save('enrollmentexpiresat', '');"
+                ]
+              }
+            },
+            {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"Status is 200\", function () {",
-                  "    pm.response.to.have.status(200);",
-                  "});"
+                  "function save(key, value) {",
+                  "  pm.collectionVariables.set(key, value);",
+                  "  if (pm.environment.name) pm.environment.set(key, value);",
+                  "}",
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Business success', () => pm.expect(body.status).to.eql('success'));",
+                  "if (pm.response.code === 200 && body.status === 'success') {",
+                  "  if (typeof body.requestid === 'string' && body.requestid) save('requestid', body.requestid);",
+                  "  pm.test('No pre-auth identity disclosure', () => ['employeeusername','employeename','employeenumber','email','emailunmasked','employeephonenumber','employeephonenumberunmasked','department','jobname','newuser','vflag','employeeflag','devicestatus'].forEach(key => pm.expect(body).not.to.have.property(key)));",
+                  "}"
                 ]
               }
             }
@@ -540,36 +688,102 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"username\": \"AIBRAHIM39\",\n  \"imeinumber\": \"356789012345678\",\n  \"phonenumber\": \"55123456\",\n  \"email\": \"aibrahim39@hamad.qa\",\n  \"platform\": \"Android\",\n  \"version\": \"1.0.0\"\n}",
+              "raw": "{\n  \"username\": \"{{username}}\",\n  \"deviceid\": \"{{deviceid}}\",\n  \"platform\": \"{{platform}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
                 }
               }
             },
-            "description": "**Purpose:** Standalone OTP send (added 2026-08-31, reworked 2026-09-05). Same machinery as /auth/initiate's OTP step: the code is UPSERTED into `HMC_RHAP_OTP_tbl` (one row per username+imeinumber; a still-valid unused OTP is kept — PENDING) and delivered as a row in `MOTC_SMS_PushTable` (the gateway fires the SMS). `requestid` = the OTP row's SeqNo; echo it (with the same username + imeinumber) on `POST /auth/otp/validate`.\n\n`phonenumber` is now OPTIONAL: omit it and provide `email` to deliver the OTP over SMTP instead (fallback channel); neither → 409. TTL/max attempts from `OTP_*` env; `OTP_STATIC_VALUE` pins the code for testing. With `AUTH_DISABLED=true` (dev bypass) nothing is stored and requestid is a synthesized UUID."
+            "description": "Registration resend, sharing the initiate rate budget. Contact destinations come exclusively from the directory; do not submit phonenumber/email. For recovery use auth/mpin/forgot instead. A new challenge supersedes older same-purpose challenges; use the latest returned requestid. A 429 response includes Retry-After.\n\nExamples labeled Expected are contract fixtures, not live verification. Keep {{baseUrl}} as the existing /api/v1 URL. Retained legacy response examples below are historical only."
           },
-          "response": []
+          "response": [
+            {
+              "name": "Expected — hardened authentication contract (not live-tested)",
+              "originalRequest": {
+                "auth": {
+                  "type": "noauth"
+                },
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/auth/send-otp",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "auth",
+                    "send-otp"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"username\": \"{{username}}\",\n  \"deviceid\": \"{{deviceid}}\",\n  \"platform\": \"{{platform}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Registration resend, sharing the initiate rate budget. Contact destinations come exclusively from the directory; do not submit phonenumber/email. For recovery use auth/mpin/forgot instead. A new challenge supersedes older same-purpose challenges; use the latest returned requestid. A 429 response includes Retry-After.\n\nExamples labeled Expected are contract fixtures, not live verification. Keep {{baseUrl}} as the existing /api/v1 URL. Retained legacy response examples below are historical only."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"status\": \"success\",\n  \"message\": \"If eligible, a verification code will be sent to your registered contact.\",\n  \"requestid\": \"<opaque-request-id>\"\n}"
+            }
+          ]
         },
         {
           "name": "POST /auth/otp/validate",
           "event": [
             {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "function save(key, value) {",
+                  "  pm.collectionVariables.set(key, value);",
+                  "  if (pm.environment.name) pm.environment.set(key, value);",
+                  "}",
+                  "if (!pm.variables.get('username') || String(pm.variables.get('username')).includes('{{')) throw new Error('Set username before sending this request.');",
+                  "if (!pm.variables.get('deviceid') || String(pm.variables.get('deviceid')).includes('{{')) throw new Error('Set deviceid before sending this request.');",
+                  "if (!pm.variables.get('otp') || String(pm.variables.get('otp')).includes('{{')) throw new Error('Set otp before sending this request.');",
+                  "if (!pm.variables.get('requestid') || String(pm.variables.get('requestid')).includes('{{')) throw new Error('Set requestid before sending this request.');",
+                  "save('enrollmenttoken', '');",
+                  "save('enrollmentexpiresat', '');"
+                ]
+              }
+            },
+            {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"Status is 200\", function () {",
-                  "    pm.response.to.have.status(200);",
-                  "});",
-                  "",
-                  "pm.test(\"Response time is less than 5 seconds\", function () {",
-                  "    pm.expect(pm.response.responseTime).to.be.below(5000);",
-                  "});",
-                  "",
-                  "pm.test(\"Response is valid JSON\", function () {",
-                  "    pm.response.to.be.json;",
-                  "});"
+                  "function save(key, value) {",
+                  "  pm.collectionVariables.set(key, value);",
+                  "  if (pm.environment.name) pm.environment.set(key, value);",
+                  "}",
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Business success', () => pm.expect(body.status).to.eql('success'));",
+                  "if (pm.response.code === 200 && body.status === 'success') {",
+                  "  if (typeof body.enrollmenttoken === 'string' && body.enrollmenttoken) save('enrollmenttoken', body.enrollmenttoken);",
+                  "  pm.test('Enrollment proof present', () => pm.expect(body.enrollmenttoken).to.match(/^[A-Za-z0-9_-]{43}$/));",
+                  "  if (Number.isFinite(body.expiresinseconds)) save('enrollmentexpiresat', String(Date.now() + body.expiresinseconds * 1000));",
+                  "}"
                 ]
               }
             }
@@ -598,18 +812,65 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"username\": \"hmc12345\",\n  \"imeinumber\": \"356789012345678\",\n  \"platform\": \"Android\",\n  \"appname\": \"Sanaad\",\n  \"version\": \"1.0.0\",\n  \"sysdate\": \"2026-01-02T14:20:00\",\n  \"otp\": \"232323\",\n  \"requestid\": \"13131313123\"\n}",
+              "raw": "{\n  \"username\": \"{{username}}\",\n  \"deviceid\": \"{{deviceid}}\",\n  \"platform\": \"{{platform}}\",\n  \"otp\": \"{{otp}}\",\n  \"requestid\": \"{{requestid}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
                 }
               }
             },
-            "description": "**Purpose:** API-3 — Validate OTP. PUBLIC.\n\n**Staging note:** dev bypass accepts any 4-8 digit OTP; non-numeric returns the real \"Invalid OTP\" error body.\n\n**Verified against staging — examples below are real captured responses unless labeled \"Expected\".**"
+            "description": "Consumes an ONBOARDING OTP only and returns a single-use enrollmenttoken valid for 300 seconds. The script saves it for MPIN enrollment. Recovery OTPs must NOT be validated here. Invalid OTP is HTTP 200 with status=error; limits return 429. Never use enrollmenttoken as a bearer access token.\n\nExamples labeled Expected are contract fixtures, not live verification. Keep {{baseUrl}} as the existing /api/v1 URL. Retained legacy response examples below are historical only."
           },
           "response": [
             {
-              "name": "Success (200)",
+              "name": "Expected — hardened authentication contract (not live-tested)",
+              "originalRequest": {
+                "auth": {
+                  "type": "noauth"
+                },
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/auth/otp/validate",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "auth",
+                    "otp",
+                    "validate"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"username\": \"{{username}}\",\n  \"deviceid\": \"{{deviceid}}\",\n  \"platform\": \"{{platform}}\",\n  \"otp\": \"{{otp}}\",\n  \"requestid\": \"{{requestid}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Consumes an ONBOARDING OTP only and returns a single-use enrollmenttoken valid for 300 seconds. The script saves it for MPIN enrollment. Recovery OTPs must NOT be validated here. Invalid OTP is HTTP 200 with status=error; limits return 429. Never use enrollmenttoken as a bearer access token.\n\nExamples labeled Expected are contract fixtures, not live verification. Keep {{baseUrl}} as the existing /api/v1 URL. Retained legacy response examples below are historical only."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"status\": \"success\",\n  \"message\": \"OTP Validated successfully\",\n  \"enrollmenttoken\": \"<opaque-single-use-token>\",\n  \"expiresinseconds\": 300\n}"
+            },
+            {
+              "name": "Historical — Success (200)",
               "originalRequest": {
                 "method": "POST",
                 "header": [],
@@ -652,21 +913,38 @@
           "name": "POST /auth/mpin/update",
           "event": [
             {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "function save(key, value) {",
+                  "  pm.collectionVariables.set(key, value);",
+                  "  if (pm.environment.name) pm.environment.set(key, value);",
+                  "}",
+                  "if (!pm.variables.get('username') || String(pm.variables.get('username')).includes('{{')) throw new Error('Set username before sending this request.');",
+                  "if (!pm.variables.get('deviceid') || String(pm.variables.get('deviceid')).includes('{{')) throw new Error('Set deviceid before sending this request.');",
+                  "if (!pm.variables.get('mpin') || String(pm.variables.get('mpin')).includes('{{')) throw new Error('Set mpin before sending this request.');",
+                  "if (!pm.variables.get('enrollmenttoken') || String(pm.variables.get('enrollmenttoken')).includes('{{')) throw new Error('Set enrollmenttoken before sending this request.');",
+                  "if (!/^[A-Za-z0-9_-]{43}$/.test(pm.variables.get('enrollmenttoken'))) throw new Error('Obtain enrollmenttoken from OTP validation first.');",
+                  "if (Number(pm.variables.get('enrollmentexpiresat')) <= Date.now()) throw new Error('Enrollment proof expired; verify a new OTP.');"
+                ]
+              }
+            },
+            {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"Status is 200\", function () {",
-                  "    pm.response.to.have.status(200);",
-                  "});",
-                  "",
-                  "pm.test(\"Response time is less than 5 seconds\", function () {",
-                  "    pm.expect(pm.response.responseTime).to.be.below(5000);",
-                  "});",
-                  "",
-                  "pm.test(\"Response is valid JSON\", function () {",
-                  "    pm.response.to.be.json;",
-                  "});"
+                  "function save(key, value) {",
+                  "  pm.collectionVariables.set(key, value);",
+                  "  if (pm.environment.name) pm.environment.set(key, value);",
+                  "}",
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Business success', () => pm.expect(body.status).to.eql('success'));",
+                  "if (pm.response.code === 200 && body.status === 'success') {",
+                  "}",
+                  "save('enrollmenttoken', ''); save('enrollmentexpiresat', '');"
                 ]
               }
             }
@@ -695,18 +973,65 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"username\": \"hmc12345\",\n  \"imeinumber\": \"356789012345678\",\n  \"platform\": \"Android\",\n  \"appname\": \"Sanaad\",\n  \"version\": \"1.0.0\",\n  \"sysdate\": \"2026-01-02T14:20:00\",\n  \"mpin\": \"1234\"\n}",
+              "raw": "{\n  \"username\": \"{{username}}\",\n  \"deviceid\": \"{{deviceid}}\",\n  \"platform\": \"{{platform}}\",\n  \"mpin\": \"{{mpin}}\",\n  \"enrollmenttoken\": \"{{enrollmenttoken}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
                 }
               }
             },
-            "description": "**Purpose:** API-4 — Set MPIN (first-time). PUBLIC. Staging (dev bypass): not persisted.\n\n**Since 2026-09-03:** the update also ACTIVATES the device registration — `UPDATE HMC_Sanad_DeviceRegn_tbl SET DateFirstRegistered = GETDATE(), MPIN = @mpin, Status = 'Active' WHERE LoginID + IMEINumber` (initiate created the row as `Inactive` with MPIN NULL).\n\n**Verified against staging — examples below are real captured responses unless labeled \"Expected\".**"
+            "description": "First enrollment only. Supply the unchanged client-hashed MPIN plus enrollmenttoken from successful OTP validation. Proof must match the user/device, be unexpired and unused. Cannot overwrite an existing MPIN. Missing/malformed proof returns 400; invalid/expired/consumed proof returns status=error. The script clears proof after this request; obtain new proof if needed.\n\nExamples labeled Expected are contract fixtures, not live verification. Keep {{baseUrl}} as the existing /api/v1 URL. Retained legacy response examples below are historical only."
           },
           "response": [
             {
-              "name": "Success (200)",
+              "name": "Expected — hardened authentication contract (not live-tested)",
+              "originalRequest": {
+                "auth": {
+                  "type": "noauth"
+                },
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/auth/mpin/update",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "auth",
+                    "mpin",
+                    "update"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"username\": \"{{username}}\",\n  \"deviceid\": \"{{deviceid}}\",\n  \"platform\": \"{{platform}}\",\n  \"mpin\": \"{{mpin}}\",\n  \"enrollmenttoken\": \"{{enrollmenttoken}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "First enrollment only. Supply the unchanged client-hashed MPIN plus enrollmenttoken from successful OTP validation. Proof must match the user/device, be unexpired and unused. Cannot overwrite an existing MPIN. Missing/malformed proof returns 400; invalid/expired/consumed proof returns status=error. The script clears proof after this request; obtain new proof if needed.\n\nExamples labeled Expected are contract fixtures, not live verification. Keep {{baseUrl}} as the existing /api/v1 URL. Retained legacy response examples below are historical only."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"status\": \"success\",\n  \"message\": \"MPIN updated successfully\"\n}"
+            },
+            {
+              "name": "Historical — Success (200)",
               "originalRequest": {
                 "method": "POST",
                 "header": [],
@@ -749,28 +1074,37 @@
           "name": "POST /auth/login",
           "event": [
             {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "function save(key, value) {",
+                  "  pm.collectionVariables.set(key, value);",
+                  "  if (pm.environment.name) pm.environment.set(key, value);",
+                  "}",
+                  "if (!pm.variables.get('username') || String(pm.variables.get('username')).includes('{{')) throw new Error('Set username before sending this request.');",
+                  "if (!pm.variables.get('deviceid') || String(pm.variables.get('deviceid')).includes('{{')) throw new Error('Set deviceid before sending this request.');",
+                  "if (!pm.variables.get('mpin') || String(pm.variables.get('mpin')).includes('{{')) throw new Error('Set mpin before sending this request.');",
+                  "save('token', '');",
+                  "save('refreshtoken', '');"
+                ]
+              }
+            },
+            {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"Status is 200\", function () {",
-                  "    pm.response.to.have.status(200);",
-                  "});",
-                  "",
-                  "pm.test(\"Response time is less than 5 seconds\", function () {",
-                  "    pm.expect(pm.response.responseTime).to.be.below(5000);",
-                  "});",
-                  "",
-                  "pm.test(\"Response is valid JSON\", function () {",
-                  "    pm.response.to.be.json;",
-                  "});",
-                  "",
-                  "if (pm.response.code === 200) {",
-                  "    const json = pm.response.json();",
-                  "    if (json.token) {",
-                  "        pm.collectionVariables.set('token', json.token);",
-                  "        console.log('Saved {{token}} from login response.');",
-                  "    }",
+                  "function save(key, value) {",
+                  "  pm.collectionVariables.set(key, value);",
+                  "  if (pm.environment.name) pm.environment.set(key, value);",
+                  "}",
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Business success', () => pm.expect(body.status).to.eql('success'));",
+                  "if (pm.response.code === 200 && body.status === 'success') {",
+                  "  if (typeof body.token === 'string' && body.token) save('token', body.token);",
+                  "  if (typeof body.refreshtoken === 'string' && body.refreshtoken) save('refreshtoken', body.refreshtoken);",
                   "}"
                 ]
               }
@@ -799,18 +1133,64 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"username\": \"hmc12345\",\n  \"imeinumber\": \"356789012345678\",\n  \"platform\": \"Android\",\n  \"appname\": \"Sanaad\",\n  \"version\": \"1.0.0\",\n  \"sysdate\": \"2026-01-02T14:20:00\",\n  \"mpin\": \"555407\"\n}",
+              "raw": "{\n  \"username\": \"{{username}}\",\n  \"deviceid\": \"{{deviceid}}\",\n  \"platform\": \"{{platform}}\",\n  \"mpin\": \"{{mpin}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
                 }
               }
             },
-            "description": "**Purpose:** API-5 — Login (MPIN → JWT + functionaccesslist). PUBLIC.\n\n**Since 2026-09-06:** a successful (non-bypass) login also stamps the device registration's `LastActive = GETDATE()` (best-effort — never fails the login).\n\n**Staging note:** dev bypass — MPIN not verified; a real signed JWT is returned (save it into {{token}}).\n\n**Verified against staging — examples below are real captured responses unless labeled \"Expected\".**"
+            "description": "Requires an active employee/device and the existing client-hashed MPIN. Saves both tokens. Tokens now carry issuer, audience, explicit type, expiration, session ID and token ID. Earlier tokens require a new login. Failed login remains HTTP 200 with status=error. JWTs are not encrypted; do not log or export real credentials.\n\nExamples labeled Expected are contract fixtures, not live verification. Keep {{baseUrl}} as the existing /api/v1 URL. Retained legacy response examples below are historical only."
           },
           "response": [
             {
-              "name": "Success (200)",
+              "name": "Expected — hardened authentication contract (not live-tested)",
+              "originalRequest": {
+                "auth": {
+                  "type": "noauth"
+                },
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/auth/login",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "auth",
+                    "login"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"username\": \"{{username}}\",\n  \"deviceid\": \"{{deviceid}}\",\n  \"platform\": \"{{platform}}\",\n  \"mpin\": \"{{mpin}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Requires an active employee/device and the existing client-hashed MPIN. Saves both tokens. Tokens now carry issuer, audience, explicit type, expiration, session ID and token ID. Earlier tokens require a new login. Failed login remains HTTP 200 with status=error. JWTs are not encrypted; do not log or export real credentials.\n\nExamples labeled Expected are contract fixtures, not live verification. Keep {{baseUrl}} as the existing /api/v1 URL. Retained legacy response examples below are historical only."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"status\": \"success\",\n  \"token\": \"<access-jwt>\",\n  \"tokenType\": \"Bearer\",\n  \"expiresIn\": \"1h\",\n  \"refreshtoken\": \"<refresh-jwt>\"\n}"
+            },
+            {
+              "name": "Historical — Success (200)",
               "originalRequest": {
                 "method": "POST",
                 "header": [],
@@ -847,7 +1227,7 @@
               "body": "{\n  \"status\": \"success\",\n  \"tokenType\": \"Bearer\",\n  \"expiresIn\": \"1h\",\n  \"employeeusername\": \"username\",\n  \"employeenumber\": \"3242424\",\n  \"employeename\": \"name of employee\",\n  \"employeenamear\": \"name of employee arabic\",\n  \"employeedepartment\": \"Information Communication and Technology\",\n  \"employeecompany\": \"Health Information and Communication Technology\",\n  \"functionaccesslist\": [\n    {\n      \"functionname\": \"Payroll SSRS\",\n      \"functioncode\": \"PYSRS\",\n      \"remarks\": \"Payroll SSRS\",\n      \"status\": \"1\"\n    }\n  ]\n}"
             },
             {
-              "name": "Validation Error (400)",
+              "name": "Historical — Validation Error (400)",
               "originalRequest": {
                 "method": "POST",
                 "header": [
@@ -894,21 +1274,35 @@
           "name": "POST /auth/mpin/forgot",
           "event": [
             {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "function save(key, value) {",
+                  "  pm.collectionVariables.set(key, value);",
+                  "  if (pm.environment.name) pm.environment.set(key, value);",
+                  "}",
+                  "if (!pm.variables.get('username') || String(pm.variables.get('username')).includes('{{')) throw new Error('Set username before sending this request.');",
+                  "if (!pm.variables.get('deviceid') || String(pm.variables.get('deviceid')).includes('{{')) throw new Error('Set deviceid before sending this request.');",
+                  "save('resetrequestid', '');"
+                ]
+              }
+            },
+            {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"Status is 200\", function () {",
-                  "    pm.response.to.have.status(200);",
-                  "});",
-                  "",
-                  "pm.test(\"Response time is less than 5 seconds\", function () {",
-                  "    pm.expect(pm.response.responseTime).to.be.below(5000);",
-                  "});",
-                  "",
-                  "pm.test(\"Response is valid JSON\", function () {",
-                  "    pm.response.to.be.json;",
-                  "});"
+                  "function save(key, value) {",
+                  "  pm.collectionVariables.set(key, value);",
+                  "  if (pm.environment.name) pm.environment.set(key, value);",
+                  "}",
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Business success', () => pm.expect(body.status).to.eql('initiated successfully'));",
+                  "if (pm.response.code === 200 && body.status === 'initiated successfully') {",
+                  "  if (typeof body.requestid === 'string' && body.requestid) save('resetrequestid', body.requestid);",
+                  "}"
                 ]
               }
             }
@@ -937,18 +1331,65 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"username\": \"hmc12345\",\n  \"imeinumber\": \"356789012345678\",\n  \"platform\": \"Android\",\n  \"appname\": \"Sanaad\",\n  \"version\": \"1.0.0\",\n  \"sysdate\": \"2026-01-02T14:20:00\"\n}",
+              "raw": "{\n  \"username\": \"{{username}}\",\n  \"deviceid\": \"{{deviceid}}\",\n  \"platform\": \"{{platform}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
                 }
               }
             },
-            "description": "**Purpose:** API-6 Initiate Forgot MPIN\n\n**Auth:** Public — no token required\n**Request body:** see the raw body below.\n\n**Response:** unwrapped (not part of the standard envelope)."
+            "description": "Begin recovery. Always returns a generic initiation response. Eligible registered users receive an OTP at their directory contact. Saves resetrequestid separately from enrollment requestid. Enter the code into resetotp and the new client hash into newmpin, then call auth/mpin/update/reset directly.\n\nExamples labeled Expected are contract fixtures, not live verification. Keep {{baseUrl}} as the existing /api/v1 URL. Retained legacy response examples below are historical only."
           },
           "response": [
             {
-              "name": "Success (200)",
+              "name": "Expected — hardened authentication contract (not live-tested)",
+              "originalRequest": {
+                "auth": {
+                  "type": "noauth"
+                },
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/auth/mpin/forgot",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "auth",
+                    "mpin",
+                    "forgot"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"username\": \"{{username}}\",\n  \"deviceid\": \"{{deviceid}}\",\n  \"platform\": \"{{platform}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Begin recovery. Always returns a generic initiation response. Eligible registered users receive an OTP at their directory contact. Saves resetrequestid separately from enrollment requestid. Enter the code into resetotp and the new client hash into newmpin, then call auth/mpin/update/reset directly.\n\nExamples labeled Expected are contract fixtures, not live verification. Keep {{baseUrl}} as the existing /api/v1 URL. Retained legacy response examples below are historical only."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"status\": \"initiated successfully\",\n  \"requestid\": \"<opaque-recovery-request-id>\",\n  \"message\": \"If eligible, a verification code will be sent to your registered contact.\"\n}"
+            },
+            {
+              "name": "Historical — Success (200)",
               "originalRequest": {
                 "method": "POST",
                 "header": [],
@@ -991,21 +1432,37 @@
           "name": "POST /auth/mpin/update/reset",
           "event": [
             {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "function save(key, value) {",
+                  "  pm.collectionVariables.set(key, value);",
+                  "  if (pm.environment.name) pm.environment.set(key, value);",
+                  "}",
+                  "if (!pm.variables.get('username') || String(pm.variables.get('username')).includes('{{')) throw new Error('Set username before sending this request.');",
+                  "if (!pm.variables.get('deviceid') || String(pm.variables.get('deviceid')).includes('{{')) throw new Error('Set deviceid before sending this request.');",
+                  "if (!pm.variables.get('newmpin') || String(pm.variables.get('newmpin')).includes('{{')) throw new Error('Set newmpin before sending this request.');",
+                  "if (!pm.variables.get('resetotp') || String(pm.variables.get('resetotp')).includes('{{')) throw new Error('Set resetotp before sending this request.');",
+                  "if (!pm.variables.get('resetrequestid') || String(pm.variables.get('resetrequestid')).includes('{{')) throw new Error('Set resetrequestid before sending this request.');"
+                ]
+              }
+            },
+            {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"Status is 200\", function () {",
-                  "    pm.response.to.have.status(200);",
-                  "});",
-                  "",
-                  "pm.test(\"Response time is less than 5 seconds\", function () {",
-                  "    pm.expect(pm.response.responseTime).to.be.below(5000);",
-                  "});",
-                  "",
-                  "pm.test(\"Response is valid JSON\", function () {",
-                  "    pm.response.to.be.json;",
-                  "});"
+                  "function save(key, value) {",
+                  "  pm.collectionVariables.set(key, value);",
+                  "  if (pm.environment.name) pm.environment.set(key, value);",
+                  "}",
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Business success', () => pm.expect(body.status).to.eql('success'));",
+                  "if (pm.response.code === 200 && body.status === 'success') {",
+                  "  save('token', ''); save('refreshtoken', '');",
+                  "}"
                 ]
               }
             }
@@ -1035,18 +1492,66 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"username\": \"hmc12345\",\n  \"imeinumber\": \"356789012345678\",\n  \"platform\": \"Android\",\n  \"appname\": \"Sanaad\",\n  \"version\": \"1.0.0\",\n  \"sysdate\": \"2026-01-02T14:20:00\",\n  \"newmpin\": \"4321\",\n  \"otp\": \"987654\",\n  \"requestid\": \"13131313123\"\n}",
+              "raw": "{\n  \"username\": \"{{username}}\",\n  \"deviceid\": \"{{deviceid}}\",\n  \"platform\": \"{{platform}}\",\n  \"newmpin\": \"{{newmpin}}\",\n  \"otp\": \"{{resetotp}}\",\n  \"requestid\": \"{{resetrequestid}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
                 }
               }
             },
-            "description": "**Purpose:** API-7 Reset MPIN\n\n**Auth:** Public — no token required\n**Request body:** see the raw body below.\n\n**Response:** unwrapped (not part of the standard envelope)."
+            "description": "Consumes a FORGOT_MPIN OTP and changes the MPIN of an existing active registration. Do not call auth/otp/validate beforehand. newmpin is the unchanged client-hashed value, not restricted to numeric characters. Successful reset revokes all sessions for this username; sign in again. Invalid OTP remains HTTP 200 with status=error.\n\nExamples labeled Expected are contract fixtures, not live verification. Keep {{baseUrl}} as the existing /api/v1 URL. Retained legacy response examples below are historical only."
           },
           "response": [
             {
-              "name": "Success (200)",
+              "name": "Expected — hardened authentication contract (not live-tested)",
+              "originalRequest": {
+                "auth": {
+                  "type": "noauth"
+                },
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/auth/mpin/update/reset",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "auth",
+                    "mpin",
+                    "update",
+                    "reset"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"username\": \"{{username}}\",\n  \"deviceid\": \"{{deviceid}}\",\n  \"platform\": \"{{platform}}\",\n  \"newmpin\": \"{{newmpin}}\",\n  \"otp\": \"{{resetotp}}\",\n  \"requestid\": \"{{resetrequestid}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Consumes a FORGOT_MPIN OTP and changes the MPIN of an existing active registration. Do not call auth/otp/validate beforehand. newmpin is the unchanged client-hashed value, not restricted to numeric characters. Successful reset revokes all sessions for this username; sign in again. Invalid OTP remains HTTP 200 with status=error.\n\nExamples labeled Expected are contract fixtures, not live verification. Keep {{baseUrl}} as the existing /api/v1 URL. Retained legacy response examples below are historical only."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"status\": \"success\",\n  \"message\": \"MPIN Changed successfully\"\n}"
+            },
+            {
+              "name": "Historical — Success (200)",
               "originalRequest": {
                 "method": "POST",
                 "header": [],
@@ -1159,13 +1664,35 @@
           "name": "POST /auth/token/refresh",
           "event": [
             {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "function save(key, value) {",
+                  "  pm.collectionVariables.set(key, value);",
+                  "  if (pm.environment.name) pm.environment.set(key, value);",
+                  "}",
+                  "if (!pm.variables.get('refreshtoken') || String(pm.variables.get('refreshtoken')).includes('{{')) throw new Error('Set refreshtoken before sending this request.');"
+                ]
+              }
+            },
+            {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"Status is 200\", function () {",
-                  "    pm.response.to.have.status(200);",
-                  "});"
+                  "function save(key, value) {",
+                  "  pm.collectionVariables.set(key, value);",
+                  "  if (pm.environment.name) pm.environment.set(key, value);",
+                  "}",
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Business success', () => pm.expect(body.status).to.eql('success'));",
+                  "if (pm.response.code === 200 && body.status === 'success') {",
+                  "  if (typeof body.token === 'string' && body.token) save('token', body.token);",
+                  "  if (typeof body.refreshtoken === 'string' && body.refreshtoken) save('refreshtoken', body.refreshtoken);",
+                  "}",
+                  "if (pm.response.code === 401 || (pm.response.code === 200 && body.status === 'error')) { save('token', ''); save('refreshtoken', ''); }"
                 ]
               }
             }
@@ -1201,21 +1728,89 @@
                 }
               }
             },
-            "description": "**Purpose:** Exchange a refresh token (from login) for a NEW access + refresh pair. The used refresh token is revoked — one-time use (rotation). Public: works with an expired access token; throttled at the gateway.\n\nFailures follow the Sanaad convention: HTTP 200 with `{\"status\":\"error\",\"message\":...}`."
+            "description": "Single-use refresh rotation. Saves both replacement tokens; serialize refresh calls. Reusing a rotated token revokes its session family. Account/device eligibility and functions are rechecked. Invalid sessions return status=error; database outages are errors, never authentication bypasses. Do not blindly retry an old refresh token after an ambiguous timeout.\n\nExamples labeled Expected are contract fixtures, not live verification. Keep {{baseUrl}} as the existing /api/v1 URL. Retained legacy response examples below are historical only."
           },
-          "response": []
+          "response": [
+            {
+              "name": "Expected — hardened authentication contract (not live-tested)",
+              "originalRequest": {
+                "auth": {
+                  "type": "noauth"
+                },
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/auth/token/refresh",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "auth",
+                    "token",
+                    "refresh"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"refreshtoken\": \"{{refreshtoken}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Single-use refresh rotation. Saves both replacement tokens; serialize refresh calls. Reusing a rotated token revokes its session family. Account/device eligibility and functions are rechecked. Invalid sessions return status=error; database outages are errors, never authentication bypasses. Do not blindly retry an old refresh token after an ambiguous timeout.\n\nExamples labeled Expected are contract fixtures, not live verification. Keep {{baseUrl}} as the existing /api/v1 URL. Retained legacy response examples below are historical only."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"status\": \"success\",\n  \"token\": \"<new-access-jwt>\",\n  \"tokenType\": \"Bearer\",\n  \"expiresIn\": \"1h\",\n  \"refreshtoken\": \"<new-refresh-jwt>\"\n}"
+            }
+          ]
         },
         {
           "name": "POST /auth/logout",
           "event": [
             {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "function save(key, value) {",
+                  "  pm.collectionVariables.set(key, value);",
+                  "  if (pm.environment.name) pm.environment.set(key, value);",
+                  "}",
+                  "if (!pm.variables.get('token') || String(pm.variables.get('token')).includes('{{')) throw new Error('Set token before sending this request.');"
+                ]
+              }
+            },
+            {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"Status is 200\", function () {",
-                  "    pm.response.to.have.status(200);",
-                  "});"
+                  "function save(key, value) {",
+                  "  pm.collectionVariables.set(key, value);",
+                  "  if (pm.environment.name) pm.environment.set(key, value);",
+                  "}",
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Business success', () => pm.expect(body.status).to.eql('success'));",
+                  "if (pm.response.code === 200 && body.status === 'success') {",
+                  "  save('token', ''); save('refreshtoken', '');",
+                  "}"
                 ]
               }
             }
@@ -1247,11 +1842,76 @@
                 }
               }
             },
-            "description": "**Purpose:** Revoke the current access token (bearer) and, when sent in the body, the refresh token — the pair is then fully dead. Requires `Authorization: Bearer {{token}}` (collection-level auth). NOTE: revocation is in-memory — a backend restart forgets it (tokens then live until natural expiry)."
+            "description": "Bearer access token required. Revokes the entire current session family even when refreshtoken is omitted. The script clears both local tokens after success. An invalid/expired access token requires re-login or the agreed recovery flow.\n\nExamples labeled Expected are contract fixtures, not live verification. Keep {{baseUrl}} as the existing /api/v1 URL. Retained legacy response examples below are historical only.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            }
           },
-          "response": []
+          "response": [
+            {
+              "name": "Expected — hardened authentication contract (not live-tested)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/auth/logout",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "auth",
+                    "logout"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"refreshtoken\": \"{{refreshtoken}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Bearer access token required. Revokes the entire current session family even when refreshtoken is omitted. The script clears both local tokens after success. An invalid/expired access token requires re-login or the agreed recovery flow.\n\nExamples labeled Expected are contract fixtures, not live verification. Keep {{baseUrl}} as the existing /api/v1 URL. Retained legacy response examples below are historical only.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{token}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"status\": \"success\",\n  \"message\": \"Logged out successfully.\"\n}"
+            }
+          ]
         }
-      ]
+      ],
+      "description": "Security-aware authentication contracts. Use dedicated authorized UAT accounts and deploy backend/gateway together. No new tables or columns are required: authentication reuses HMC_RHAP_OTP_tbl, HMC_Sanad_DeviceRegn_tbl and the approved HMC_Sanad_AttestChallenge_tbl. Shared nonce records support multiple backend instances; all instances must use the same JWT settings. Do not run the obsolete auth-security-schema.sql migration. Do not run this folder wholesale: registration/recovery send OTPs and MPIN operations mutate credentials. Run the chosen journey manually and enter its delivered OTP. Android/iOS must implement enrollmenttoken. Legacy saved captures are retained and labeled historical; they are NOT the new contract. Normal signing and state checks require AUTH_DISABLED=false and AUTH_STATIC_LOGIN=false."
     },
     {
       "name": "Profile",
@@ -14348,6 +15008,96 @@
                 }
               ],
               "body": "{\n  \"success\": false,\n  \"message\": \"A database operation could not be completed. Please contact support if the problem persists.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 500\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Auth security negative checks",
+      "description": "Run individually with authorized UAT fixtures. No OTP sending or successful writes are expected. Device-attestation headers may also be required by the deployment.",
+      "item": [
+        {
+          "name": "Missing enrollment proof must fail before MPIN write",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/mpin/update",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "mpin",
+                "update"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{username}}\",\n  \"deviceid\": \"{{deviceid}}\",\n  \"platform\": \"{{platform}}\",\n  \"mpin\": \"{{mpin}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Missing enrollment proof rejected', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Refresh token must not authorize protected APIs",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{refreshtoken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "me"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Refresh-as-access rejected', () => pm.response.to.have.status(401));"
+                ]
+              }
             }
           ]
         }

@@ -17,7 +17,11 @@ Run from `HMC_BackEnd/`.
 | Tests | `npm.cmd test` |
 | Lint | `npx.cmd eslint src --ext .ts` |
 
-Known environment issues, both pre-existing:
+Known environment issues, all pre-existing:
+
+- Jest does not exit on its own after the run (a leaked open handle), so a
+  run looks hung. Add `--forceExit`, e.g. `npx.cmd jest src/modules/auth
+  --forceExit`; the auth suite alone takes ~8 minutes on this machine.
 
 - `npm.cmd run lint` crashes with `TypeError: expand is not a function` (a
   `minimatch` / `brace-expansion` resolution problem inside ESLint 8). Passing the
@@ -1606,6 +1610,104 @@ repositories and check the messages recorded by the response logger as well.
 Semantic lint retains two pre-existing unused controller imports (`Role` and
 `ApprovalDetailQueryDto`), reproduced against HEAD; the other changed files pass.
 
+## Authentication security phase (2026-09-18)
+
+This supersedes the earlier pre-auth contact disclosure, OTP verification/store,
+MPIN-reset numeric policy, JWT/revocation, and operational-console access notes.
+It is an authentication-focused remediation phase, NOT closure of all ten
+penetration-readiness findings. No live migrations, OTP delivery, or business
+submissions were performed during implementation.
+
+- **No new tables or columns.** The client has multiple backend instances,
+  no shared cache, and no CREATE permission. They explicitly confirmed that
+  `HMC_Sanad_AttestChallenge_tbl` exists and approved reusing it for shared
+  authentication nonces with SELECT/INSERT/UPDATE. Its existing columns are
+  ChallengeID, Challenge, LoginID, IssuedAt, ExpiresAt and UsedAt. The earlier
+  four-table migration is obsolete and now refuses execution without DDL.
+  No authentication path calls those four new tables; do not restore them or
+  substitute process-local session state. SQL concurrency/permissions still
+  need live UAT verification; automated tests use mocked database calls.
+- Shared records are namespaced 43-character HMAC keys: hB. for rate tickets,
+  hG. for enrollment, hF. for session families, hA. for access tokens and hR.
+  for refresh tokens. They fit within the existing 44-character App Attest
+  challenge representation. All replicas must share JWT_SECRET. App Attest
+  consumption accepts only its original canonical 32-byte base64 challenges
+  and uses binary comparison; it cannot consume an authentication nonce.
+  Authentication writes only its own namespaces and never modifies attestation
+  keys. No table/column creation or background DELETE calls are required.
+- `OTP_PORT` still binds `SecureOtpRepository`, but verification now uses the
+  existing `HMC_RHAP_OTP_tbl`: RequestId, LoginID, DeviceIMEINumber, RequestType,
+  OTPValue, OTPSentDateTime, OTPValidationAttemptCount, OTPStatus and OTPSendMode,
+  plus the legacy app-context columns. RequestType remains USER_REG/FORGET_MPIN.
+  Status 0 is unusable; status 1 is activated only after successful delivery
+  queuing. Verification increments attempts and consumes a matching code in one
+  conditional UPDATE with purpose/identity/request/expiry predicates. OTPValue
+  retains the legacy stored-code representation, NOT a new digest column;
+  sensitive logging remains masked. The opaque wire requestid stays 43 chars;
+  its SHA-256 prefix maps to the existing 32-hex-character RequestId format.
+  Sending reuses the newest user/device row under transaction locks and replaces
+  its correlation ID. OTP_STORE=motc retains MOTC delivery; otherwise OTP_DELIVERY
+  selects MOTC or HTTP. SMTP remains the no-mobile fallback.
+- `/auth/initiate` and `/auth/send-otp` return only a generic status/message and
+  opaque 43-character requestid (plus explicitly enabled non-production test
+  OTP). No employee/contact data or registration/channel flags. Existing users
+  with an MPIN are not sent an enrollment OTP; they should use login or recovery.
+  Caller-selected phone/email fields are accepted for compatibility but ignored.
+  Send-OTP is enrollment/resend, not recovery; use `/auth/mpin/forgot` for that.
+- `/auth/otp/validate` consumes ONBOARDING challenges only and returns
+  `enrollmenttoken` plus `expiresinseconds: 300`. `/auth/mpin/update` REQUIRES
+  that proof and can update only one inactive registration with NULL MPIN.
+  Proof consumption and MPIN update are one transaction. The mobile must retain
+  the proof temporarily and send it; there is no unprotected legacy fallback.
+- Recovery sends a FORGOT_MPIN challenge. Submit OTP/requestid/newmpin directly
+  to `/auth/mpin/update/reset`, not via enrollment validation. Client-hashed
+  values remain unchanged; reset no longer incorrectly requires numeric hashes.
+  Successful reset revokes all of that user's sessions and enrollment grants.
+- Access and refresh JWTs have explicit typ, sid, jti, iat, exp, issuer/audience;
+  both services pin HS256. Backend protected requests check shared session state
+  and active device status. Refresh rotation compares the previous refresh ID
+  atomically; replay revokes the family, and refresh rechecks employee/functions.
+  Logout revokes the family without needing a refresh token in the body.
+  External directory removal is checked at login/refresh, not on every request;
+  immediate directory-driven deactivation needs a separate integration/policy.
+- Shared account attempt budgets cover login, OTP send/verify, and enrollment.
+  Username whitespace is trimmed by auth DTOs and budget keys are uppercased.
+  Gateway initiate and MPIN enrollment are now throttled too. Backend 429s carry
+  Retry-After, forwarded by the gateway. Distributed ingress/IP controls remain
+  infrastructure work. Budgets are now shared rolling-window tickets in the
+  approved challenge table, not a new counter table. Authentication performs no
+  background cleanup/deletion: existing DB maintenance must retain unexpired
+  authentication records (session expiry can be seven days or renewed on refresh),
+  rather than treating every row as a five-minute App Attest nonce. Review table
+  retention, indexes and capacity with the DB owner before load testing.
+- Production configuration rejects auth/static-login bypasses, static/testing
+  OTP responses and weak/default JWT keys. Console and diagnostics default off;
+  their guards always refuse production. Explicitly enabled non-production
+  access requires a >=32-byte x-console-token header, never a query token.
+  The console UI cannot enable writes when server allowWrite is false.
+- Deploy backend/gateway/mobile together; existing JWTs require re-login. The
+  collection retains /api/v1. Do not assume the old notes about /api/v2 apply to
+  this checkout. Ownership/action authorization (F4/F5), upload policy/scanning
+  (F9), full abuse coverage, attestation binding, and infrastructure/mobile
+  verification remain outstanding; uniform pre-auth bodies do not establish
+  resistance to timing-based enumeration without UAT measurements.
+
+Postman: run `node postman/auth-security-contract.js` from HMC_BackEnd to update
+ONLY the Auth contracts/negative checks in the maintained collection and add
+missing environment variables. It preserves other folders and labels prior
+Auth captures historical; new examples are expected fixtures, not live captures.
+Do NOT regenerate the full collection over curated responses. Offline checks:
+`node --test postman/auth-security-contract.test.js`. The generator also invokes
+the same contract helper for future newly generated collections.
+
+Verification: backend auth/core-auth tests, operational-access tests, both
+builds, gateway unit/E2E tests, Postman checks, and semantic lint of changed
+files. Tests mint complete signed session claims and mock AuthStateService in
+business HTTP harnesses; never weaken JWT validation to satisfy old fixtures.
+The full backend run on this date has 1,692 passing tests and nine failures in
+unchanged suites: the six documented USERNAME/USER_NAME supervisor expectations,
+and three empty-string assertions for optional dependent gender/passport issue
+fields. These business DTOs/tests were not changed by the auth-security phase.
 ## Approval decision success messages
 
 `POST /approvals/:id/decision` also opts in, using

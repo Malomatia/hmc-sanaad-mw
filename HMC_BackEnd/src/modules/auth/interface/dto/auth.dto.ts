@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
 import { Role } from '@core/auth/auth-user.interface';
 import { FunctionStatus } from '../../domain/auth-identity';
 import { ClientContextDto } from './client-context.dto';
@@ -9,6 +9,7 @@ export class LoginRequestDto extends ClientContextDto {
   @ApiProperty({ example: '555407', description: 'MPIN (client-hashed per framework doc).' })
   @IsString()
   @IsNotEmpty()
+  @MaxLength(1024)
   mpin!: string;
 }
 
@@ -77,7 +78,8 @@ export class LoginResponseDto {
 
   @ApiPropertyOptional({
     type: Boolean,
-    description: 'Oracle user validation result; false when Oracle validation fails or is unavailable.',
+    description:
+      'Oracle user validation result; false when Oracle validation fails or is unavailable.',
     example: true,
   })
   isOrcaleUser?: boolean;
@@ -117,6 +119,7 @@ export class RefreshTokenRequestDto {
   @ApiProperty({ description: 'The refresh token issued by login (or a previous refresh).' })
   @IsString()
   @IsNotEmpty()
+  @MaxLength(16384)
   refreshtoken!: string;
 }
 
@@ -146,5 +149,6 @@ export class LogoutRequestDto {
   @ApiPropertyOptional({ description: 'Refresh token to revoke together with the access token.' })
   @IsOptional()
   @IsString()
+  @MaxLength(16384)
   refreshtoken?: string;
 }

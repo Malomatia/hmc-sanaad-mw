@@ -142,6 +142,8 @@ function classifyHttp(ex: HttpException): ClassifiedError {
       return of(ErrorCategory.TIMEOUT, { httpStatus: status });
     case HttpStatus.CONFLICT:
       return of(ErrorCategory.BUSINESS_RULE_ERROR);
+    case HttpStatus.TOO_MANY_REQUESTS:
+      return of(ErrorCategory.BUSINESS_RULE_ERROR, { httpStatus: status, message: 'Too many attempts. Please try again later.' });
     case HttpStatus.BAD_GATEWAY:
     case HttpStatus.SERVICE_UNAVAILABLE:
       return of(ErrorCategory.EXTERNAL_SERVICE_ERROR, { httpStatus: status });

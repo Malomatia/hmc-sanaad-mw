@@ -23,6 +23,7 @@ export class AuthController {
 
   @Public()
   @HttpCode(200)
+  @UseGuards(ThrottlerGuard)
   @Post('initiate')
   @ApiOperation({
     summary: 'API-2 — User Validate (LDAP + send OTP)',
@@ -56,6 +57,7 @@ export class AuthController {
 
   @Public()
   @HttpCode(200)
+  @UseGuards(ThrottlerGuard)
   @Post('mpin/update')
   @ApiOperation({ summary: 'API-4 — Set MPIN (first-time)', operationId: 'auth_setMpin' })
   setMpin(@Req() req: Request, @Res() res: Response): Promise<void> {

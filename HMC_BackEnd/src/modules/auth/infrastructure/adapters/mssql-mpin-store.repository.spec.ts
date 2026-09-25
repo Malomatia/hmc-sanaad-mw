@@ -50,7 +50,7 @@ describe('MssqlMpinStoreRepository', () => {
       true,
     );
     expect(db.query).toHaveBeenCalledWith(
-      expect.stringMatching(/IMEINumber = @imei AND LoginID = @username AND MPIN = @mpin/),
+      expect.stringMatching(/IMEINumber COLLATE Latin1_General_100_BIN2 = @imei AND LoginID = @username AND MPIN = @mpin AND Status = 'Active'/),
       { username: 'hmc1', imei: 'imei-1', mpin: '9999' },
     );
 

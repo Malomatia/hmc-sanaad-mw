@@ -1,4 +1,5 @@
-import { CanActivate, ExecutionContext, Injectable, NotFoundException } from '@nestjs/common';
+import { CanActivate, ExecutionContext, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { timingSafeEqual } from 'node:crypto';
 import { ConfigService } from '@nestjs/config';
 import { Request } from 'express';
 import { DiagnosticsConfig } from '../config/configuration';
@@ -13,15 +14,24 @@ import { DiagnosticsConfig } from '../config/configuration';
 @Injectable()
 export class DiagnosticsEnabledGuard implements CanActivate {
   private readonly enabled: boolean;
+  private readonly token: string;
 
   constructor(config: ConfigService) {
-    this.enabled = config.get<DiagnosticsConfig>('diagnostics', { enabled: true }).enabled;
+    this.enabled = config.get<DiagnosticsConfig>('diagnostics', { enabled: false }).enabled &&
+      config.get<string>('app.nodeEnv') !== 'production';
+    this.token = config.get<string>('devConsole.token', '');
   }
 
   canActivate(context: ExecutionContext): boolean {
-    if (this.enabled) return true;
     const req = context.switchToHttp().getRequest<Request>();
     // Same response as an unknown route: presence of the API is not leaked.
-    throw new NotFoundException(`Cannot ${req.method} ${req.path}`);
+    if (!this.enabled) throw new NotFoundException(`Cannot ${req.method} ${req.path}`);
+    const supplied = req.headers['x-console-token'];
+    const actual = Buffer.from(typeof supplied === 'string' ? supplied : '');
+    const expected = Buffer.from(this.token);
+    if (expected.length < 32 || actual.length !== expected.length || !timingSafeEqual(actual, expected)) {
+      throw new ForbiddenException('Invalid console token.');
+    }
+    return true;
   }
 }

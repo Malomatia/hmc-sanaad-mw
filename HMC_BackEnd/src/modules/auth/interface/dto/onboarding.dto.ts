@@ -1,6 +1,17 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEmail, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsEmail, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
 import { ClientContextDto } from './client-context.dto';
+import { StatusMessageDto } from './auth.dto';
+
+export class ValidateOtpResponseDto extends StatusMessageDto {
+  @ApiPropertyOptional({
+    description: 'Single-use first-enrollment proof. Never use as an access token.',
+  })
+  enrollmenttoken?: string;
+
+  @ApiPropertyOptional({ example: 300 })
+  expiresinseconds?: number;
+}
 
 /**
  * API-2 — User Validate request. Per the auth framework doc, this call carries
@@ -30,7 +41,10 @@ export class UserValidateResponseDto {
   @ApiPropertyOptional({ example: 'HICT Programmer.HMC' })
   jobname?: string;
 
-  @ApiPropertyOptional({ example: 'MK****@hamad.qa', description: 'Masked — first 2 characters visible.' })
+  @ApiPropertyOptional({
+    example: 'MK****@hamad.qa',
+    description: 'Masked — first 2 characters visible.',
+  })
   email?: string;
 
   @ApiPropertyOptional({
@@ -111,7 +125,8 @@ export class UserValidateResponseDto {
 export class SendOtpRequestDto extends ClientContextDto {
   @ApiPropertyOptional({
     example: '55123456',
-    description: 'Destination phone number (ToAddress). Omit to deliver by email instead.',
+    description:
+      'Compatibility field only; ignored. OTP destination is resolved from the employee directory.',
   })
   @IsOptional()
   @IsString()
@@ -121,8 +136,7 @@ export class SendOtpRequestDto extends ClientContextDto {
   @ApiPropertyOptional({
     example: 'aibrahim39@hamad.qa',
     description:
-      'Fallback channel for users with NO mobile: the OTP is emailed over SMTP. ' +
-      'Used only when phonenumber is absent; one of the two is required (409 otherwise).',
+      'Compatibility field only; ignored. The directory email is used when no registered phone exists.',
   })
   @IsOptional()
   @IsEmail()
@@ -149,15 +163,50 @@ export class SendOtpResponseDto {
   message?: string;
 }
 
+/** API-2 — generic OTP response plus the employee's masked contact and OTP state. */
+export class InitiateResponseDto extends SendOtpResponseDto {
+  @ApiPropertyOptional({
+    example: 'MK****@hamad.qa',
+    description: 'Masked — first 2 characters visible. Absent when unknown.',
+  })
+  email?: string;
+
+  @ApiPropertyOptional({
+    example: 'XXXXX206',
+    description: 'Masked — only the last 3 digits visible. Absent when unknown.',
+  })
+  employeephonenumber?: string;
+
+  @ApiPropertyOptional({ example: 'Yes', description: 'First-time user flag.' })
+  newuser?: string;
+
+  @ApiPropertyOptional({
+    example: 'New',
+    enum: ['New', 'Pending', 'Exist'],
+    description:
+      'New = a fresh OTP was stored · Pending = a still-valid unused OTP was kept · ' +
+      'Exist = existing user (newuser=No), no OTP.',
+  })
+  vflag?: string;
+
+  @ApiPropertyOptional({ example: 'SMS', enum: ['SMS', 'Email'] })
+  otpmode?: string;
+
+  @ApiPropertyOptional({ example: 2, description: 'Minutes the OTP is still valid for.' })
+  elapsedtimeinmins?: number;
+}
+
 /** API-3 — Validate OTP request. */
 export class ValidateOtpRequestDto extends ClientContextDto {
   @ApiProperty({ example: '232323' })
   @IsString()
   @IsNotEmpty()
+  @MaxLength(12)
   otp!: string;
 
   @ApiProperty({ example: '13131313123', description: 'Correlation id from User Validate.' })
   @IsString()
   @IsNotEmpty()
+  @MaxLength(43)
   requestid!: string;
 }

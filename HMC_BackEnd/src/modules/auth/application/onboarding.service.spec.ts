@@ -1,10 +1,5 @@
 import { ConfigService } from '@nestjs/config';
-import configuration from '@core/config/configuration';
-import { UsersDbService } from '@core/database/users-db/users-db.service';
-import { MotcSmsDbService } from '@core/database/motc-sms-db.service';
-import { MssqlOtpRepository } from '../infrastructure/adapters/mssql-otp.repository';
-import { MotcSmsOtpRepository } from '../infrastructure/adapters/motc-sms-otp.repository';
-import { MotcPushOtpDeliveryAdapter } from '../infrastructure/adapters/motc-push-otp-delivery.adapter';
+import { AuthStateService } from '@core/auth/auth-state.service';
 import { AuditService } from '@core/audit/audit.service';
 import { safePreview } from '@core/logging/sensitive-data.util';
 import { OnboardingService } from './onboarding.service';
@@ -13,488 +8,297 @@ import { OtpPort } from '../domain/ports/otp.port';
 import { DeviceRegistryPort } from '../domain/ports/device-registry.port';
 
 const IDENTITY = {
-  username: 'MKHOJA',
+  username: 'TESTUSER',
   employeeNumber: '011759',
-  employeeName: 'Mouna Bent Abdelkerim Khoja',
-  department: 'Cardiothoracic Surgery.Heart Hospital',
-  facility: 'Heart Hospital',
-  jobName: 'Cardiac Technologist.HMC',
-  email: 'MKHOJA@hamad.qa',
+  employeeName: 'Test Employee',
+  department: 'Test Department',
+  facility: 'Test Facility',
+  jobName: 'Test Job',
+  email: 'employee@example.test',
   phoneNumber: '55372169',
   isEmployee: true,
   isNewUser: true,
   roles: ['employee'],
 };
-
 const DTO = {
-  username: 'MKHOJA',
-  imeinumber: 'imei-1',
+  username: 'TESTUSER',
+  imeinumber: 'device-1',
   platform: 'Android',
   version: '1.0.0',
-  devicemodel: 'SM-G965F',
+  devicemodel: 'Test Model',
   osversion: '13',
 };
+const REQUEST_ID = 'r'.repeat(43);
+const GRANT = 'g'.repeat(43);
+const GENERIC = 'If eligible, a verification code will be sent to your registered contact.';
 
-function makeService(overrides?: {
-  identity?: Partial<typeof IDENTITY>;
-  config?: Record<string, unknown>;
-}) {
+function makeService(
+  overrides: { identity?: Partial<typeof IDENTITY>; config?: Record<string, unknown> } = {},
+) {
   const ldap = {
-    validate: jest.fn().mockResolvedValue({ ...IDENTITY, ...overrides?.identity }),
+    validate: jest.fn().mockResolvedValue({ ...IDENTITY, ...overrides.identity }),
     authenticate: jest.fn(),
   } as unknown as jest.Mocked<LdapUserPort>;
   const otp = {
     send: jest
       .fn()
-      .mockResolvedValue({ requestId: '12345', status: 'NEW', mode: 'SMS', validForSeconds: 300 }),
-    verify: jest.fn(),
+      .mockResolvedValue({
+        requestId: REQUEST_ID,
+        status: 'NEW',
+        mode: 'SMS',
+        validForSeconds: 300,
+      }),
+    verify: jest.fn().mockResolvedValue(true),
   } as unknown as jest.Mocked<OtpPort>;
   const devices = {
     bind: jest.fn().mockResolvedValue(undefined),
-    isBound: jest.fn(),
     find: jest.fn(),
-    touch: jest.fn().mockResolvedValue(undefined),
+    isBound: jest.fn(),
+    touch: jest.fn(),
   } as unknown as jest.Mocked<DeviceRegistryPort>;
-  const audit = { lifecycle: jest.fn() } as unknown as jest.Mocked<AuditService>;
+  const audit = { lifecycle: jest.fn() } as unknown as AuditService;
+  const state = {
+    limit: jest.fn().mockResolvedValue(undefined),
+    issueEnrollment: jest.fn().mockResolvedValue(GRANT),
+  } as unknown as jest.Mocked<AuthStateService>;
   const config = {
-    get: jest.fn((key: string, fallback: unknown) => overrides?.config?.[key] ?? fallback),
-  } as unknown as ConfigService;
+    get: (key: string, fallback: unknown) => overrides.config?.[key] ?? fallback,
+  } as ConfigService;
   return {
-    service: new OnboardingService(ldap, otp, devices, audit, config),
+    service: new OnboardingService(ldap, otp, devices, audit, config, state),
     ldap,
     otp,
     devices,
+    state,
   };
 }
 
-describe.each(['validateUser', 'sendOtp'] as const)('OnboardingService.%s language', (method) => {
-  it.each(['en', 'ar', undefined] as const)('passes lang=%s to OTP delivery', async (lang) => {
-    const { service, otp } = makeService({ identity: { phoneNumber: undefined } });
+const PII_FIELDS = [
+  'employeeusername',
+  'employeename',
+  'employeenumber',
+  'jobname',
+  'department',
+  'emailunmasked',
+  'employeephonenumberunmasked',
+  'employeeflag',
+  'devicestatus',
+];
+const CONTACT = { email: 'em******@example.test', employeephonenumber: 'XXXXX169' };
+const INITIATE_EXTRA = {
+  new: { ...CONTACT, newuser: 'Yes', vflag: 'New', otpmode: 'SMS', elapsedtimeinmins: 5 },
+  pending: { ...CONTACT, newuser: 'Yes', vflag: 'Pending', otpmode: 'Email', elapsedtimeinmins: 2 },
+  existing: { ...CONTACT, newuser: 'No', vflag: 'Exist' },
+  unknown: {},
+};
 
-    await service[method]({ ...DTO, email: IDENTITY.email }, lang);
-
-    expect(otp.send).toHaveBeenCalledWith(
-      expect.objectContaining({ email: IDENTITY.email, lang: lang ?? 'en' }),
-    );
-  });
-});
-
-describe.each(['legacy', 'motc'] as const)('%s store SMS insertion', (store) => {
-  describe.each(['validateUser', 'sendOtp'] as const)('%s', (method) => {
-    it.each(['en', 'ar'] as const)('uses the template and shared fields for %s', async (lang) => {
-      const defaults = configuration();
-      const config = new ConfigService({
-        app: { nodeEnv: 'development' },
-        auth: { disabled: false },
-        otp: { ...defaults.otp, store, staticValue: '012345', charset: 'numeric', inResponse: true },
-        sms: {
-          ...defaults.sms,
-          messageTemplate: 'Register [{otp}].\\n\\nRegistration code: {otp}',
-          forgetMessageTemplate: 'Reset [{otp}].\\n\\nReset code: {otp}',
-        },
-        motcSms: {
-          ...defaults.motcSms,
-          table: 'MOTC_SMS_PushTable',
-          appId: 'old-app',
-          fromAddress: 'old-sender',
-          messageExpireMinutes: '9',
-          businessParam1: '',
-          businessParam2: '',
-        },
-      });
-      const usersDb = {
-        dialect: 'mssql',
-        query: jest.fn().mockResolvedValue([]),
-        execute: jest.fn().mockResolvedValue({ rowsAffected: 1, rows: [{ SeqNo: 42 }] }),
-      } as unknown as jest.Mocked<UsersDbService>;
-      const smsDb = {
-        query: jest.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([{ NextId: 42 }]),
-        execute: jest.fn().mockResolvedValue({ rowsAffected: 1, rows: [] }),
-      } as unknown as jest.Mocked<MotcSmsDbService>;
-      const emailDelivery = { sendOtpEmail: jest.fn() };
-      const otp =
-        store === 'legacy'
-          ? new MssqlOtpRepository(
-              usersDb,
-              new MotcPushOtpDeliveryAdapter(smsDb, config),
-              emailDelivery,
-              config,
-            )
-          : new MotcSmsOtpRepository(smsDb, emailDelivery, config);
-      const { ldap, devices } = makeService();
-      const audit = { lifecycle: jest.fn() } as unknown as AuditService;
-      const service = new OnboardingService(ldap, otp, devices, audit, config);
-
-      const result = await service[method]({ ...DTO, phonenumber: IDENTITY.phoneNumber }, lang);
-
-      const expectedBody =
-        method === 'validateUser'
-          ? 'Register [012345].\n\nRegistration code: 012345'
-          : 'Reset [012345].\n\nReset code: 012345';
-      expect(smsDb.execute).toHaveBeenCalledTimes(1);
-      expect(smsDb.execute).toHaveBeenCalledWith(
-        expect.stringContaining('INSERT INTO MOTC_SMS_PushTable'),
-        expect.objectContaining({
-          messageBody: expectedBody,
-          serviceId: 'Sanaad',
-          fromAddress: 'Sanaad',
-          applicationId: 'Sanaad',
-          messageExpireMinutes: '9',
-          toAddress: IDENTITY.phoneNumber,
-        }),
-      );
-      expect(result).toMatchObject({ status: 'success', requestid: '42', otp: '012345' });
-      expect(emailDelivery.sendOtpEmail).not.toHaveBeenCalled();
-      if (store === 'motc') {
-        const restarted = new MotcSmsOtpRepository(smsDb, emailDelivery, config);
-        const verify = { username: DTO.username, imei: DTO.imeinumber, requestId: '42', otp: '012345' };
-        smsDb.query.mockResolvedValue([
-          { MessageID: 42, DiffInSeconds: 10, MessageBody: expectedBody.replace('012345', '987654') },
-        ]);
-        await expect(restarted.verify(verify)).resolves.toBe(false);
-        smsDb.query.mockResolvedValue([
-          { MessageID: 42, DiffInSeconds: 10, MessageBody: expectedBody },
-        ]);
-        await expect(restarted.verify(verify)).resolves.toBe(true);
-        await expect(restarted.verify(verify)).resolves.toBe(false);
-      } else {
-        expect(usersDb.execute).toHaveBeenCalledWith(
-          expect.any(String),
-          expect.objectContaining({ requestType: 'USER_REG' }),
-        );
-      }
+describe('Onboarding security boundaries', () => {
+  it('never delivers an authentication OTP to caller-selected contacts', async () => {
+    const { service, otp, ldap } = makeService();
+    await service.sendOtp({
+      ...DTO,
+      phonenumber: 'untrusted-phone',
+      email: 'untrusted@example.test',
     });
-  });
-});
-
-describe.each(['validateUser', 'sendOtp'] as const)('OTP response for %s', (method) => {
-  it.each(['012345', 'A2B3C4'])('returns the exact OTP when enabled: %s', async (code) => {
-    const { service, otp } = makeService({ config: { 'otp.inResponse': true } });
-    otp.send.mockResolvedValue({
-      requestId: '12345',
-      status: 'NEW',
-      mode: 'SMS',
-      validForSeconds: 300,
-      otp: code,
-    });
-
-    const result = await service[method]({ ...DTO, phonenumber: IDENTITY.phoneNumber });
-
-    expect(result).toHaveProperty('otp', code);
-    expect(result.requestid).toBe('12345');
-    expect(safePreview(result)).toHaveProperty('otp', '******');
-    expect(JSON.stringify(safePreview(result))).not.toContain(`"otp":"${code}"`);
-    expect(result).toHaveProperty('otp', code);
-  });
-
-  it.each([undefined, false, 'true'])('requires boolean true: %s', async (flag) => {
-    const { service, otp } = makeService({ config: { 'otp.inResponse': flag } });
-    otp.send.mockResolvedValue({
-      requestId: '12345',
-      status: 'NEW',
-      mode: 'SMS',
-      validForSeconds: 300,
-      otp: '012345',
-    });
-
-    expect(await service[method](DTO)).not.toHaveProperty('otp');
-  });
-
-  it('omits the OTP in production even if the store returns one', async () => {
-    const { service, otp } = makeService({
-      config: { 'otp.inResponse': true, 'app.nodeEnv': 'production' },
-    });
-    otp.send.mockResolvedValue({
-      requestId: '12345',
-      status: 'NEW',
-      mode: 'SMS',
-      validForSeconds: 300,
-      otp: '012345',
-    });
-
-    expect(await service[method](DTO)).not.toHaveProperty('otp');
-  });
-
-  it('returns a pending email OTP without changing the request id or status', async () => {
-    const { service, otp } = makeService({ config: { 'otp.inResponse': true } });
-    otp.send.mockResolvedValue({
-      requestId: '77',
-      status: 'PENDING',
-      mode: 'Email',
-      validForSeconds: 120,
-      otp: '000123',
-    });
-
-    expect(await service[method]({ ...DTO, email: IDENTITY.email })).toMatchObject({
-      status: 'success',
-      requestid: '77',
-      otp: '000123',
-    });
-  });
-
-  it('does not invent an OTP for the auth-disabled bypass', async () => {
-    const { service, otp } = makeService({
-      config: { 'otp.inResponse': true, 'auth.disabled': true },
-    });
-
-    expect(await service[method](DTO)).not.toHaveProperty('otp');
-    expect(otp.send).not.toHaveBeenCalled();
-  });
-
-  it('does not turn a delivery failure into a successful OTP response', async () => {
-    const { service, otp } = makeService({ config: { 'otp.inResponse': true } });
-    otp.send.mockRejectedValue(new Error('Delivery unavailable'));
-
-    await expect(service[method](DTO)).rejects.toThrow('Delivery unavailable');
-  });
-});
-
-describe.each(['en', 'ar'] as const)('Initiate original contacts with lang=%s', (lang) => {
-  it.each(['Exist', 'New', 'Pending'] as const)(
-    'returns original contacts beside unchanged masked fields for %s in production',
-    async (phase) => {
-      const { service, otp, devices } = makeService({ config: { 'app.nodeEnv': 'production' } });
-      if (phase === 'Exist') devices.find.mockResolvedValue({ mpinSet: true, status: 'Active' });
-      if (phase === 'Pending') {
-        devices.find.mockResolvedValue({ mpinSet: false, status: 'Inactive' });
-        otp.send.mockResolvedValue({
-          requestId: '311',
-          status: 'PENDING',
-          mode: 'SMS',
-          validForSeconds: 240,
-        });
-      }
-
-      const result = await service.validateUser(DTO, lang);
-
-      expect(result).toMatchObject({
-        status: 'success',
-        vflag: phase,
-        email: 'MK****@hamad.qa',
-        employeephonenumber: 'XXXXX169',
-        emailunmasked: IDENTITY.email,
-        employeephonenumberunmasked: IDENTITY.phoneNumber,
-      });
-      expect(safePreview(result)).toMatchObject({
-        email: 'MK****@hamad.qa',
-        employeephonenumber: 'XXXXX169',
-        emailunmasked: '******',
-        employeephonenumberunmasked: '******',
-      });
-      expect(JSON.stringify(safePreview(result))).not.toContain(IDENTITY.email);
-      expect(JSON.stringify(safePreview(result))).not.toContain(IDENTITY.phoneNumber);
-      expect(result).toHaveProperty('emailunmasked', IDENTITY.email);
-      expect(result).toHaveProperty('employeephonenumberunmasked', IDENTITY.phoneNumber);
-      if (phase === 'Exist') expect(otp.send).not.toHaveBeenCalled();
-      else {
-        expect(otp.send).toHaveBeenCalledWith(
-          expect.objectContaining({ email: IDENTITY.email, phoneNumber: IDENTITY.phoneNumber }),
-        );
-      }
-    },
-  );
-});
-
-it('redacts original contact fields recursively without changing the source', () => {
-  const contacts = Object.freeze({
-    emailunmasked: IDENTITY.email,
-    employeephonenumberunmasked: IDENTITY.phoneNumber,
-  });
-
-  expect(safePreview({ rows: [contacts] })).toEqual({
-    rows: [{ emailunmasked: '******', employeephonenumberunmasked: '******' }],
-  });
-  expect(contacts.emailunmasked).toBe(IDENTITY.email);
-  expect(contacts.employeephonenumberunmasked).toBe(IDENTITY.phoneNumber);
-});
-
-it('preserves the original contact format and omits unavailable values in JSON', async () => {
-  const { service, devices } = makeService({
-    identity: { email: 'Mixed.Case@example.test', phoneNumber: ' +974 50 00 06 54 ' },
-  });
-  devices.find.mockResolvedValue({ mpinSet: true, status: 'Active' });
-
-  const result = await service.validateUser(DTO);
-  expect(result).toHaveProperty('emailunmasked', 'Mixed.Case@example.test');
-  expect(result).toHaveProperty('employeephonenumberunmasked', ' +974 50 00 06 54 ');
-
-  const missing = makeService({ identity: { email: undefined, phoneNumber: undefined } });
-  missing.devices.find.mockResolvedValue({ mpinSet: true, status: 'Active' });
-  const body = JSON.parse(JSON.stringify(await missing.service.validateUser(DTO)));
-  expect(body).not.toHaveProperty('emailunmasked');
-  expect(body).not.toHaveProperty('employeephonenumberunmasked');
-});
-
-describe('OnboardingService.validateUser (reworked initiate, 2026-09-03)', () => {
-  it('rejects a username absent from the employee view without touching the device table', async () => {
-    const { service, otp, devices } = makeService({
-      identity: { isEmployee: false, roles: [] },
-      config: { 'otp.inResponse': true },
-    });
-
-    const res = await service.validateUser(DTO);
-
-    expect(res).toEqual({ status: 'error', message: 'Invalid Username.' });
-    expect(devices.find).not.toHaveBeenCalled();
-    expect(devices.bind).not.toHaveBeenCalled();
-    expect(otp.send).not.toHaveBeenCalled();
-  });
-
-  it('existing user (device registered with MPIN): masked data from both tables, vflag=Exist, NO OTP', async () => {
-    const { service, otp, devices } = makeService({ config: { 'otp.inResponse': true } });
-    devices.find.mockResolvedValue({ mpinSet: true, status: 'Active' });
-
-    const res = await service.validateUser(DTO);
-
-    expect(res).toMatchObject({
-      status: 'success',
-      employeeusername: 'MKHOJA',
-      employeename: IDENTITY.employeeName,
-      employeenumber: '011759',
-      jobname: IDENTITY.jobName,
-      email: 'MK****@hamad.qa',
-      department: IDENTITY.department,
-      employeephonenumber: 'XXXXX169',
-      devicestatus: 'Active',
-      newuser: 'No',
-      vflag: 'Exist',
-      employeeflag: 'Yes',
-    });
-    expect(res.requestid).toBeUndefined();
-    expect(res).not.toHaveProperty('otp');
-    expect(res.otpmode).toBeUndefined();
-    expect(otp.send).not.toHaveBeenCalled();
-    expect(devices.bind).not.toHaveBeenCalled();
-  });
-
-  it('new device: creates the registration (Inactive) and sends the OTP (vflag=New)', async () => {
-    const { service, otp, devices } = makeService();
-    devices.find.mockResolvedValue(undefined);
-
-    const res = await service.validateUser(DTO);
-
-    expect(devices.bind).toHaveBeenCalledWith({
-      username: 'MKHOJA',
-      imei: 'imei-1',
-      platform: 'Android',
-      deviceModel: 'SM-G965F',
-      osVersion: '13',
-      department: 'Heart Hospital',
-    });
+    expect(ldap.validate).toHaveBeenCalled();
     expect(otp.send).toHaveBeenCalledWith(
       expect.objectContaining({
-        username: 'MKHOJA',
-        phoneNumber: '55372169',
-        email: 'MKHOJA@hamad.qa',
-        imei: 'imei-1',
+        phoneNumber: IDENTITY.phoneNumber,
+        email: IDENTITY.email,
         purpose: 'ONBOARDING',
-        appVersion: '1.0.0',
       }),
     );
-    expect(res).toMatchObject({
-      status: 'success',
-      message: 'OTP sent successfully',
-      newuser: 'Yes',
-      vflag: 'New',
-      otpmode: 'SMS',
-      elapsedtimeinmins: 5,
-      requestid: '12345',
-      employeephonenumber: 'XXXXX169',
-      email: 'MK****@hamad.qa',
-    });
   });
 
-  it.each([
-    ['31141206', 'XXXXX206'],
-    ['0097567534123', 'XXXXXXXXXX123'],
-    ['55372169', 'XXXXX169'],
-    ['+974 55 12 34', '+XXX XX X2 34'],
-    [' 0097567534123 ', 'XXXXXXXXXX123'],
-    ['123', 'XXX'],
-    ['12', 'XX'],
-    ['+12', '+XX'],
-    ['', undefined],
-    [undefined, undefined],
-  ])('shows only the last three phone digits in the response: %s', async (phoneNumber, expected) => {
-    const { service, otp } = makeService({ identity: { phoneNumber } });
+  it.each(['new', 'existing', 'unknown', 'pending'] as const)(
+    'returns the masked contact and OTP state (as on main) for %s users',
+    async (kind) => {
+      const { service, otp, devices } = makeService({
+        identity: { isEmployee: kind !== 'unknown' },
+      });
+      if (kind === 'existing') devices.find.mockResolvedValue({ mpinSet: true, status: 'Active' });
+      if (kind === 'pending')
+        otp.send.mockResolvedValue({
+          requestId: REQUEST_ID,
+          status: 'PENDING',
+          mode: 'Email',
+          validForSeconds: 120,
+        });
+      const result = await service.validateUser(DTO);
+      expect(result).toEqual({
+        status: 'success',
+        message: GENERIC,
+        requestid: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/),
+        ...INITIATE_EXTRA[kind],
+      });
+      for (const key of PII_FIELDS) expect(result).not.toHaveProperty(key);
+      if (kind === 'unknown') {
+        for (const key of Object.keys(INITIATE_EXTRA.new)) expect(result).not.toHaveProperty(key);
+        expect(devices.bind).not.toHaveBeenCalled();
+      }
+      if (kind === 'existing' || kind === 'unknown') expect(otp.send).not.toHaveBeenCalled();
+    },
+  );
 
-    const res = await service.validateUser(DTO);
-
-    expect(res.employeephonenumber).toBe(expected);
-    expect(otp.send).toHaveBeenCalledWith(expect.objectContaining({ phoneNumber }));
+  it('returns only the masked contact on initiate, and none of it on send-otp', async () => {
+    const { service } = makeService();
+    const initiate = await service.validateUser(DTO);
+    expect(JSON.stringify(initiate)).not.toContain(IDENTITY.email);
+    expect(JSON.stringify(initiate)).not.toContain(IDENTITY.phoneNumber);
+    const sent = await service.sendOtp(DTO);
+    for (const key of Object.keys(INITIATE_EXTRA.new)) expect(sent).not.toHaveProperty(key);
   });
 
-  it('valid unused OTP already exists: keeps it and answers vflag=Pending with remaining minutes', async () => {
-    const { service, otp, devices } = makeService();
-    devices.find.mockResolvedValue({ mpinSet: false, status: 'Inactive' });
-    otp.send.mockResolvedValue({
-      requestId: '311',
-      status: 'PENDING',
-      mode: 'SMS',
-      validForSeconds: 240,
-    });
-
-    const res = await service.validateUser(DTO);
-
-    expect(res).toMatchObject({
-      status: 'success',
-      message: 'An OTP was already sent and is still valid',
-      newuser: 'Yes',
-      vflag: 'Pending',
-      otpmode: 'SMS',
-      elapsedtimeinmins: 4,
-      requestid: '311',
-      employeephonenumber: 'XXXXX169',
-    });
+  it('omits a contact channel the directory does not have', async () => {
+    const { service } = makeService({ identity: { phoneNumber: undefined } });
+    const result = await service.validateUser(DTO);
+    expect(result.email).toBe('em******@example.test');
+    expect(result).not.toHaveProperty('employeephonenumber');
   });
 
-  it('localizes the messages when lang=ar (header/query)', async () => {
+  it('creates an inactive registration before sending the onboarding OTP', async () => {
     const { service, devices, otp } = makeService();
-    devices.find.mockResolvedValue(undefined);
-
-    const sent = await service.validateUser(DTO, 'ar');
-    expect(sent.message).toBe('تم إرسال رمز التحقق بنجاح');
-    expect(otp.send).toHaveBeenCalledWith(expect.objectContaining({ lang: 'ar' }));
-
-    const { service: rejecting } = makeService({ identity: { isEmployee: false, roles: [] } });
-    const rejected = await rejecting.validateUser(DTO, 'ar');
-    expect(rejected).toEqual({ status: 'error', message: 'اسم المستخدم غير صحيح.' });
+    await service.validateUser(DTO);
+    expect(devices.bind).toHaveBeenCalledWith({
+      username: DTO.username,
+      imei: DTO.imeinumber,
+      platform: DTO.platform,
+      deviceModel: DTO.devicemodel,
+      osVersion: DTO.osversion,
+      department: IDENTITY.facility,
+    });
+    expect(otp.send).toHaveBeenCalledWith(
+      expect.objectContaining({ purpose: 'ONBOARDING', imei: DTO.imeinumber }),
+    );
   });
 
-  it('registered device WITHOUT an MPIN: no re-bind, OTP still sent', async () => {
-    const { service, otp, devices } = makeService();
+  it('does not re-bind a registered device without an MPIN', async () => {
+    const { service, devices, otp } = makeService();
     devices.find.mockResolvedValue({ mpinSet: false, status: 'Inactive' });
-
-    const res = await service.validateUser(DTO);
-
+    await service.validateUser(DTO);
     expect(devices.bind).not.toHaveBeenCalled();
     expect(otp.send).toHaveBeenCalledTimes(1);
-    expect(res).toMatchObject({
-      newuser: 'Yes',
-      vflag: 'New',
-      requestid: '12345',
-      devicestatus: 'Inactive',
-    });
   });
 
-  it('reports otpmode=Email when the OTP store used the email channel', async () => {
-    const { service, otp, devices } = makeService({ identity: { phoneNumber: undefined } });
-    devices.find.mockResolvedValue(undefined);
-    otp.send.mockResolvedValue({
-      requestId: '77',
-      status: 'NEW',
-      mode: 'Email',
-      validForSeconds: 300,
+  it('shares the resend budget between initiate and send-otp', async () => {
+    const { service, state, ldap } = makeService();
+    state.limit.mockRejectedValue(new Error('rate limited'));
+    await expect(service.validateUser(DTO)).rejects.toThrow('rate limited');
+    await expect(service.sendOtp(DTO)).rejects.toThrow('rate limited');
+    expect(state.limit).toHaveBeenNthCalledWith(1, 'otp-send', DTO.username, 1, 60);
+    expect(state.limit).toHaveBeenNthCalledWith(2, 'otp-send', DTO.username, 1, 60);
+    expect(ldap.validate).not.toHaveBeenCalled();
+  });
+
+  it('fails closed on a delivery or state-store failure', async () => {
+    const { service, otp } = makeService();
+    otp.send.mockRejectedValue(new Error('Unavailable'));
+    await expect(service.validateUser(DTO)).rejects.toThrow('Unavailable');
+  });
+});
+
+describe.each(['validateUser', 'sendOtp'] as const)(
+  'OnboardingService.%s language and testing options',
+  (method) => {
+    it.each(['en', 'ar', undefined] as const)(
+      'uses directory email and preserves lang=%s',
+      async (lang) => {
+        const { service, otp } = makeService({ identity: { phoneNumber: undefined } });
+        await service[method](DTO, lang);
+        expect(otp.send).toHaveBeenCalledWith(
+          expect.objectContaining({ email: IDENTITY.email, lang: lang ?? 'en' }),
+        );
+      },
+    );
+
+    it('uses the same Arabic message for eligible and unknown users', async () => {
+      const valid = makeService();
+      const unknown = makeService({ identity: { isEmployee: false } });
+      expect((await valid.service[method](DTO, 'ar')).message).toBe(
+        (await unknown.service[method](DTO, 'ar')).message,
+      );
     });
 
-    const res = await service.validateUser(DTO);
+    it.each([undefined, false, 'true'])(
+      'does not expose a testing OTP for flag=%s',
+      async (flag) => {
+        const { service, otp } = makeService({ config: { 'otp.inResponse': flag } });
+        otp.send.mockResolvedValue({
+          requestId: REQUEST_ID,
+          status: 'NEW',
+          mode: 'SMS',
+          validForSeconds: 300,
+          otp: '012345',
+        });
+        expect(await service[method](DTO)).not.toHaveProperty('otp');
+      },
+    );
 
-    expect(res).toMatchObject({
-      vflag: 'New',
-      otpmode: 'Email',
-      requestid: '77',
-      employeephonenumber: undefined,
-      email: 'MK****@hamad.qa',
+    it('redacts an explicitly enabled local testing OTP', async () => {
+      const { service, otp } = makeService({ config: { 'otp.inResponse': true } });
+      otp.send.mockResolvedValue({
+        requestId: REQUEST_ID,
+        status: 'NEW',
+        mode: 'SMS',
+        validForSeconds: 300,
+        otp: '012345',
+      });
+      const result = await service[method](DTO);
+      expect(result.otp).toBe('012345');
+      expect(safePreview(result)).toHaveProperty('otp', '******');
     });
+
+    it('never exposes the OTP in production even if a store returns it', async () => {
+      const { service, otp } = makeService({
+        config: { 'otp.inResponse': true, 'app.nodeEnv': 'production' },
+      });
+      otp.send.mockResolvedValue({
+        requestId: REQUEST_ID,
+        status: 'NEW',
+        mode: 'SMS',
+        validForSeconds: 300,
+        otp: '012345',
+      });
+      expect(await service[method](DTO)).not.toHaveProperty('otp');
+    });
+  },
+);
+
+describe('Enrollment authorization', () => {
+  it('issues proof only after consuming an onboarding OTP', async () => {
+    const { service, otp, state } = makeService();
+    const dto = { ...DTO, requestid: REQUEST_ID, otp: '012345' };
+    await expect(service.validateOtp(dto)).resolves.toEqual({
+      status: 'success',
+      message: 'OTP Validated successfully',
+      enrollmenttoken: GRANT,
+      expiresinseconds: 300,
+    });
+    expect(otp.verify).toHaveBeenCalledWith({
+      username: DTO.username,
+      imei: DTO.imeinumber,
+      requestId: REQUEST_ID,
+      otp: '012345',
+      purpose: 'ONBOARDING',
+    });
+    expect(state.issueEnrollment).toHaveBeenCalledWith(DTO.username, DTO.imeinumber);
+    expect(safePreview({ enrollmenttoken: GRANT })).toEqual({ enrollmenttoken: '******' });
+  });
+
+  it('does not issue proof after an invalid, expired, reused, or wrong-purpose OTP', async () => {
+    const { service, otp, state } = makeService();
+    otp.verify.mockResolvedValue(false);
+    await expect(
+      service.validateOtp({ ...DTO, requestid: REQUEST_ID, otp: 'wrong' }),
+    ).resolves.toEqual({ status: 'error', message: 'Invalid OTP' });
+    expect(state.issueEnrollment).not.toHaveBeenCalled();
+  });
+
+  it('does not report success if persisting the grant fails', async () => {
+    const { service, state } = makeService();
+    state.issueEnrollment.mockRejectedValue(new Error('Unavailable'));
+    await expect(
+      service.validateOtp({ ...DTO, requestid: REQUEST_ID, otp: '012345' }),
+    ).rejects.toThrow('Unavailable');
   });
 });

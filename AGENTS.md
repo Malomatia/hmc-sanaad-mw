@@ -126,14 +126,35 @@ message; previously it fell through to 500 "Internal server error" and read as
 a server bug. Oracle needs nothing here — every `P_ATTACHMENT*` parameter is a
 `BLOB`, not a `VARCHAR2`.
 
-## Users/Sanaad SQL Server DB (auth cycle + healthcheck)
+## Users/Sanaad DB — SQL Server or MySQL (auth cycle + healthcheck)
 
-A second database next to Oracle: the legacy Sanaad SQL Server, pooled by the
-global `MssqlService` (`core/database/mssql.module.ts`, `mssql` driver,
-`USERS_DB_*` env vars — see `.env.example`; `USERS_DB_DISABLED=true` skips the
-pool like `ORACLE_DISABLED`). It backs the auth cycle with the legacy tables
-and SQL from the client's service mapping, values bound as `@params` and
-mpin/otp params redacted from logs:
+A second database next to Oracle, injected as the abstract `UsersDbService`
+(`core/database/users-db/`). `USERS_DB_DRIVER=mssql|mysql` (default `mssql`)
+picks `MssqlUsersDbService` or `MysqlUsersDbService`; `USERS_DB_*` env vars —
+see `.env.example`. Repositories write `@name` binds on both engines (the
+MySQL driver rewrites them to positional `?`) and pick dialect-specific
+statements by `db.dialect`; mocks of `UsersDbService` must set `dialect`.
+
+On this branch the pentest auth state (`AuthStateService`: sessions, rate
+budgets, enrollment/reset grants — checked on EVERY authenticated request)
+and `SecureOtpRepository` run multi-statement, locking units:
+
+- SQL Server: one `BEGIN TRY … COMMIT` batch each, kept verbatim.
+- MySQL: `auth-state.mysql.ts` / `secure-otp.mysql.ts`, each unit a
+  `UsersDbService.transaction()` of single statements on one connection
+  (MySQL prepared statements are single-statement and multi-statement
+  queries stay disabled). `SELECT … FOR UPDATE` stands in for
+  `WITH (UPDLOCK, HOLDLOCK)`, `mysqlExact(col, bind)` for
+  `COLLATE Latin1_General_100_BIN2`. `users-db-mysql-auth.spec.ts` pins the
+  statement order per branch and fails on any T-SQL or unbound `@name` (MySQL
+  would silently read an unbound one as a NULL user variable).
+- `MssqlChallengeStore.consume` accepts only the 44-char base64 shape
+  `issue()` produces: the table also holds the auth nonces (`hF./hA./hR./hG./hB.`)
+  and the value comes from a client header.
+
+It backs the auth cycle with the legacy tables and SQL from the client's
+service mapping, values bound as `@params` and mpin/otp params redacted from
+logs:
 
 - `HMC_Sanad_DeviceRegn_tbl` — device binding (`DeviceRegistryPort`) and MPIN
   (`MpinStorePort`); MPIN stored **as received** (client pre-hashes) and

@@ -19,7 +19,7 @@ import { UsersDbService } from './users-db.service';
  * syntax — no T-SQL-only construct may leak through.
  */
 const T_SQL_ONLY =
-  /\bGETDATE\(|\bTOP\s+\d|\bOUTPUT\s+INSERTED|\bMERGE\b|\bIF\s+NOT\s+EXISTS|WITH\s*\(NOLOCK\)|\bISNULL\(|\bDATEADD\(|\bDATEDIFF\(|SWITCHOFFSET|TODATETIMEOFFSET/i;
+  /\bGETDATE\(|\bTOP\s+\d|\bOUTPUT\s+INSERTED|\bMERGE\b|\bIF\s+NOT\s+EXISTS|WITH\s*\(NOLOCK\)|\bISNULL\(|\bDATEADD\(|\bDATEDIFF\(|SWITCHOFFSET|TODATETIMEOFFSET|\bCOLLATE\b|\bUPDLOCK\b|BEGIN\s+TRY|@@ROWCOUNT/i;
 
 function mysqlDb() {
   return {
@@ -71,6 +71,16 @@ describe('Users DB repositories on MySQL', () => {
 
     expect(db.execute.mock.calls[0][0]).toMatch(/DateFirstRegistered = NOW\(\), MPIN = @mpin/);
     expect(db.execute.mock.calls[1][0]).toMatch(/INSERT INTO HMC_Sanad_DeviceRegn_tbl/);
+    expectMysqlOnly(db);
+  });
+
+  it('MPIN verify() matches the device exactly without COLLATE', async () => {
+    const db = mysqlDb();
+    await new MssqlMpinStoreRepository(db).verify({ username: 'hmc1', imei: 'imei-1', mpin: 'h' });
+
+    expect(db.query.mock.calls[0][0]).toContain(
+      'IMEINumber = @imei AND CAST(IMEINumber AS BINARY) = @imei',
+    );
     expectMysqlOnly(db);
   });
 
@@ -183,13 +193,15 @@ describe('Users DB repositories on MySQL', () => {
 
     it('consumes with NOW() and upserts keys with ON DUPLICATE KEY UPDATE', async () => {
       const db = mysqlDb();
-      await new MssqlChallengeStore(db, 300000).consume('c', 'device-1');
+      await new MssqlChallengeStore(db, 300000).consume('A'.repeat(43) + '=', 'device-1');
       const keys = new MssqlAttestKeyStore(db);
       await keys.save({ keyId: 'k', username: 'device:1', publicKey: 'pk', signCount: 0 });
       await keys.updateSignCount('k', 1);
       await keys.bind('k', 'hmc1');
 
-      expect(db.execute.mock.calls[0][0]).toMatch(/ExpiresAt > NOW\(\) AND LoginID = @deviceId/);
+      expect(db.execute.mock.calls[0][0]).toMatch(
+        /CAST\(Challenge AS BINARY\) = @value[\s\S]*ExpiresAt > NOW\(\) AND LoginID = @deviceId/,
+      );
       expect(db.execute.mock.calls[1][0]).toMatch(
         /INSERT INTO HMC_Sanad_AttestKey_tbl[\s\S]*ON DUPLICATE KEY UPDATE/,
       );

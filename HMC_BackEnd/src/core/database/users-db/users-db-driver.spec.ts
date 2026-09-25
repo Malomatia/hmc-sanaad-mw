@@ -198,4 +198,75 @@ describe('MysqlUsersDbService', () => {
     expect(logged).not.toContain('HASHED-MPIN');
     expect(logged).not.toContain('123456');
   });
+
+  describe('transaction()', () => {
+    function withConnection() {
+      const pool = mysqlPool(jest.fn().mockResolvedValue([[], []]));
+      const connection = {
+        release: jest.fn(),
+        beginTransaction: jest.fn().mockResolvedValue(undefined),
+        commit: jest.fn().mockResolvedValue(undefined),
+        rollback: jest.fn().mockResolvedValue(undefined),
+        execute: jest.fn().mockResolvedValue([{ affectedRows: 1, insertId: 0 }, undefined]),
+      };
+      // The first borrow is connect()'s credential check; transactions get the next.
+      pool.getConnection
+        .mockResolvedValueOnce({ release: jest.fn() })
+        .mockResolvedValue(connection);
+      return { pool, connection, db: new MysqlUsersDbService(config()) };
+    }
+
+    it('runs every statement on one connection, commits, and returns it to the pool once', async () => {
+      const { pool, connection, db } = withConnection();
+      await db.query('SELECT 1'); // pool comes up (probe runs on the pool)
+      pool.execute.mockClear();
+
+      const result = await db.transaction(async (tx) => {
+        await tx.execute('UPDATE t SET a = @a WHERE b = @b', { a: 1, b: 'x' });
+        await tx.execute('UPDATE t SET c = 2');
+        return 'done';
+      });
+
+      expect(result).toBe('done');
+      expect(connection.beginTransaction).toHaveBeenCalledTimes(1);
+      expect(connection.execute).toHaveBeenCalledTimes(2);
+      expect(connection.execute.mock.calls[0][0]).toMatchObject({
+        sql: 'UPDATE t SET a = ? WHERE b = ?',
+        values: [1, 'x'],
+      });
+      expect(pool.execute).not.toHaveBeenCalled();
+      expect(connection.commit).toHaveBeenCalledTimes(1);
+      expect(connection.rollback).not.toHaveBeenCalled();
+      expect(connection.release).toHaveBeenCalledTimes(1);
+    });
+
+    it('rolls back and releases when the work throws', async () => {
+      const { connection, db } = withConnection();
+      const failure = new Error('business rule');
+
+      await expect(
+        db.transaction(async (tx) => {
+          await tx.execute('UPDATE t SET a = 1');
+          throw failure;
+        }),
+      ).rejects.toBe(failure);
+      expect(connection.rollback).toHaveBeenCalledTimes(1);
+      expect(connection.commit).not.toHaveBeenCalled();
+      expect(connection.release).toHaveBeenCalledTimes(1);
+    });
+
+    it('rolls back on a failed statement and reports it as a SqlQueryError', async () => {
+      const { connection, db } = withConnection();
+      connection.execute.mockRejectedValue(
+        Object.assign(new Error('Deadlock found'), { errno: 1213 }),
+      );
+
+      const failure = await db
+        .transaction((tx) => tx.execute('UPDATE t SET a = 1'))
+        .catch((e: unknown) => e);
+      expect(failure).toBeInstanceOf(SqlQueryError);
+      expect(connection.rollback).toHaveBeenCalledTimes(1);
+      expect(connection.release).toHaveBeenCalledTimes(1);
+    });
+  });
 });

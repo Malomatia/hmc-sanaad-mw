@@ -131,6 +131,8 @@ export class MpinService {
   async resetMpin(dto: ResetMpinRequestDto): Promise<StatusMessageDto> {
     const ctx = this.ctx(dto);
     if (!this.isValidMpin(dto.newmpin)) return this.policyError();
+    if (dto.enrollmenttoken !== undefined) return this.resetWithGrant(dto, ctx);
+    if (!dto.otp || !dto.requestid) return { status: 'error', message: 'Invalid OTP' };
     const otpOk = this.devBypass
       ? /^\d{4,8}$/.test(dto.otp)
       : await this.otp.verify({
@@ -158,6 +160,48 @@ export class MpinService {
         !(await this.state.resetMpin(dto.username, dto.imeinumber, dto.newmpin))
       ) {
         return { status: 'error', message: 'Invalid OTP' };
+      }
+    }
+
+    this.audit.lifecycle(AuthLifecycleEvent.MPIN_RESET, { ...ctx, status: 'success' });
+    return { status: 'success', message: 'MPIN Changed successfully' };
+  }
+
+  /**
+   * Reset authorized by the grant /auth/otp/validate issued for the
+   * forgot-MPIN OTP (that validation spent the OTP). The grant is claimed,
+   * the MPIN replaced and the sessions revoked atomically by AuthStateService.
+   */
+  private async resetWithGrant(
+    dto: ResetMpinRequestDto,
+    ctx: { username: string; deviceImei: string; platform?: string; appVersion?: string },
+  ): Promise<StatusMessageDto> {
+    const denied = { status: 'error', message: 'Invalid or expired reset authorization.' };
+    if (!/^[A-Za-z0-9_-]{43}$/.test(dto.enrollmenttoken ?? '')) return denied;
+    if (this.devBypass) {
+      this.logger.warn(`DEV bypass: MPIN reset for "${dto.username}" not persisted.`);
+    } else {
+      await this.state.limit(
+        'mpin-reset',
+        dto.username.trim().toUpperCase(),
+        this.mpin.maxAttempts,
+        300,
+      );
+      const identity = await this.ldap.validate({
+        username: dto.username,
+        imei: dto.imeinumber,
+        platform: dto.platform,
+      });
+      if (
+        !identity.isEmployee ||
+        !(await this.state.resetMpinWithGrant(
+          dto.username,
+          dto.imeinumber,
+          dto.newmpin,
+          dto.enrollmenttoken!,
+        ))
+      ) {
+        return denied;
       }
     }
 

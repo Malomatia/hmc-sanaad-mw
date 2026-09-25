@@ -43,6 +43,7 @@ function makeService(authDisabled = false) {
     limit: jest.fn().mockResolvedValue(undefined),
     enroll: jest.fn().mockResolvedValue(true),
     resetMpin: jest.fn().mockResolvedValue(true),
+    resetMpinWithGrant: jest.fn().mockResolvedValue(true),
   } as unknown as jest.Mocked<AuthStateService>;
   const config = {
     get: (key: string, fallback: unknown) => (key === 'auth.disabled' ? authDisabled : fallback),
@@ -193,5 +194,74 @@ describe('MPIN reset', () => {
     const { service, state } = makeService();
     state.resetMpin.mockResolvedValue(false);
     await expect(service.resetMpin(reset)).resolves.toMatchObject({ status: 'error' });
+  });
+
+  it('refuses a reset with neither an OTP nor a token, without spending anything', async () => {
+    const { service, otp, state } = makeService();
+    await expect(service.resetMpin({ ...DTO, newmpin: 'hash' })).resolves.toMatchObject({
+      status: 'error',
+    });
+    expect(otp.verify).not.toHaveBeenCalled();
+    expect(state.resetMpinWithGrant).not.toHaveBeenCalled();
+  });
+});
+
+describe('MPIN reset with the /auth/otp/validate token (forgot → validate → reset)', () => {
+  const reset = { ...DTO, newmpin: 'opaque-client-hash+/=', enrollmenttoken: GRANT };
+
+  it('uses the grant instead of re-checking the already spent OTP', async () => {
+    const { service, otp, state, store } = makeService();
+    await expect(service.resetMpin(reset)).resolves.toEqual({
+      status: 'success',
+      message: 'MPIN Changed successfully',
+    });
+    expect(otp.verify).not.toHaveBeenCalled();
+    expect(state.limit).toHaveBeenCalledWith('mpin-reset', 'HMC1', 5, 300);
+    expect(state.resetMpinWithGrant).toHaveBeenCalledWith(
+      DTO.username,
+      DTO.imeinumber,
+      reset.newmpin,
+      GRANT,
+    );
+    expect(state.resetMpin).not.toHaveBeenCalled();
+    expect(store.set).not.toHaveBeenCalled();
+  });
+
+  it('prefers the token when an OTP is sent as well', async () => {
+    const { service, otp, state } = makeService();
+    await service.resetMpin({ ...reset, otp: '012345', requestid: REQUEST_ID });
+    expect(otp.verify).not.toHaveBeenCalled();
+    expect(state.resetMpinWithGrant).toHaveBeenCalled();
+  });
+
+  it('refuses a malformed token without touching the database', async () => {
+    const { service, state } = makeService();
+    await expect(service.resetMpin({ ...reset, enrollmenttoken: 'short' })).resolves.toMatchObject({
+      status: 'error',
+    });
+    expect(state.limit).not.toHaveBeenCalled();
+    expect(state.resetMpinWithGrant).not.toHaveBeenCalled();
+  });
+
+  it('refuses an expired, reused or onboarding grant (the atomic reset rejects it)', async () => {
+    const { service, state } = makeService();
+    state.resetMpinWithGrant.mockResolvedValue(false);
+    await expect(service.resetMpin(reset)).resolves.toEqual({
+      status: 'error',
+      message: 'Invalid or expired reset authorization.',
+    });
+  });
+
+  it('rechecks employee eligibility before resetting', async () => {
+    const { service, ldap, state } = makeService();
+    ldap.validate.mockResolvedValue({ ...IDENTITY, isEmployee: false });
+    await expect(service.resetMpin(reset)).resolves.toMatchObject({ status: 'error' });
+    expect(state.resetMpinWithGrant).not.toHaveBeenCalled();
+  });
+
+  it('keeps the local bypass database-free', async () => {
+    const { service, state } = makeService(true);
+    await expect(service.resetMpin(reset)).resolves.toMatchObject({ status: 'success' });
+    expect(state.resetMpinWithGrant).not.toHaveBeenCalled();
   });
 });

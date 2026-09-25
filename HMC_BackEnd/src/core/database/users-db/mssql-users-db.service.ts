@@ -1,6 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import * as sql from 'mssql';
-import { UsersDbDiagnostics, UsersDbRawResult, UsersDbService } from './users-db.service';
+import {
+  UsersDbDiagnostics,
+  UsersDbRawResult,
+  UsersDbService,
+  UsersDbTransactionHandle,
+} from './users-db.service';
 
 /**
  * USERS_DB_DRIVER=mssql (default) — the legacy Sanaad SQL Server, through the
@@ -39,11 +44,25 @@ export class MssqlUsersDbService extends UsersDbService {
     await this.pool?.close();
   }
 
-  protected async rawQuery(
+  protected rawQuery(statement: string, params: Record<string, unknown>): Promise<UsersDbRawResult> {
+    return this.executeOn(this.pool!.request(), statement, params);
+  }
+
+  protected async begin(): Promise<UsersDbTransactionHandle> {
+    const transaction = new sql.Transaction(this.pool!);
+    await transaction.begin();
+    return {
+      run: (statement, params) => this.executeOn(new sql.Request(transaction), statement, params),
+      commit: () => transaction.commit(),
+      rollback: () => transaction.rollback(),
+    };
+  }
+
+  private async executeOn(
+    request: sql.Request,
     statement: string,
     params: Record<string, unknown>,
   ): Promise<UsersDbRawResult> {
-    const request = this.pool!.request();
     for (const [key, value] of Object.entries(params)) {
       request.input(key, value as sql.ISqlType | unknown);
     }

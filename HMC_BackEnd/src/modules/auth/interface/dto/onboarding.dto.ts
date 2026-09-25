@@ -5,7 +5,9 @@ import { StatusMessageDto } from './auth.dto';
 
 export class ValidateOtpResponseDto extends StatusMessageDto {
   @ApiPropertyOptional({
-    description: 'Single-use first-enrollment proof. Never use as an access token.',
+    description:
+      'Single-use proof for the next step: /auth/mpin/update (onboarding) or ' +
+      '/auth/mpin/update/reset (forgot MPIN). Never use as an access token.',
   })
   enrollmenttoken?: string;
 

@@ -9,6 +9,7 @@ const config = new ConfigService({
 const future = () => new Date(Date.now() + 3600000);
 function makeState() {
   const db = {
+    dialect: 'mssql',
     query: jest.fn().mockResolvedValue([{ Updated: 1, Created: 1, Rotated: 1, Allowed: 1 }]),
     execute: jest.fn().mockResolvedValue({ rowsAffected: 1, rows: [] }),
   } as unknown as jest.Mocked<UsersDbService>;
@@ -104,6 +105,47 @@ describe('Existing-table shared authentication state', () => {
     for (const prefix of ['hF.', 'hA.', 'hR.', 'hG.']) expect(sql).toContain(`LIKE '${prefix}%'`);
     expect(sql).not.toContain("LIKE 'hB.%'");
     assertSupportedSql(db);
+  });
+
+  it('resets with a grant: claims it, then updates only an Active row with an MPIN, then revokes', async () => {
+    const { state, db } = makeState();
+    const token = await state.issueEnrollment('testuser', 'device');
+    const key = db.execute.mock.calls[0][1]!.grantTokenKey;
+
+    await expect(state.resetMpinWithGrant('testuser', 'device', 'hash', token)).resolves.toBe(true);
+    const [sql, params] = db.query.mock.calls[0];
+    expect(params).toMatchObject({ grantTokenKey: key, username: 'TESTUSER', mpin: 'hash' });
+    expect(JSON.stringify(params)).not.toContain(token);
+    for (const text of [
+      'BEGIN TRANSACTION',
+      'UPDLOCK, HOLDLOCK',
+      'UsedAt IS NULL AND ExpiresAt > GETDATE()',
+      'IF @claimed = 1',
+      "Status = 'Active' AND MPIN IS NOT NULL",
+      'IF @updated = 1',
+      'ROLLBACK',
+    ])
+      expect(sql).toContain(text);
+    // An onboarding row (Inactive, no MPIN) must never be reachable this way.
+    expect(sql).not.toContain("Status = 'Inactive'");
+    for (const prefix of ['hF.', 'hA.', 'hR.', 'hG.']) expect(sql).toContain(`LIKE '${prefix}%'`);
+    assertSupportedSql(db);
+  });
+
+  it('reports a reset as failed when the grant was not claimed or the row did not qualify', async () => {
+    const { state, db } = makeState();
+    db.query.mockResolvedValue([{ Updated: 0 }]);
+    await expect(
+      state.resetMpinWithGrant('testuser', 'device', 'hash', 'g'.repeat(43)),
+    ).resolves.toBe(false);
+  });
+
+  it('refuses a malformed reset grant without SQL', async () => {
+    const { state, db } = makeState();
+    await expect(state.resetMpinWithGrant('testuser', 'device', 'hash', 'short')).resolves.toBe(
+      false,
+    );
+    expect(db.query).not.toHaveBeenCalled();
   });
 
   it('creates family/access/refresh nonces only after rechecking the active MPIN', async () => {

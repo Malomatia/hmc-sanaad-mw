@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { SQL_NOW, UsersDbService } from '@core/database/users-db/users-db.service';
+import { mysqlExact, SQL_NOW, UsersDbService } from '@core/database/users-db/users-db.service';
 import { MpinStorePort, SetMpinCommand, VerifyMpinQuery } from '../../domain/ports/mpin-store.port';
 
 /**
@@ -45,10 +45,15 @@ export class MssqlMpinStoreRepository implements MpinStorePort {
   }
 
   async verify(query: VerifyMpinQuery): Promise<boolean> {
+    // Exact, case-sensitive device match on both engines.
+    const imeiMatches =
+      this.db.dialect === 'mysql'
+        ? mysqlExact('IMEINumber', '@imei')
+        : 'IMEINumber COLLATE Latin1_General_100_BIN2 = @imei';
     const rows = await this.db.query(
       `SELECT DeviceID
          FROM HMC_Sanad_DeviceRegn_tbl
-        WHERE IMEINumber COLLATE Latin1_General_100_BIN2 = @imei AND LoginID = @username AND MPIN = @mpin AND Status = 'Active'`,
+        WHERE ${imeiMatches} AND LoginID = @username AND MPIN = @mpin AND Status = 'Active'`,
       { username: query.username, imei: query.imei, mpin: query.mpin },
     );
     return rows.length > 0;

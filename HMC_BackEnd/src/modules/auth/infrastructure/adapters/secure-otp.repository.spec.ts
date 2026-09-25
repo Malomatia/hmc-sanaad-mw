@@ -146,19 +146,15 @@ describe('Existing-table secure OTP state', () => {
     expect(email.sendOtpEmail).not.toHaveBeenCalled();
   });
 
-  it.each([
-    ['ONBOARDING', 'USER_REG'],
-    ['FORGOT_MPIN', 'FORGET_MPIN'],
-  ] as const)(
-    'verifies %s through existing purpose/status/attempt/time columns',
-    async (purpose, requestType) => {
+  it.each(['ONBOARDING', 'FORGOT_MPIN'] as const)(
+    'verifies %s through existing status/attempt/time columns',
+    async (purpose) => {
       const { repository, db, state } = makeRepository();
       await expect(repository.verify({ ...VERIFY, purpose })).resolves.toBe(true);
       const [sql, params] = db.query.mock.calls[0];
       for (const predicate of [
         'LoginID = @username',
         'DeviceIMEINumber COLLATE Latin1_General_100_BIN2 = @imei',
-        'RequestType = @requestType',
         "OTPStatus = '1'",
         'ISNULL(OTPValidationAttemptCount, 0) < @maximum',
         'OTPSentDateTime <= GETDATE()',
@@ -171,7 +167,6 @@ describe('Existing-table secure OTP state', () => {
       expect(params).toMatchObject({
         requestId: storedId(REQUEST_ID),
         username: 'TESTUSER',
-        requestType,
         maximum: 5,
         ttl: 300,
         otp: '012345',
@@ -180,6 +175,17 @@ describe('Existing-table secure OTP state', () => {
       assertExistingOtpSql(db);
     },
   );
+
+  // /auth/otp/validate is the shared OTP step of onboarding AND forgot-MPIN:
+  // it verifies with purpose ONBOARDING, so a code sent by /auth/mpin/forgot
+  // (stored as FORGET_MPIN) must still match.
+  it('does not tie verification to the RequestType the OTP was sent with', async () => {
+    const { repository, db } = makeRepository();
+    await repository.verify({ ...VERIFY, purpose: 'ONBOARDING' });
+    const [sql, params] = db.query.mock.calls[0];
+    expect(sql).not.toContain('RequestType');
+    expect(params).not.toHaveProperty('requestType');
+  });
 
   it.each([
     { rows: [] },

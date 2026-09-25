@@ -26,6 +26,9 @@ describe('AuthController', () => {
     setMpin: jest
       .fn()
       .mockResolvedValue({ status: 'success', message: 'MPIN updated successfully' }),
+    resetMpin: jest
+      .fn()
+      .mockResolvedValue({ status: 'success', message: 'MPIN Changed successfully' }),
   };
   const body = { username: 'hmc1', imeinumber: 'imei-1', platform: 'android' };
 
@@ -155,6 +158,39 @@ describe('AuthController', () => {
         .expect(400);
 
       expect(mpin.setMpin).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('POST /auth/mpin/update/reset', () => {
+    const reset = { ...body, newmpin: 'client-hashed-new-value' };
+
+    it('accepts the /auth/otp/validate token without otp or requestid', async () => {
+      const requestBody = { ...reset, enrollmenttoken: 'e'.repeat(43) };
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/mpin/update/reset')
+        .send(requestBody)
+        .expect(200)
+        .expect({ status: 'success', message: 'MPIN Changed successfully' });
+
+      expect(mpin.resetMpin).toHaveBeenCalledWith(expect.objectContaining(requestBody));
+    });
+
+    it('still accepts the one-call otp + requestid form', async () => {
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/mpin/update/reset')
+        .send({ ...reset, otp: '012345', requestid: 'r'.repeat(43) })
+        .expect(200);
+
+      expect(mpin.resetMpin).toHaveBeenCalled();
+    });
+
+    it('rejects a malformed token before calling the service', async () => {
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/mpin/update/reset')
+        .send({ ...reset, enrollmenttoken: 'not-a-token' })
+        .expect(400);
+
+      expect(mpin.resetMpin).not.toHaveBeenCalled();
     });
   });
 

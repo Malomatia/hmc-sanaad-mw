@@ -16,6 +16,7 @@ import {
   OtpEmailDeliveryPort,
 } from '../../domain/ports/otp-email-delivery.port';
 import { generateOtp } from './otp-generator.util';
+import { mysqlSecureOtp } from './secure-otp.mysql';
 
 @Injectable()
 export class SecureOtpRepository implements OtpPort {
@@ -41,8 +42,18 @@ export class SecureOtpRepository implements OtpPort {
     const requestType = cmd.purpose === 'ONBOARDING' ? 'USER_REG' : 'FORGET_MPIN';
     const scope = { requestId: this.storageId(requestId), username, imei: cmd.imei, requestType };
     const suppliedDate = cmd.appDatetime ? new Date(cmd.appDatetime) : new Date();
-    await this.db.execute(
-      `SET XACT_ABORT ON;
+    const stored = {
+      ...scope,
+      otp,
+      appName: cmd.appName || 'Sanaad',
+      appVersion: cmd.appVersion || '1.0.0',
+      appDatetime: Number.isNaN(suppliedDate.getTime()) ? new Date() : suppliedDate,
+      sendMode: cmd.phoneNumber ? 'SMS' : 'Email',
+    };
+    if (this.db.dialect === 'mysql') await mysqlSecureOtp.store(this.db, stored);
+    else
+      await this.db.execute(
+        `SET XACT_ABORT ON;
        BEGIN TRANSACTION;
        BEGIN TRY
          DECLARE @seqNo bigint;
@@ -66,15 +77,8 @@ export class SecureOtpRepository implements OtpPort {
          IF @@TRANCOUNT > 0 ROLLBACK;
          THROW;
        END CATCH;`,
-      {
-        ...scope,
-        otp,
-        appName: cmd.appName || 'Sanaad',
-        appVersion: cmd.appVersion || '1.0.0',
-        appDatetime: Number.isNaN(suppliedDate.getTime()) ? new Date() : suppliedDate,
-        sendMode: cmd.phoneNumber ? 'SMS' : 'Email',
-      },
-    );
+        stored,
+      );
     if (cmd.phoneNumber) {
       await this.delivery.sendOtpSms(
         cmd.phoneNumber,
@@ -86,14 +90,20 @@ export class SecureOtpRepository implements OtpPort {
     } else {
       await this.email.sendOtpEmail(cmd.email!, otp, cmd.purpose, cmd.lang ?? 'en');
     }
-    const activated = await this.db.execute(
-      `UPDATE HMC_RHAP_OTP_tbl SET OTPStatus = '1'
+    const activation = { ...scope, ttl: this.cfg.ttlSeconds };
+    const activated =
+      this.db.dialect === 'mysql'
+        ? await mysqlSecureOtp.activate(this.db, activation)
+        : (
+            await this.db.execute(
+              `UPDATE HMC_RHAP_OTP_tbl SET OTPStatus = '1'
         WHERE RequestId COLLATE Latin1_General_100_BIN2 = @requestId AND LoginID = @username
           AND DeviceIMEINumber COLLATE Latin1_General_100_BIN2 = @imei AND RequestType = @requestType
           AND OTPStatus = '0' AND OTPSentDateTime > DATEADD(SECOND, -@ttl, GETDATE())`,
-      { ...scope, ttl: this.cfg.ttlSeconds },
-    );
-    if (activated.rowsAffected !== 1)
+              activation,
+            )
+          ).rowsAffected;
+    if (activated !== 1)
       throw new ConflictException(
         'The verification request is no longer valid. Please request a new code.',
       );
@@ -119,26 +129,34 @@ export class SecureOtpRepository implements OtpPort {
       this.cfg.maxAttempts,
       this.cfg.ttlSeconds,
     );
-    const rows = await this.db.query<{ Verified: number }>(
-      `UPDATE HMC_RHAP_OTP_tbl
+    // No RequestType predicate: /auth/otp/validate is the shared OTP step of
+    // BOTH journeys (onboarding and forgot-MPIN), so it must accept a code
+    // sent by either. What a validated OTP can then do is decided by the
+    // registration row, not by the OTP: the grant it yields enrolls only an
+    // Inactive row without an MPIN, and resets only an Active row with one.
+    const params = {
+      requestId: this.storageId(cmd.requestId),
+      username: cmd.username.trim().toUpperCase(),
+      imei: cmd.imei,
+      otp: cmd.otp.trim(),
+      maximum: this.cfg.maxAttempts,
+      ttl: this.cfg.ttlSeconds,
+    };
+    const rows =
+      this.db.dialect === 'mysql'
+        ? await mysqlSecureOtp.verify(this.db, params)
+        : await this.db.query<{ Verified: number }>(
+            `UPDATE HMC_RHAP_OTP_tbl
           SET OTPValidationAttemptCount = ISNULL(OTPValidationAttemptCount, 0) + 1,
               OTPStatus = CASE WHEN LTRIM(RTRIM(CONVERT(nvarchar(256), OTPValue))) COLLATE Latin1_General_100_BIN2 = @otp
                                THEN '0' ELSE OTPStatus END
         OUTPUT CASE WHEN INSERTED.OTPStatus = '0' THEN 1 ELSE 0 END AS Verified
         WHERE RequestId COLLATE Latin1_General_100_BIN2 = @requestId AND LoginID = @username
-          AND DeviceIMEINumber COLLATE Latin1_General_100_BIN2 = @imei AND RequestType = @requestType
+          AND DeviceIMEINumber COLLATE Latin1_General_100_BIN2 = @imei
           AND OTPStatus = '1' AND ISNULL(OTPValidationAttemptCount, 0) < @maximum
           AND OTPSentDateTime <= GETDATE() AND OTPSentDateTime > DATEADD(SECOND, -@ttl, GETDATE())`,
-      {
-        requestId: this.storageId(cmd.requestId),
-        username: cmd.username.trim().toUpperCase(),
-        imei: cmd.imei,
-        requestType: cmd.purpose === 'ONBOARDING' ? 'USER_REG' : 'FORGET_MPIN',
-        otp: cmd.otp.trim(),
-        maximum: this.cfg.maxAttempts,
-        ttl: this.cfg.ttlSeconds,
-      },
-    );
+            params,
+          );
     return rows.length === 1 && rows[0].Verified === 1;
   }
 

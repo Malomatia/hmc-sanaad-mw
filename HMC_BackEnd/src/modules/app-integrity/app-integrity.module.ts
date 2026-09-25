@@ -1,7 +1,7 @@
 import { Logger, Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
-import { MssqlService } from '@core/database/mssql.service';
+import { UsersDbService } from '@core/database/users-db/users-db.service';
 import { AppIntegrityConfig } from '@core/config/configuration';
 import { AppIntegrityService } from './application/app-integrity.service';
 import {
@@ -46,8 +46,8 @@ import { AppIntegrityGuard } from './interface/app-integrity.guard';
     { provide: ATTEST_KEY_STORE_PORT, useExisting: MssqlAttestKeyStore },
     {
       provide: CHALLENGE_STORE_PORT,
-      inject: [MssqlService, ConfigService],
-      useFactory: (db: MssqlService, config: ConfigService) =>
+      inject: [UsersDbService, ConfigService],
+      useFactory: (db: UsersDbService, config: ConfigService) =>
         new MssqlChallengeStore(db, config.getOrThrow<AppIntegrityConfig>('appIntegrity').challengeTtlMs),
     },
     {

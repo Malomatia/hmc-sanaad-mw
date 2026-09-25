@@ -18,7 +18,7 @@ import { AuthController } from '@modules/auth/interface/auth.controller';
 import { AuthService } from '@modules/auth/application/auth.service';
 import { OnboardingService } from '@modules/auth/application/onboarding.service';
 import { MpinService } from '@modules/auth/application/mpin.service';
-import { MssqlService } from '../database/mssql.service';
+import { UsersDbService } from '../database/users-db/users-db.service';
 import { MotcSmsDbService } from '../database/motc-sms-db.service';
 import { ResponseInterceptor } from '../http/response.interceptor';
 import { AuditInterceptor } from './audit.interceptor';
@@ -306,7 +306,7 @@ describe('API database auditing', () => {
         { provide: MpinService, useValue: {} },
       ],
     })
-      .overrideProvider(MssqlService)
+      .overrideProvider(UsersDbService)
       .useValue({ isConfigured: () => true, execute })
       .overrideProvider(MotcSmsDbService)
       .useValue({})

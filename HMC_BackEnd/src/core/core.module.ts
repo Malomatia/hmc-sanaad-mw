@@ -5,7 +5,7 @@ import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
 import configuration from './config/configuration';
 import { envValidationSchema } from './config/env.validation';
 import { OracleModule } from './database/oracle.module';
-import { MssqlModule } from './database/mssql.module';
+import { SqlDatabasesModule } from './database/sql-databases.module';
 import { EmailModule } from './email/email.module';
 import { FirebaseModule } from './firebase/firebase.module';
 
@@ -46,7 +46,7 @@ import { DevConsoleModule } from './dev-console/dev-console.module';
     }),
     EventEmitterModule.forRoot(),
     OracleModule,
-    MssqlModule,
+    SqlDatabasesModule,
     EmailModule,
     FirebaseModule,
     AuthModule,

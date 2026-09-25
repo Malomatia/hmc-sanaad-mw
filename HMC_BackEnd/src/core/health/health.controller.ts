@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { App } from 'firebase-admin/app';
 import { OracleService } from '../database/oracle.service';
-import { MssqlService } from '../database/mssql.service';
+import { UsersDbService } from '../database/users-db/users-db.service';
 import { MotcSmsDbService } from '../database/motc-sms-db.service';
 import { FIREBASE_APP } from '../firebase/firebase-app';
 import { AppIntegrityConfig, FirebaseConfig } from '../config/configuration';
@@ -19,7 +19,7 @@ import { SkipIntegrity } from '../integrity/skip-integrity.decorator';
 export class HealthController {
   constructor(
     private readonly oracle: OracleService,
-    private readonly usersDb: MssqlService,
+    private readonly usersDb: UsersDbService,
     private readonly motcSmsDb: MotcSmsDbService,
     private readonly config: ConfigService,
     @Optional() @Inject(FIREBASE_APP) private readonly firebase?: App,
@@ -127,7 +127,7 @@ export class HealthController {
   @Public()
   @SkipEnvelope()
   @Get('users-db')
-  @ApiOperation({ summary: 'Users DB (SQL Server) connectivity test', operationId: 'health_users_db' })
+  @ApiOperation({ summary: 'Users DB (SQL Server or MySQL, per USERS_DB_DRIVER) connectivity test', operationId: 'health_users_db' })
   @ApiOkResponse({ description: 'Connectivity diagnostics (status=ok when connected).' })
   async usersDbHealth() {
     const diagnostics = await this.usersDb.diagnose();

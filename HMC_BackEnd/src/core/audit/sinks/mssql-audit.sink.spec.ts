@@ -19,6 +19,7 @@ const RECORD: AuditRecord = {
 
 function makeSink() {
   const db = {
+    dialect: 'mssql',
     isConfigured: jest.fn().mockReturnValue(true),
     execute: jest.fn().mockResolvedValue({ rowsAffected: 1, rows: [] }),
   } as unknown as jest.Mocked<UsersDbService>;

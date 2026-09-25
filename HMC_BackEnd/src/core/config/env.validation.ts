@@ -32,9 +32,15 @@ export const envValidationSchema = Joi.object({
   ORACLE_THICK_MODE: Joi.boolean().default(true),
   ORACLE_CLIENT_LIB_DIR: Joi.string().allow('').default(''),
 
-  // Users/Sanaad SQL Server DB (auth cycle: device/MPIN/OTP + API-1 tables)
+  // Users/Sanaad DB (auth cycle: device/MPIN/OTP + API-1 tables). The driver
+  // is not restricted here: an unsupported value must leave the DB
+  // unconfigured (503 naming USERS_DB_DRIVER), not stop the whole API booting.
+  USERS_DB_DRIVER: Joi.string().allow('').default('mssql'),
   USERS_DB_HOST: Joi.string().allow('').default(''),
-  USERS_DB_PORT: Joi.number().default(1433),
+  // No default: validated defaults are written back into process.env, and a
+  // fixed 1433 would override the driver's own (3306 for mysql). Empty is
+  // allowed because compose passes `${USERS_DB_PORT:-}`.
+  USERS_DB_PORT: Joi.number().allow(''),
   USERS_DB_NAME: Joi.string().allow('').default(''),
   USERS_DB_USER: Joi.string().allow('').default(''),
   USERS_DB_PASSWORD: Joi.string().allow('').default(''),

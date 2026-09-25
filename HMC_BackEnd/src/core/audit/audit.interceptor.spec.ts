@@ -307,7 +307,7 @@ describe('API database auditing', () => {
       ],
     })
       .overrideProvider(UsersDbService)
-      .useValue({ isConfigured: () => true, execute })
+      .useValue({ dialect: 'mssql', isConfigured: () => true, execute })
       .overrideProvider(MotcSmsDbService)
       .useValue({})
       .compile();

@@ -63,7 +63,7 @@ describe('notifications on an incomplete deployment', () => {
         NotificationsService,
         RequestNotifier,
         MssqlDeviceTokenRepository,
-        { provide: UsersDbService, useValue: { query, execute } },
+        { provide: UsersDbService, useValue: { dialect: 'mssql', query, execute } },
         { provide: DEVICE_TOKEN_STORE_PORT, useExisting: MssqlDeviceTokenRepository },
         { provide: REQUEST_LOOKUP_PORT, useValue: lookup },
         // No credential configured -> the module binds the no-op sender.

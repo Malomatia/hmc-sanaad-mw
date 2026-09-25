@@ -20,7 +20,11 @@ const OTP_CFG: OtpConfig = {
 };
 
 function makeRepo(cfg: Partial<OtpConfig> = {}) {
-  const db = { query: jest.fn(), execute: jest.fn() } as unknown as jest.Mocked<UsersDbService>;
+  const db = {
+    dialect: 'mssql',
+    query: jest.fn(),
+    execute: jest.fn(),
+  } as unknown as jest.Mocked<UsersDbService>;
   const delivery: jest.Mocked<OtpDeliveryPort> = {
     sendOtpSms: jest.fn().mockResolvedValue(undefined),
   };

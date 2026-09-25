@@ -14,6 +14,7 @@ const CFG: AppLaunchConfig = {
 
 function makeService(enabled: boolean, cfg: Partial<AppLaunchConfig> = {}) {
   const db = {
+    dialect: 'mssql',
     isEnabled: jest.fn().mockReturnValue(enabled),
     query: jest.fn(),
   } as unknown as jest.Mocked<UsersDbService>;

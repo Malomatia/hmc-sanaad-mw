@@ -22,6 +22,7 @@ describe('device-token store when the deployment is incomplete', () => {
 
   function make(err: unknown) {
     const db = {
+      dialect: 'mssql',
       query: jest.fn().mockRejectedValue(err),
       execute: jest.fn().mockRejectedValue(err),
     } as unknown as UsersDbService;

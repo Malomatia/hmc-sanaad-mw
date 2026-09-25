@@ -3,7 +3,11 @@ import { MssqlMpinStoreRepository } from './mssql-mpin-store.repository';
 import { MssqlDeviceRegistryRepository } from './mssql-device-registry.repository';
 
 function makeDb() {
-  return { query: jest.fn(), execute: jest.fn() } as unknown as jest.Mocked<UsersDbService>;
+  return {
+    dialect: 'mssql',
+    query: jest.fn(),
+    execute: jest.fn(),
+  } as unknown as jest.Mocked<UsersDbService>;
 }
 
 describe('MssqlMpinStoreRepository', () => {

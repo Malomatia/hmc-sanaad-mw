@@ -1,5 +1,9 @@
 import { BadRequestException } from '@nestjs/common';
-import { assertOracleReadOnlySelect, assertReadOnlySelect } from './sql-console.util';
+import {
+  assertMysqlReadOnlySelect,
+  assertOracleReadOnlySelect,
+  assertReadOnlySelect,
+} from './sql-console.util';
 
 describe('assertReadOnlySelect', () => {
   const ok = (sql: string) => expect(assertReadOnlySelect(sql)).toBe(sql.trim());
@@ -96,5 +100,42 @@ describe('assertOracleReadOnlySelect', () => {
   it('still rejects DML like the shared check', () => {
     rejected('DELETE FROM XXHMC_SND_ABSENCE_V');
     rejected('SELECT * FROM t; DROP TABLE t');
+  });
+});
+
+describe('assertMysqlReadOnlySelect', () => {
+  const ok = (sql: string) => expect(assertMysqlReadOnlySelect(sql)).toBe(sql.trim());
+  const rejected = (sql: string) =>
+    expect(() => assertMysqlReadOnlySelect(sql)).toThrow(BadRequestException);
+
+  it('accepts a plain SELECT with @ binds and LIMIT', () => {
+    ok('SELECT * FROM HMC_RHAP_OTP_tbl WHERE LoginID = @u ORDER BY SeqNo DESC LIMIT 5');
+  });
+
+  it('rejects a backslash escape that would end a string where T-SQL lexing does not', () => {
+    rejected("SELECT '\\'' INTO OUTFILE '/tmp/x' -- '");
+  });
+
+  it('rejects executable /*! */ comments, which MySQL runs', () => {
+    rejected("SELECT 1 /*! INTO OUTFILE '/tmp/x' */");
+  });
+
+  it.each([
+    'SELECT * FROM t FOR UPDATE',
+    'SELECT * FROM t FOR SHARE',
+    'SELECT * FROM t LOCK IN SHARE MODE',
+    'SELECT SLEEP(100)',
+    'SELECT BENCHMARK(1000000, MD5(1))',
+    "SELECT LOAD_FILE('/etc/passwd')",
+    "SELECT GET_LOCK('x', 10)",
+  ])('rejects %s', (sql) => rejected(sql));
+
+  it("does not false-positive on 'sleep(' inside a string literal", () => {
+    ok("SELECT * FROM t WHERE note = 'sleep(5)'");
+  });
+
+  it('still rejects DML and INTO like the shared check', () => {
+    rejected('DELETE FROM HMC_Sanad_DeviceToken_tbl');
+    rejected("SELECT * FROM t INTO OUTFILE '/tmp/x'");
   });
 });

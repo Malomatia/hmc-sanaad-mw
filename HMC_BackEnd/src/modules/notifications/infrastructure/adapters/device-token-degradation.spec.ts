@@ -1,5 +1,5 @@
-import { MssqlService } from '@core/database/mssql.service';
-import { MssqlQueryError, MssqlUnavailableException } from '@core/database/mssql.error';
+import { UsersDbService } from '@core/database/users-db/users-db.service';
+import { SqlQueryError, SqlUnavailableException } from '@core/database/sql.error';
 import { MssqlDeviceTokenRepository } from './mssql-device-token.repository';
 
 /**
@@ -17,14 +17,15 @@ describe('device-token store when the deployment is incomplete', () => {
     const driverError = Object.assign(new Error("Invalid object name 'HMC_Sanad_DeviceToken_tbl'."), {
       number: 208,
     });
-    return MssqlQueryError.from(driverError);
+    return SqlQueryError.from(driverError);
   };
 
   function make(err: unknown) {
     const db = {
+      dialect: 'mssql',
       query: jest.fn().mockRejectedValue(err),
       execute: jest.fn().mockRejectedValue(err),
-    } as unknown as MssqlService;
+    } as unknown as UsersDbService;
     return new MssqlDeviceTokenRepository(db);
   }
 
@@ -52,7 +53,7 @@ describe('device-token store when the deployment is incomplete', () => {
 
   describe('Users DB unavailable', () => {
     it('is also a warning, not a failure', async () => {
-      const repo = make(new MssqlUnavailableException('Users DB is disabled.'));
+      const repo = make(new SqlUnavailableException('Users DB is disabled.'));
 
       await expect(repo.save(TOKEN)).resolves.toBeUndefined();
       await expect(repo.findByUsername('AIBRAHIM39')).resolves.toEqual([]);
@@ -60,7 +61,7 @@ describe('device-token store when the deployment is incomplete', () => {
   });
 
   it('does not touch the database when there is nothing to prune', async () => {
-    const db = { execute: jest.fn(), query: jest.fn() } as unknown as MssqlService;
+    const db = { execute: jest.fn(), query: jest.fn() } as unknown as UsersDbService;
 
     await new MssqlDeviceTokenRepository(db).removeDevices([]);
 
@@ -72,7 +73,7 @@ describe('device-token store when the deployment is incomplete', () => {
     // against SQL Server's 1700-byte key limit, which it warns can make an
     // insert fail. (LoginID, IMEINumber) is already uniquely indexed.
     const execute = jest.fn().mockResolvedValue(undefined);
-    const db = { execute, query: jest.fn() } as unknown as MssqlService;
+    const db = { execute, query: jest.fn() } as unknown as UsersDbService;
 
     await new MssqlDeviceTokenRepository(db).removeDevices([
       { username: 'AIBRAHIM39', imei: 'phone' },
@@ -86,7 +87,7 @@ describe('device-token store when the deployment is incomplete', () => {
 
   it('binds every identifier by name when pruning — never string-built SQL', async () => {
     const execute = jest.fn().mockResolvedValue(undefined);
-    const db = { execute, query: jest.fn() } as unknown as MssqlService;
+    const db = { execute, query: jest.fn() } as unknown as UsersDbService;
 
     await new MssqlDeviceTokenRepository(db).removeDevices([
       { username: "a'; DROP TABLE x --", imei: 'i1' },

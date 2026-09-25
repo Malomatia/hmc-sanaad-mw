@@ -144,11 +144,23 @@ export const DEFAULT_PRIVACY_POLICY_URL =
   'https://www.hamad.qa/EN/Sanad/Pages/Privacy-Policy.html';
 
 /**
- * Users/Sanaad SQL Server database - backs the auth cycle (device registration,
- * MPIN, OTP rows) and the API-1 downtime/app-update tables. Legacy tables:
+ * Users/Sanaad database - backs the auth cycle (device registration, MPIN, OTP
+ * rows) and the API-1 downtime/app-update tables. Legacy tables:
  * HMC_Sanad_DeviceRegn_tbl, HMC_RHAP_OTP_tbl, HMC_Sanad_AppDownTime_tbl, ...
  */
+export type UsersDbDriver = 'mssql' | 'mysql';
+
+export const USERS_DB_DRIVERS: readonly UsersDbDriver[] = ['mssql', 'mysql'];
+
+/** Port used when USERS_DB_PORT is unset or empty. */
+export const USERS_DB_DEFAULT_PORT: Record<UsersDbDriver, number> = { mssql: 1433, mysql: 3306 };
+
 export interface UsersDbConfig {
+  /**
+   * USERS_DB_DRIVER (default `mssql`). Anything else is kept verbatim and
+   * reported as unconfigured, never silently treated as SQL Server.
+   */
+  driver: string;
   host: string;
   port: number;
   database: string;
@@ -159,7 +171,7 @@ export interface UsersDbConfig {
   /** Per-request timeout (ms) - mirrors ORACLE_CALL_TIMEOUT_MS convention. */
   requestTimeoutMs: number;
   connectTimeoutMs: number;
-  /** TLS to the SQL Server (true unless the instance has no cert). */
+  /** TLS to the server (true unless the instance has no cert). */
   encrypt: boolean;
   /** Accept the server cert without CA validation (self-signed instances). */
   trustServerCertificate: boolean;
@@ -628,21 +640,29 @@ export default (): RootConfig => ({
     // diagnostics/logs/db-test surface.
     enabled: toBool(process.env.DIAGNOSTICS_ENABLED ?? 'false'),
   },
-  usersDb: {
-    host: process.env.USERS_DB_HOST ?? '',
-    port: Number(process.env.USERS_DB_PORT ?? 1433),
-    database: process.env.USERS_DB_NAME ?? '',
-    user: process.env.USERS_DB_USER ?? '',
-    password: process.env.USERS_DB_PASSWORD ?? '',
-    poolMin: Number(process.env.USERS_DB_POOL_MIN ?? 2),
-    poolMax: Number(process.env.USERS_DB_POOL_MAX ?? 10),
-    requestTimeoutMs: Number(process.env.USERS_DB_REQUEST_TIMEOUT_MS ?? 25000),
-    connectTimeoutMs: Number(process.env.USERS_DB_CONNECT_TIMEOUT_MS ?? 15000),
-    encrypt: toBool(process.env.USERS_DB_ENCRYPT ?? 'true'),
-    trustServerCertificate: toBool(process.env.USERS_DB_TRUST_SERVER_CERT ?? 'false'),
-    disabled: toBool(process.env.USERS_DB_DISABLED),
-    sqlConsoleEnabled: toBool(process.env.USERS_DB_SQL_ENABLED),
-  },
+  usersDb: (() => {
+    const driver = (process.env.USERS_DB_DRIVER || 'mssql').trim().toLowerCase();
+    const port = process.env.USERS_DB_PORT?.trim();
+    return {
+      driver,
+      host: process.env.USERS_DB_HOST ?? '',
+      // Empty counts as unset: compose passes `${USERS_DB_PORT:-}` through.
+      port: port
+        ? Number(port)
+        : (USERS_DB_DEFAULT_PORT[driver as UsersDbDriver] ?? USERS_DB_DEFAULT_PORT.mssql),
+      database: process.env.USERS_DB_NAME ?? '',
+      user: process.env.USERS_DB_USER ?? '',
+      password: process.env.USERS_DB_PASSWORD ?? '',
+      poolMin: Number(process.env.USERS_DB_POOL_MIN ?? 2),
+      poolMax: Number(process.env.USERS_DB_POOL_MAX ?? 10),
+      requestTimeoutMs: Number(process.env.USERS_DB_REQUEST_TIMEOUT_MS ?? 25000),
+      connectTimeoutMs: Number(process.env.USERS_DB_CONNECT_TIMEOUT_MS ?? 15000),
+      encrypt: toBool(process.env.USERS_DB_ENCRYPT ?? 'true'),
+      trustServerCertificate: toBool(process.env.USERS_DB_TRUST_SERVER_CERT ?? 'false'),
+      disabled: toBool(process.env.USERS_DB_DISABLED),
+      sqlConsoleEnabled: toBool(process.env.USERS_DB_SQL_ENABLED),
+    };
+  })(),
   motcSms: {
     host: process.env.MOTC_SMS_DB_HOST ?? '',
     port: Number(process.env.MOTC_SMS_DB_PORT ?? 9001),

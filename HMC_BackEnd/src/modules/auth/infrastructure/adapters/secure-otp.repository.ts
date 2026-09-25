@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { createHash, randomBytes } from 'node:crypto';
 import { AuthStateService } from '@core/auth/auth-state.service';
 import { OtpConfig } from '@core/config/configuration';
-import { MssqlService } from '@core/database/mssql.service';
+import { UsersDbService } from '@core/database/users-db/users-db.service';
 import {
   OtpPort,
   SendOtpCommand,
@@ -22,7 +22,7 @@ export class SecureOtpRepository implements OtpPort {
   private readonly cfg: OtpConfig;
 
   constructor(
-    private readonly db: MssqlService,
+    private readonly db: UsersDbService,
     private readonly state: AuthStateService,
     @Inject(OTP_DELIVERY_PORT) private readonly delivery: OtpDeliveryPort,
     @Inject(OTP_EMAIL_DELIVERY_PORT) private readonly email: OtpEmailDeliveryPort,

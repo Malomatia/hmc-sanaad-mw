@@ -1,5 +1,5 @@
 import { ConfigService } from '@nestjs/config';
-import { MssqlService } from '../database/mssql.service';
+import { UsersDbService } from '../database/users-db/users-db.service';
 import { AuthStateService } from './auth-state.service';
 import { MssqlChallengeStore } from '@modules/app-integrity/infrastructure/adapters/mssql-integrity-store.repository';
 
@@ -11,11 +11,11 @@ function makeState() {
   const db = {
     query: jest.fn().mockResolvedValue([{ Updated: 1, Created: 1, Rotated: 1, Allowed: 1 }]),
     execute: jest.fn().mockResolvedValue({ rowsAffected: 1, rows: [] }),
-  } as unknown as jest.Mocked<MssqlService>;
+  } as unknown as jest.Mocked<UsersDbService>;
   return { state: new AuthStateService(db, config), db };
 }
 
-function assertSupportedSql(db: jest.Mocked<MssqlService>) {
+function assertSupportedSql(db: jest.Mocked<UsersDbService>) {
   for (const [sql] of [...db.query.mock.calls, ...db.execute.mock.calls]) {
     expect(sql).not.toMatch(/HMC_Sanad_(Auth\w*|EnrollmentGrant)_tbl/);
     expect(sql).not.toMatch(/\b(CREATE|ALTER|DELETE|DROP)\b/i);

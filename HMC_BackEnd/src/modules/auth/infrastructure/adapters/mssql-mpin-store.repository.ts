@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { MssqlService } from '@core/database/mssql.service';
+import { SQL_NOW, UsersDbService } from '@core/database/users-db/users-db.service';
 import { MpinStorePort, SetMpinCommand, VerifyMpinQuery } from '../../domain/ports/mpin-store.port';
 
 /**
@@ -15,19 +15,20 @@ import { MpinStorePort, SetMpinCommand, VerifyMpinQuery } from '../../domain/por
  * The MPIN is stored AS RECEIVED (the mobile client pre-hashes it per the
  * framework doc) and compared with SQL equality — legacy-compatible with rows
  * the existing Sanaad app wrote, per the confirmed decision. Values are still
- * never logged (MssqlService redacts `mpin` params).
+ * never logged (UsersDbService redacts `mpin` params).
  */
 @Injectable()
 export class MssqlMpinStoreRepository implements MpinStorePort {
-  constructor(private readonly db: MssqlService) {}
+  constructor(private readonly db: UsersDbService) {}
 
   async set(cmd: SetMpinCommand): Promise<void> {
     // Setting the MPIN also activates the registration (client flow
     // 2026-09-03: initiate creates the row with MPIN NULL + Status
     // 'Inactive'; the MPIN update flips it to 'Active').
+    const now = SQL_NOW[this.db.dialect];
     const updated = await this.db.execute(
       `UPDATE HMC_Sanad_DeviceRegn_tbl
-          SET DateFirstRegistered = GETDATE(), MPIN = @mpin, Status = 'Active'
+          SET DateFirstRegistered = ${now}, MPIN = @mpin, Status = 'Active'
         WHERE LoginID = @username AND IMEINumber = @imei`,
       { username: cmd.username, imei: cmd.imei, mpin: cmd.mpin },
     );
@@ -37,7 +38,7 @@ export class MssqlMpinStoreRepository implements MpinStorePort {
     if (updated.rowsAffected === 0) {
       await this.db.execute(
         `INSERT INTO HMC_Sanad_DeviceRegn_tbl (LoginID, IMEINumber, MPIN, DateFirstRegistered, AddedDt, Status)
-         VALUES (@username, @imei, @mpin, GETDATE(), GETDATE(), 'Active')`,
+         VALUES (@username, @imei, @mpin, ${now}, ${now}, 'Active')`,
         { username: cmd.username, imei: cmd.imei, mpin: cmd.mpin },
       );
     }

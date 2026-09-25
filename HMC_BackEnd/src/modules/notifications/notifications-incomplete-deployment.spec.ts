@@ -3,8 +3,8 @@ import { APP_INTERCEPTOR } from '@nestjs/core';
 import { Test } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import request from 'supertest';
-import { MssqlService } from '@core/database/mssql.service';
-import { MssqlQueryError } from '@core/database/mssql.error';
+import { UsersDbService } from '@core/database/users-db/users-db.service';
+import { SqlQueryError } from '@core/database/sql.error';
 import { FIREBASE_APP } from '@core/firebase/firebase-app';
 import { NotificationsService } from './application/notifications.service';
 import { RequestNotifier } from './application/request-notifier.service';
@@ -46,7 +46,7 @@ describe('notifications on an incomplete deployment', () => {
 
   beforeAll(async () => {
     const missingTable = () =>
-      MssqlQueryError.from(
+      SqlQueryError.from(
         Object.assign(new Error("Invalid object name 'HMC_Sanad_DeviceToken_tbl'."), {
           number: 208,
         }),
@@ -63,7 +63,7 @@ describe('notifications on an incomplete deployment', () => {
         NotificationsService,
         RequestNotifier,
         MssqlDeviceTokenRepository,
-        { provide: MssqlService, useValue: { query, execute } },
+        { provide: UsersDbService, useValue: { dialect: 'mssql', query, execute } },
         { provide: DEVICE_TOKEN_STORE_PORT, useExisting: MssqlDeviceTokenRepository },
         { provide: REQUEST_LOOKUP_PORT, useValue: lookup },
         // No credential configured -> the module binds the no-op sender.
@@ -179,7 +179,7 @@ describe('worklist submission HTTP and device delivery', () => {
         NotificationsService,
         RequestNotifier,
         MssqlDeviceTokenRepository,
-        { provide: MssqlService, useValue: { query, execute: jest.fn() } },
+        { provide: UsersDbService, useValue: { query, execute: jest.fn() } },
         { provide: DEVICE_TOKEN_STORE_PORT, useExisting: MssqlDeviceTokenRepository },
         { provide: PUSH_SENDER_PORT, useValue: sender },
         {
@@ -262,7 +262,7 @@ describe('worklist submission HTTP and device delivery', () => {
 
   it('keeps successful submits working with a missing token table', async () => {
     query.mockRejectedValue(
-      MssqlQueryError.from(Object.assign(new Error('Invalid object name'), { number: 208 })),
+      SqlQueryError.from(Object.assign(new Error('Invalid object name'), { number: 208 })),
     );
     await submit();
     expect(send).not.toHaveBeenCalled();

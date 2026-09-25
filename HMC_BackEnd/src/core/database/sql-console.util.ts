@@ -81,6 +81,35 @@ export function assertOracleReadOnlySelect(text: string): string {
 }
 
 /**
+ * MySQL flavor (POST /diagnostics/users-db/sql when USERS_DB_DRIVER=mysql).
+ * The shared sanitizer follows T-SQL lexing, so two MySQL rules would let
+ * code hide from it and are refused outright: backslash escapes inside
+ * strings (`'\''` ends a string where T-SQL would not) and `/*! … *\/`
+ * comments, which MySQL EXECUTES. Locking reads and functions that stall the
+ * server or read its files are rejected on top of the shared denylist.
+ */
+export function assertMysqlReadOnlySelect(text: string): string {
+  if (text.includes('\\')) {
+    throw new BadRequestException('Backslashes are not allowed in the MySQL console.');
+  }
+  if (/\/\*[!+]/.test(text)) {
+    throw new BadRequestException('MySQL executable comments (/*! */) are not allowed.');
+  }
+  const original = assertReadOnlySelect(text);
+  const sanitized = sanitizeSqlForInspection(original);
+  const forbidden =
+    /\bfor\s+(update|share)\b|\block\s+in\s+share\s+mode\b|\b(sleep|benchmark|load_file|get_lock)\s*\(/i.exec(
+      sanitized,
+    );
+  if (forbidden) {
+    throw new BadRequestException(
+      `Statement contains "${forbidden[0].toUpperCase()}" — the console is read-only SELECT.`,
+    );
+  }
+  return original;
+}
+
+/**
  * Throws BadRequestException unless `text` is a single read-only SELECT/CTE.
  * Returns the original text (trimmed) for execution when it passes.
  */

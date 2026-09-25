@@ -1,7 +1,7 @@
 import { HttpException, HttpStatus, Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHmac, randomBytes, randomUUID } from 'node:crypto';
-import { MssqlService } from '../database/mssql.service';
+import { UsersDbService } from '../database/users-db/users-db.service';
 import { AuthConfig } from '../config/configuration';
 
 export const ENROLLMENT_TTL_SECONDS = 300;
@@ -20,7 +20,7 @@ export class AuthStateService {
   private readonly secret: string;
 
   constructor(
-    private readonly db: MssqlService,
+    private readonly db: UsersDbService,
     config: ConfigService,
   ) {
     this.secret = config.getOrThrow<AuthConfig>('auth').jwtSecret;

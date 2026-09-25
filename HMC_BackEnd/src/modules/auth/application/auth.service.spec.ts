@@ -20,7 +20,7 @@ import { FunctionAccessPort } from '../domain/ports/function-access.port';
 import { DeviceRegistryPort } from '../domain/ports/device-registry.port';
 import { LoginEmploymentPort } from '../domain/ports/login-employment.port';
 import { OracleService } from '@core/database/oracle.service';
-import { MssqlService } from '@core/database/mssql.service';
+import { UsersDbService } from '@core/database/users-db/users-db.service';
 import { OracleLoginEmploymentRepository } from '../infrastructure/adapters/oracle-login-employment.repository';
 import { FunctionAccess, FunctionStatus } from '../domain/auth-identity';
 import { DEV_FUNCTION_ACCESS } from './dev-fallback';
@@ -79,7 +79,7 @@ function makeService(overrides: Partial<typeof AUTH_CFG> = {}, identityUsername 
     getOrThrow: jest.fn(() => authCfg),
   } as unknown as ConfigService;
   const sessions = new Map<string, SessionState>();
-  const sessionKeys = new AuthStateService({} as MssqlService, config);
+  const sessionKeys = new AuthStateService({} as UsersDbService, config);
   const state = {
     limit: jest.fn().mockResolvedValue(undefined),
     newSession: sessionKeys.newSession.bind(sessionKeys),

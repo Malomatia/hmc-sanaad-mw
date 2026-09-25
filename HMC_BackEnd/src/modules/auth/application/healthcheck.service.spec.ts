@@ -1,5 +1,5 @@
 import { ConfigService } from '@nestjs/config';
-import { MssqlService } from '@core/database/mssql.service';
+import { UsersDbService } from '@core/database/users-db/users-db.service';
 import { AppLaunchConfig } from '@core/config/configuration';
 import { HealthCheckService } from './healthcheck.service';
 
@@ -14,9 +14,10 @@ const CFG: AppLaunchConfig = {
 
 function makeService(enabled: boolean, cfg: Partial<AppLaunchConfig> = {}) {
   const db = {
+    dialect: 'mssql',
     isEnabled: jest.fn().mockReturnValue(enabled),
     query: jest.fn(),
-  } as unknown as jest.Mocked<MssqlService>;
+  } as unknown as jest.Mocked<UsersDbService>;
   const config = {
     getOrThrow: jest.fn().mockReturnValue({ ...CFG, ...cfg }),
   } as unknown as ConfigService;

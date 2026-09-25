@@ -1,4 +1,4 @@
-import { MssqlService } from '../../database/mssql.service';
+import { UsersDbService } from '../../database/users-db/users-db.service';
 import { AuditLevel, AuditRecord, AuthLifecycleEvent } from '../audit-event';
 import { LoggerAuditSink } from './logger-audit.sink';
 import { MssqlAuditSink } from './mssql-audit.sink';
@@ -19,9 +19,10 @@ const RECORD: AuditRecord = {
 
 function makeSink() {
   const db = {
+    dialect: 'mssql',
     isConfigured: jest.fn().mockReturnValue(true),
     execute: jest.fn().mockResolvedValue({ rowsAffected: 1, rows: [] }),
-  } as unknown as jest.Mocked<MssqlService>;
+  } as unknown as jest.Mocked<UsersDbService>;
   const logs = { write: jest.fn() } as unknown as jest.Mocked<LoggerAuditSink>;
   return { sink: new MssqlAuditSink(db, logs), db, logs };
 }

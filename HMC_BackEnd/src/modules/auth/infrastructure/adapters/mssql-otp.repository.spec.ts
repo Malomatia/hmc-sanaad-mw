@@ -1,6 +1,6 @@
 import { HttpException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { MssqlService } from '@core/database/mssql.service';
+import { UsersDbService } from '@core/database/users-db/users-db.service';
 import { OtpConfig } from '@core/config/configuration';
 import { MssqlOtpRepository } from './mssql-otp.repository';
 import * as otpGenerator from './otp-generator.util';
@@ -20,7 +20,11 @@ const OTP_CFG: OtpConfig = {
 };
 
 function makeRepo(cfg: Partial<OtpConfig> = {}) {
-  const db = { query: jest.fn(), execute: jest.fn() } as unknown as jest.Mocked<MssqlService>;
+  const db = {
+    dialect: 'mssql',
+    query: jest.fn(),
+    execute: jest.fn(),
+  } as unknown as jest.Mocked<UsersDbService>;
   const delivery: jest.Mocked<OtpDeliveryPort> = {
     sendOtpSms: jest.fn().mockResolvedValue(undefined),
   };

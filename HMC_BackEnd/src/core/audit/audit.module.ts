@@ -3,7 +3,7 @@ import { AuditService } from './audit.service';
 import { AUDIT_SINK } from './ports/audit-sink.port';
 import { LoggerAuditSink } from './sinks/logger-audit.sink';
 import { MssqlAuditSink } from './sinks/mssql-audit.sink';
-import { MssqlModule } from '../database/mssql.module';
+import { SqlDatabasesModule } from '../database/sql-databases.module';
 
 /**
  * Global audit module. Exposes AuditService app-wide and binds the default
@@ -11,7 +11,7 @@ import { MssqlModule } from '../database/mssql.module';
  */
 @Global()
 @Module({
-  imports: [MssqlModule],
+  imports: [SqlDatabasesModule],
   providers: [AuditService, LoggerAuditSink, { provide: AUDIT_SINK, useClass: MssqlAuditSink }],
   exports: [AuditService],
 })

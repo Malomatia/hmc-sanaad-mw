@@ -1,7 +1,7 @@
 import { HttpException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { MotcSmsDbService } from '@core/database/motc-sms-db.service';
-import { MssqlQueryError } from '@core/database/mssql.error';
+import { SqlQueryError } from '@core/database/sql.error';
 import { MotcSmsConfig, OtpConfig, SmsConfig } from '@core/config/configuration';
 import { MotcSmsOtpRepository } from './motc-sms-otp.repository';
 import { OtpEmailDeliveryPort } from '../../domain/ports/otp-email-delivery.port';
@@ -340,7 +340,7 @@ describe('MotcSmsOtpRepository', () => {
         .mockResolvedValueOnce([]) // latest-row lookup
         .mockResolvedValueOnce([{ NextId: 42 }])
         .mockResolvedValueOnce([{ NextId: 43 }]);
-      const duplicate = new MssqlQueryError('Violation of PRIMARY KEY', { number: 2627 });
+      const duplicate = new SqlQueryError('Violation of PRIMARY KEY', { number: 2627 });
       db.execute
         .mockRejectedValueOnce(duplicate)
         .mockResolvedValueOnce({ rowsAffected: 1, rows: [] });
@@ -357,9 +357,9 @@ describe('MotcSmsOtpRepository', () => {
     it('propagates non-duplicate insert failures', async () => {
       const { repo, db } = makeRepo();
       primeSend(db);
-      db.execute.mockRejectedValue(new MssqlQueryError('Invalid column name', { number: 207 }));
+      db.execute.mockRejectedValue(new SqlQueryError('Invalid column name', { number: 207 }));
 
-      await expect(repo.send(SEND)).rejects.toBeInstanceOf(MssqlQueryError);
+      await expect(repo.send(SEND)).rejects.toBeInstanceOf(SqlQueryError);
     });
   });
 
@@ -424,7 +424,7 @@ describe('MotcSmsOtpRepository', () => {
     it('rejects rather than returning or emailing an OTP when storage fails', async () => {
       const { repo, db, emailDelivery } = makeRepo({ inResponse: true });
       primeSend(db);
-      const failure = new MssqlQueryError('Invalid column name', { number: 207 });
+      const failure = new SqlQueryError('Invalid column name', { number: 207 });
       db.execute.mockRejectedValue(failure);
 
       await expect(repo.send(command)).rejects.toBe(failure);

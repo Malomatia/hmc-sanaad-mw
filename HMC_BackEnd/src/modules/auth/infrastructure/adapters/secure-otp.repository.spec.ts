@@ -1,7 +1,7 @@
 import { ConfigService } from '@nestjs/config';
 import { createHash } from 'node:crypto';
 import { AuthStateService } from '@core/auth/auth-state.service';
-import { MssqlService } from '@core/database/mssql.service';
+import { UsersDbService } from '@core/database/users-db/users-db.service';
 import { safePreview } from '@core/logging/sensitive-data.util';
 import { SecureOtpRepository } from './secure-otp.repository';
 import { VerifyOtpCommand } from '../../domain/ports/otp.port';
@@ -27,7 +27,7 @@ function makeRepository() {
   const db = {
     query: jest.fn().mockResolvedValue([{ Verified: 1 }]),
     execute: jest.fn().mockResolvedValue({ rowsAffected: 1, rows: [] }),
-  } as unknown as jest.Mocked<MssqlService>;
+  } as unknown as jest.Mocked<UsersDbService>;
   const state = {
     limit: jest.fn().mockResolvedValue(undefined),
   } as unknown as jest.Mocked<AuthStateService>;
@@ -53,7 +53,7 @@ function makeRepository() {
   };
 }
 
-function assertExistingOtpSql(db: jest.Mocked<MssqlService>) {
+function assertExistingOtpSql(db: jest.Mocked<UsersDbService>) {
   for (const [sql] of [...db.query.mock.calls, ...db.execute.mock.calls]) {
     expect(sql).toContain('HMC_RHAP_OTP_tbl');
     expect(sql).not.toMatch(

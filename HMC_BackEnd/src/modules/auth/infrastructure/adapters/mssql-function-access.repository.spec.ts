@@ -1,10 +1,10 @@
 import { ConfigService } from '@nestjs/config';
-import { MssqlService } from '@core/database/mssql.service';
+import { UsersDbService } from '@core/database/users-db/users-db.service';
 import { FunctionStatus } from '../../domain/auth-identity';
 import { MssqlFunctionAccessRepository } from './mssql-function-access.repository';
 
 function makeDb() {
-  return { query: jest.fn(), execute: jest.fn() } as unknown as jest.Mocked<MssqlService>;
+  return { query: jest.fn(), execute: jest.fn() } as unknown as jest.Mocked<UsersDbService>;
 }
 
 function makeConfig(view = 'HMC_Sanad_AppMaster_VW', appName = '') {

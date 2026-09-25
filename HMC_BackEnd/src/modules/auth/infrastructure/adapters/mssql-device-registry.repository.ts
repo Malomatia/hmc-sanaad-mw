@@ -1,10 +1,49 @@
 import { Injectable } from '@nestjs/common';
-import { MssqlService } from '@core/database/mssql.service';
+import { UsersDbDialect, UsersDbService } from '@core/database/users-db/users-db.service';
 import {
   DeviceBindingCommand,
   DeviceRegistration,
   DeviceRegistryPort,
 } from '../../domain/ports/device-registry.port';
+
+const BIND_COLUMNS = `(LoginID, IMEINumber, MobileType, DeviceModel, OSVersion,
+          DateFirstRegistered, AddedDt, AddedBy, Status, Department)`;
+
+/** Statements that differ between the two Users DB engines. */
+const SQL: Record<UsersDbDialect, { bind: string; touch: string; find: string }> = {
+  mssql: {
+    bind: `IF NOT EXISTS (
+         SELECT 1 FROM HMC_Sanad_DeviceRegn_tbl WHERE LoginID = @username AND IMEINumber = @imei
+       )
+       INSERT INTO HMC_Sanad_DeviceRegn_tbl
+         ${BIND_COLUMNS}
+       VALUES (@username, @imei, @mobileType, @deviceModel, @osVersion,
+               GETDATE(), GETDATE(), 'NODEJS', 'Inactive', @department)`,
+    touch: `UPDATE HMC_Sanad_DeviceRegn_tbl
+          SET LastActive = GETDATE()
+        WHERE LoginID = @username AND IMEINumber = @imei`,
+    find: `SELECT TOP 1 *
+         FROM HMC_Sanad_DeviceRegn_tbl
+        WHERE LoginID = @username AND IMEINumber = @imei`,
+  },
+  mysql: {
+    bind: `INSERT INTO HMC_Sanad_DeviceRegn_tbl
+         ${BIND_COLUMNS}
+       SELECT @username, @imei, @mobileType, @deviceModel, @osVersion,
+              NOW(), NOW(), 'NODEJS', 'Inactive', @department
+         FROM DUAL
+        WHERE NOT EXISTS (
+          SELECT 1 FROM HMC_Sanad_DeviceRegn_tbl WHERE LoginID = @username AND IMEINumber = @imei
+        )`,
+    touch: `UPDATE HMC_Sanad_DeviceRegn_tbl
+          SET LastActive = NOW()
+        WHERE LoginID = @username AND IMEINumber = @imei`,
+    find: `SELECT *
+         FROM HMC_Sanad_DeviceRegn_tbl
+        WHERE LoginID = @username AND IMEINumber = @imei
+        LIMIT 1`,
+  },
+};
 
 /**
  * Device-binding registry backed by the legacy `HMC_Sanad_DeviceRegn_tbl`
@@ -18,7 +57,7 @@ import {
  */
 @Injectable()
 export class MssqlDeviceRegistryRepository implements DeviceRegistryPort {
-  constructor(private readonly db: MssqlService) {}
+  constructor(private readonly db: UsersDbService) {}
 
   async bind(cmd: DeviceBindingCommand): Promise<void> {
     // Idempotent registration: create the row only when this user↔device pair
@@ -26,14 +65,7 @@ export class MssqlDeviceRegistryRepository implements DeviceRegistryPort {
     // Device context (MobileType/DeviceModel/OSVersion) comes from the request,
     // Department is the employee view's FACILITY_NAME, AddedBy marks the writer.
     await this.db.execute(
-      `IF NOT EXISTS (
-         SELECT 1 FROM HMC_Sanad_DeviceRegn_tbl WHERE LoginID = @username AND IMEINumber = @imei
-       )
-       INSERT INTO HMC_Sanad_DeviceRegn_tbl
-         (LoginID, IMEINumber, MobileType, DeviceModel, OSVersion,
-          DateFirstRegistered, AddedDt, AddedBy, Status, Department)
-       VALUES (@username, @imei, @mobileType, @deviceModel, @osVersion,
-               GETDATE(), GETDATE(), 'NODEJS', 'Inactive', @department)`,
+      SQL[this.db.dialect].bind,
       {
         username: cmd.username,
         imei: cmd.imei,
@@ -56,21 +88,14 @@ export class MssqlDeviceRegistryRepository implements DeviceRegistryPort {
   }
 
   async touch(username: string, imei: string): Promise<void> {
-    await this.db.execute(
-      `UPDATE HMC_Sanad_DeviceRegn_tbl
-          SET LastActive = GETDATE()
-        WHERE LoginID = @username AND IMEINumber = @imei`,
-      { username, imei },
-    );
+    await this.db.execute(SQL[this.db.dialect].touch, { username, imei });
   }
 
   async find(username: string, imei: string): Promise<DeviceRegistration | undefined> {
-    const rows = await this.db.query<Record<string, unknown>>(
-      `SELECT TOP 1 *
-         FROM HMC_Sanad_DeviceRegn_tbl
-        WHERE LoginID = @username AND IMEINumber = @imei`,
-      { username, imei },
-    );
+    const rows = await this.db.query<Record<string, unknown>>(SQL[this.db.dialect].find, {
+      username,
+      imei,
+    });
     const row = rows[0];
     if (!row) return undefined;
     const value = (name: string) =>

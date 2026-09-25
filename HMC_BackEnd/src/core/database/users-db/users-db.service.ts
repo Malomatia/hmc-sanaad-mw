@@ -1,18 +1,27 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import * as sql from 'mssql';
-import { UsersDbConfig } from '../config/configuration';
-import { MssqlQueryError, MssqlUnavailableException } from './mssql.error';
+import { USERS_DB_DRIVERS, UsersDbConfig, UsersDbDriver } from '../../config/configuration';
+import { SqlQueryError, SqlUnavailableException } from '../sql.error';
+
+/** SQL dialect of the connected Users DB — repositories pick their statements by it. */
+export type UsersDbDialect = UsersDbDriver;
+
+/** Current server time, the one expression most statements differ by. */
+export const SQL_NOW: Record<UsersDbDialect, string> = { mssql: 'GETDATE()', mysql: 'NOW()' };
 
 /** Result of a data-modifying statement. */
-export interface MssqlExecuteResult<T = Record<string, any>> {
+export interface UsersDbExecuteResult<T = Record<string, any>> {
   rowsAffected: number;
-  /** Rows returned by an OUTPUT clause, when present. */
+  /** Rows returned by an OUTPUT clause (SQL Server), when present. */
   rows: T[];
+  /** MySQL `insertId` (AUTO_INCREMENT, or the value set via LAST_INSERT_ID(expr)). */
+  insertId?: number;
 }
 
 /** Connectivity probe report for /health/users-db (mirrors OracleDiagnostics). */
-export interface MssqlDiagnostics {
+export interface UsersDbDiagnostics {
+  /** Configured driver; absent for the MOTC SMS DB, which is always SQL Server. */
+  driver?: string;
   enabled: boolean;
   connected: boolean;
   latencyMs: number | null;
@@ -30,11 +39,23 @@ export interface MssqlDiagnostics {
   checkedAt: string;
 }
 
+/** What a driver hands back for one statement. */
+export interface UsersDbRawResult {
+  rows: Record<string, any>[];
+  rowsAffected: number;
+  insertId?: number;
+}
+
 /**
- * Single `mssql` connection pool for the Users/Sanaad SQL Server database —
- * the second database wired into the app (sibling of OracleService). Backs
- * the auth cycle (HMC_Sanad_DeviceRegn_tbl, HMC_RHAP_OTP_tbl) and the API-1
- * healthcheck tables (HMC_Sanad_AppDownTime_tbl / HMC_Sanad_App_Update_tbl).
+ * The Users/Sanaad database — the second database wired into the app (sibling
+ * of OracleService). Backs the auth cycle (HMC_Sanad_DeviceRegn_tbl,
+ * HMC_RHAP_OTP_tbl), the API-1 healthcheck tables, device tokens, attestation
+ * and the audit logs.
+ *
+ * Abstract so the engine is a deployment choice: USERS_DB_DRIVER picks
+ * `MssqlUsersDbService` (default) or `MysqlUsersDbService`, and this class is
+ * also the DI token every consumer injects. Everything that is not
+ * driver-specific lives here.
  *
  * Pool lifecycle (client request 2026-08-31): the pool is created DIRECTLY —
  * `USERS_DB_DISABLED` is no longer honored — eagerly at boot and, when that
@@ -45,15 +66,14 @@ export interface MssqlDiagnostics {
  * names the exact env vars.
  *
  * Exposes parameterized primitives only — all values go through named
- * `@params`, never string interpolation.
+ * `@params`, never string interpolation, whichever the driver.
  */
-@Injectable()
-export class MssqlService implements OnModuleInit, OnModuleDestroy {
-  private readonly logger = new Logger(MssqlService.name);
-  private pool: sql.ConnectionPool | undefined;
+export abstract class UsersDbService implements OnModuleInit, OnModuleDestroy {
+  protected readonly logger = new Logger(UsersDbService.name);
+  protected readonly cfg: UsersDbConfig;
+  abstract readonly dialect: UsersDbDialect;
   /** In-flight creation attempt — shared so concurrent queries don't stampede. */
-  private creating: Promise<sql.ConnectionPool> | undefined;
-  private readonly cfg: UsersDbConfig;
+  private creating: Promise<void> | undefined;
   /** Monotonic counter so each call's log lines can be correlated. */
   private callSeq = 0;
 
@@ -63,6 +83,19 @@ export class MssqlService implements OnModuleInit, OnModuleDestroy {
   constructor(config: ConfigService) {
     this.cfg = config.getOrThrow<UsersDbConfig>('usersDb');
   }
+
+  /** Create the pool and prove one connection works; throw on failure. */
+  protected abstract connect(): Promise<void>;
+  protected abstract hasPool(): boolean;
+  protected abstract closePool(): Promise<void>;
+  /** Run one parameterized statement; `@name` binds as the callers wrote them. */
+  protected abstract rawQuery(
+    statement: string,
+    params: Record<string, unknown>,
+  ): Promise<UsersDbRawResult>;
+  /** Server version + current time, for the boot probe and /health/users-db. */
+  protected abstract probe(): Promise<{ version: string; dbTime: string }>;
+  protected abstract poolStats(): UsersDbDiagnostics['pool'];
 
   async onModuleInit(): Promise<void> {
     // Eager attempt so the boot log states the pool's fate — but never fatal:
@@ -81,6 +114,9 @@ export class MssqlService implements OnModuleInit, OnModuleDestroy {
   /** USERS_DB_* env vars without which no connection is possible. */
   private missingConfig(): string[] {
     const missing: string[] = [];
+    if (!USERS_DB_DRIVERS.includes(this.cfg.driver as UsersDbDriver)) {
+      missing.push(`USERS_DB_DRIVER (got "${this.cfg.driver}", use ${USERS_DB_DRIVERS.join(' or ')})`);
+    }
     if (!this.cfg.host) missing.push('USERS_DB_HOST');
     if (!this.cfg.database) missing.push('USERS_DB_NAME');
     if (!this.cfg.user) missing.push('USERS_DB_USER');
@@ -88,51 +124,40 @@ export class MssqlService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * The pool, created on demand. Throws MssqlUnavailableException (→ 503)
+   * The pool, created on demand. Throws SqlUnavailableException (→ 503)
    * with the precise reason when it cannot be.
    */
-  private async ensurePool(): Promise<sql.ConnectionPool> {
-    if (this.pool) return this.pool;
+  private async ensurePool(): Promise<void> {
+    if (this.hasPool()) return;
     if (this.creating) return this.creating;
 
     const missing = this.missingConfig();
     if (missing.length) {
-      throw new MssqlUnavailableException(
+      throw new SqlUnavailableException(
         `The users database is not configured — set ${missing.join(', ')} in the environment.`,
       );
     }
 
-    this.creating = new sql.ConnectionPool({
-      server: this.cfg.host,
-      port: this.cfg.port,
-      database: this.cfg.database,
-      user: this.cfg.user,
-      password: this.cfg.password,
-      pool: { min: this.cfg.poolMin, max: this.cfg.poolMax },
-      options: {
-        encrypt: this.cfg.encrypt,
-        trustServerCertificate: this.cfg.trustServerCertificate,
-      },
-      requestTimeout: this.cfg.requestTimeoutMs,
-      connectionTimeout: this.cfg.connectTimeoutMs,
-    }).connect();
-
+    this.creating = this.createPool();
     try {
-      const pool = await this.creating;
-      pool.on('error', (err) => this.logger.error(`Users DB pool error: ${err.message}`));
-      this.pool = pool;
-      this.logger.log(
-        `Users DB pool created (min=${this.cfg.poolMin}, max=${this.cfg.poolMax}) → ${this.cfg.host}:${this.cfg.port}/${this.cfg.database}`,
-      );
-      await this.verifyConnectivity();
-      return pool;
-    } catch (err) {
-      this.logger.error(`Failed to create Users DB pool: ${(err as Error).message}`);
-      throw new MssqlUnavailableException(
-        `The users database is currently unavailable: ${(err as Error).message}`,
-      );
+      await this.creating;
     } finally {
       this.creating = undefined;
+    }
+  }
+
+  private async createPool(): Promise<void> {
+    try {
+      await this.connect();
+      this.logger.log(
+        `Users DB pool created (${this.dialect}, min=${this.cfg.poolMin}, max=${this.cfg.poolMax}) → ${this.cfg.host}:${this.cfg.port}/${this.cfg.database}`,
+      );
+      await this.verifyConnectivity();
+    } catch (err) {
+      this.logger.error(`Failed to create Users DB pool: ${(err as Error).message}`);
+      throw new SqlUnavailableException(
+        `The users database is currently unavailable: ${(err as Error).message}`,
+      );
     }
   }
 
@@ -144,11 +169,9 @@ export class MssqlService implements OnModuleInit, OnModuleDestroy {
   private async verifyConnectivity(): Promise<void> {
     try {
       const started = Date.now();
-      const result = await this.pool!.request().query<{ dbTime: Date }>(
-        'SELECT SYSDATETIMEOFFSET() AS dbTime',
-      );
+      const { dbTime } = await this.probe();
       this.logger.log(
-        `Users DB connectivity verified in ${Date.now() - started}ms (server time: ${String(result.recordset[0]?.dbTime ?? 'unknown')})`,
+        `Users DB connectivity verified in ${Date.now() - started}ms (server time: ${dbTime})`,
       );
     } catch (err) {
       this.logger.error(
@@ -158,15 +181,15 @@ export class MssqlService implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleDestroy(): Promise<void> {
-    if (this.pool) {
-      await this.pool.close();
+    if (this.hasPool()) {
+      await this.closePool();
       this.logger.log('Users DB pool closed.');
     }
   }
 
   /** A usable pool exists. Callers gate real queries on this. */
   isEnabled(): boolean {
-    return this.pool !== undefined;
+    return this.hasPool();
   }
 
   /** Configured to be used, pool up or not — see OracleService.isConfigured. */
@@ -179,46 +202,42 @@ export class MssqlService implements OnModuleInit, OnModuleDestroy {
     statement: string,
     params: Record<string, unknown> = {},
   ): Promise<T[]> {
-    const result = await this.run(statement, params);
-    return (result.recordset ?? []) as T[];
+    return (await this.run(statement, params)).rows as T[];
   }
 
-  /** Parameterized INSERT/UPDATE/DELETE — returns rows affected (+ OUTPUT rows). */
+  /** Parameterized INSERT/UPDATE/DELETE — rows affected (+ OUTPUT rows / insertId). */
   async execute<T = Record<string, any>>(
     statement: string,
     params: Record<string, unknown> = {},
-  ): Promise<MssqlExecuteResult<T>> {
+  ): Promise<UsersDbExecuteResult<T>> {
     const result = await this.run(statement, params);
     return {
-      rowsAffected: result.rowsAffected.reduce((a, b) => a + b, 0),
-      rows: (result.recordset ?? []) as T[],
+      rowsAffected: result.rowsAffected,
+      rows: result.rows as T[],
+      ...(result.insertId ? { insertId: result.insertId } : {}),
     };
   }
 
   private async run(
     statement: string,
     params: Record<string, unknown>,
-  ): Promise<sql.IResult<Record<string, any>>> {
+  ): Promise<UsersDbRawResult> {
     const id = ++this.callSeq;
     const started = Date.now();
     const label = this.describeSql(statement);
-    this.logger.log(`[mssql#${id}] → ${label} params=${this.formatParams(params)}`);
-    const request = (await this.ensurePool()).request();
-    for (const [key, value] of Object.entries(params)) {
-      request.input(key, value as sql.ISqlType | unknown);
-    }
+    this.logger.log(`[usersdb#${id}] → ${label} params=${this.formatParams(params)}`);
+    await this.ensurePool();
     try {
-      const result = await request.query(statement);
-      const ms = Date.now() - started;
-      const rows = result.recordset?.length ?? 0;
+      const result = await this.rawQuery(statement, params);
       this.logger.log(
-        `[mssql#${id}] done ${label} ${rows} row(s), ${result.rowsAffected} affected (${ms}ms)`,
+        `[usersdb#${id}] done ${label} ${result.rows.length} row(s), ${result.rowsAffected} affected (${Date.now() - started}ms)`,
       );
       return result;
     } catch (err) {
-      const ms = Date.now() - started;
-      const wrapped = MssqlQueryError.from(err);
-      this.logger.error(`[mssql#${id}] FAILED ${label} after ${ms}ms: ${wrapped.message}`);
+      const wrapped = SqlQueryError.from(err);
+      this.logger.error(
+        `[usersdb#${id}] FAILED ${label} after ${Date.now() - started}ms: ${wrapped.message}`,
+      );
       throw wrapped;
     }
   }
@@ -227,8 +246,8 @@ export class MssqlService implements OnModuleInit, OnModuleDestroy {
   private describeSql(statement: string): string {
     const compact = statement.replace(/\s+/g, ' ').trim();
     const target =
-      /\bfrom\s+([a-z0-9_$.\[\]]+)/i.exec(compact) ??
-      /\b(?:update|insert\s+into|delete\s+from)\s+([a-z0-9_$.\[\]]+)/i.exec(compact);
+      /\bfrom\s+([a-z0-9_$.\[\]`]+)/i.exec(compact) ??
+      /\b(?:update|insert\s+into|delete\s+from)\s+([a-z0-9_$.\[\]`]+)/i.exec(compact);
     if (target) return target[1].toUpperCase();
     return compact.length > 60 ? `${compact.slice(0, 57)}...` : compact;
   }
@@ -236,7 +255,8 @@ export class MssqlService implements OnModuleInit, OnModuleDestroy {
   /** Lightweight readiness check for the /health endpoint (creates the pool on demand). */
   async ping(): Promise<boolean> {
     try {
-      await (await this.ensurePool()).request().query('SELECT 1 AS ok');
+      await this.ensurePool();
+      await this.rawQuery('SELECT 1 AS ok', {});
       return true;
     } catch {
       return false;
@@ -248,9 +268,10 @@ export class MssqlService implements OnModuleInit, OnModuleDestroy {
    * failures are captured in `error` so the caller can report exactly why the
    * database is unreachable. Mirrors OracleService.diagnose.
    */
-  async diagnose(): Promise<MssqlDiagnostics> {
-    const diag: MssqlDiagnostics = {
-      enabled: this.pool !== undefined,
+  async diagnose(): Promise<UsersDbDiagnostics> {
+    const diag: UsersDbDiagnostics = {
+      driver: this.cfg.driver,
+      enabled: this.hasPool(),
       connected: false,
       latencyMs: null,
       connection: {
@@ -269,9 +290,8 @@ export class MssqlService implements OnModuleInit, OnModuleDestroy {
 
     // Bring the pool up on demand (lazy creation) so /health/users-db reports
     // the REAL blocker: missing env vars or the exact connect error.
-    let pool: sql.ConnectionPool;
     try {
-      pool = await this.ensurePool();
+      await this.ensurePool();
       diag.enabled = true;
     } catch (err) {
       diag.error = { message: (err as Error).message };
@@ -280,26 +300,14 @@ export class MssqlService implements OnModuleInit, OnModuleDestroy {
 
     const start = Date.now();
     try {
-      const result = await pool.request().query<{ version: string; dbTime: Date }>(
-        'SELECT @@VERSION AS version, SYSDATETIMEOFFSET() AS dbTime',
-      );
+      diag.server = await this.probe();
       diag.latencyMs = Date.now() - start;
       diag.connected = true;
-      const row = result.recordset[0];
-      diag.server = {
-        version: String(row?.version ?? 'unknown').split('\n')[0].trim(),
-        dbTime: String(row?.dbTime ?? 'unknown'),
-      };
-      diag.pool = {
-        size: pool.size,
-        available: pool.available,
-        borrowed: pool.borrowed,
-        pending: pool.pending,
-      };
+      diag.pool = this.poolStats();
       this.logger.log(`Users DB diagnose OK (${diag.latencyMs}ms)`);
     } catch (err) {
       diag.latencyMs = Date.now() - start;
-      const wrapped = MssqlQueryError.from(err);
+      const wrapped = SqlQueryError.from(err);
       diag.error = { message: wrapped.message, code: (err as { code?: string }).code };
       this.logger.error(`Users DB diagnose FAILED after ${diag.latencyMs}ms: ${wrapped.message}`);
     }
@@ -311,7 +319,7 @@ export class MssqlService implements OnModuleInit, OnModuleDestroy {
     const keys = Object.keys(params);
     if (keys.length === 0) return '{}';
     const parts = keys.map((k) =>
-      MssqlService.SENSITIVE_PARAM.test(k) ? `${k}=***` : `${k}=${String(params[k])}`,
+      UsersDbService.SENSITIVE_PARAM.test(k) ? `${k}=***` : `${k}=${String(params[k])}`,
     );
     return `{ ${parts.join(', ')} }`;
   }

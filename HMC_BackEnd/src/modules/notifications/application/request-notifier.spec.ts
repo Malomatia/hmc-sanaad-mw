@@ -4,7 +4,7 @@ import { RequestLookupPort } from '../domain/ports/request-lookup.port';
 import { OracleService } from '@core/database/oracle.service';
 import { OracleSchemaService } from '@core/database/oracle-schema.service';
 import { OracleRequestLookupRepository } from '../infrastructure/adapters/oracle-request-lookup.repository';
-import { MssqlService } from '@core/database/mssql.service';
+import { UsersDbService } from '@core/database/users-db/users-db.service';
 import { MssqlDeviceTokenRepository } from '../infrastructure/adapters/mssql-device-token.repository';
 import { PushSenderPort } from '../domain/ports/push-sender.port';
 
@@ -645,7 +645,7 @@ describe('RequestNotifier', () => {
       const send = jest.fn().mockResolvedValue({ sent: 2, failed: 0, invalidTokens: [] });
       const notifier = new RequestNotifier(
         new NotificationsService(
-          new MssqlDeviceTokenRepository({ query } as unknown as MssqlService),
+          new MssqlDeviceTokenRepository({ query } as unknown as UsersDbService),
           { send, enabled: true } as unknown as PushSenderPort,
         ),
         new OracleRequestLookupRepository(

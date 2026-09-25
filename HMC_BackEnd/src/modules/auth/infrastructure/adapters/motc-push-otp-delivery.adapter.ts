@@ -2,7 +2,7 @@ import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'node:crypto';
 import { MotcSmsDbService } from '@core/database/motc-sms-db.service';
-import { MssqlQueryError } from '@core/database/mssql.error';
+import { SqlQueryError } from '@core/database/sql.error';
 import { MotcSmsConfig, SmsConfig } from '@core/config/configuration';
 import { OtpDeliveryPort } from '../../domain/ports/otp-delivery.port';
 import { OtpPurpose, OtpSmsTemplate } from '../../domain/ports/otp.port';
@@ -95,7 +95,7 @@ export class MotcPushOtpDeliveryAdapter implements OtpDeliveryPort {
         this.logger.log(`OTP SMS queued (${purpose}) as push MessageID=${messageId}.`);
         return;
       } catch (err) {
-        const sqlError = (err as MssqlQueryError).sqlErrorNumber;
+        const sqlError = (err as SqlQueryError).sqlErrorNumber;
         if (sqlError !== undefined && DUPLICATE_KEY_ERRORS.has(sqlError) && attempt < INSERT_RETRIES) {
           this.logger.warn(
             `MessageID ${messageId} collided — regenerating (${attempt}/${INSERT_RETRIES}).`,

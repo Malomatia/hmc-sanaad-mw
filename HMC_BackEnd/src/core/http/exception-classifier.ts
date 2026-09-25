@@ -1,6 +1,6 @@
 import { HttpException, HttpStatus } from '@nestjs/common';
 import { OracleContractUnavailableException, OracleQueryError, OracleUnavailableException } from '../database/oracle.error';
-import { MssqlQueryError, MssqlUnavailableException } from '../database/mssql.error';
+import { SqlQueryError, SqlUnavailableException } from '../database/sql.error';
 import { SchemaColumnNotFoundException } from '../database/schema-column-not-found.error';
 import { ORA_NO_DATA_FOUND } from '@shared/constants/error-codes';
 import {
@@ -75,10 +75,10 @@ export function classifyException(exception: unknown): ClassifiedError {
   }
   if (exception instanceof OracleQueryError) return classifyOracle(exception);
   // Users DB (SQL Server) failures are database problems too — same treatment.
-  if (exception instanceof MssqlUnavailableException) {
+  if (exception instanceof SqlUnavailableException) {
     return of(ErrorCategory.DATABASE_ERROR, { httpStatus: exception.getStatus() });
   }
-  if (exception instanceof MssqlQueryError) return of(ErrorCategory.DATABASE_ERROR);
+  if (exception instanceof SqlQueryError) return of(ErrorCategory.DATABASE_ERROR);
   if (exception instanceof HttpException) return classifyHttp(exception);
   // body-parser rejects an oversized body with an http-errors instance, which
   // is a plain Error (not an HttpException) — so it used to fall through to

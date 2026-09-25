@@ -1,4 +1,6 @@
 import { LookupsService } from '@lookups/application/lookups.service';
+import { LovMapper } from '@lookups/infrastructure/oracle/lov.mapper';
+import { localizeArTwins } from '@shared/utils/localize.util';
 import { ORACLE_OBJECTS } from '@shared/constants/oracle-objects';
 import { AddressRepository, PhoneRepository } from '../domain/contact.repository';
 import { AddressService, PhoneService } from './contact.service';
@@ -15,7 +17,7 @@ function make() {
 
 describe('Contact LOV submit values', () => {
   it.each(['en', 'ar'] as const)(
-    'uses the country code for lang=%s without changing labels or cached items',
+    'keeps the English country name as used_value for lang=%s',
     async (lang) => {
       const { address, getByObject } = make();
       const country = Object.freeze({
@@ -24,18 +26,25 @@ describe('Contact LOV submit values', () => {
         meaningAr: 'localized country label',
         used_value: 'Andorra',
       });
-      const cached = Object.freeze([country]);
-      getByObject.mockResolvedValue(cached);
+      getByObject.mockResolvedValue([country]);
 
       const items = await address.countryLov(lang);
 
       expect(getByObject).toHaveBeenCalledWith(ORACLE_OBJECTS.COUNTRY_LOV, lang);
-      expect(items).toEqual([{ ...country, used_value: 'AD' }]);
-      expect(items).not.toBe(cached);
-      expect(items[0]).not.toBe(country);
-      expect(country.used_value).toBe('Andorra');
+      expect(items).toEqual([{ ...country, used_value: 'Andorra' }]);
     },
   );
+
+  it('keeps used_value English after lang=ar localization', async () => {
+    const { address, getByObject } = make();
+    getByObject.mockResolvedValue([
+      LovMapper.toItem({ CODE: 'QA', VALUE: 'Qatar', VALUEAR: encodeURIComponent('قطر') }, 'ar'),
+    ]);
+
+    const [item] = await address.countryLov('ar');
+
+    expect(localizeArTwins(item, 'ar')).toEqual({ code: 'QA', meaning: 'قطر', used_value: 'Qatar' });
+  });
 
   it('preserves an empty country list', async () => {
     const { address } = make();

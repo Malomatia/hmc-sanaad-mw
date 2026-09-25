@@ -1,7 +1,7 @@
 import { HttpException, HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID, timingSafeEqual } from 'node:crypto';
-import { MssqlService } from '@core/database/mssql.service';
+import { UsersDbDialect, UsersDbService } from '@core/database/users-db/users-db.service';
 import { OtpConfig } from '@core/config/configuration';
 import { DEFAULT_LANG } from '@shared/domain/lang';
 import {
@@ -27,6 +27,61 @@ interface OtpRow {
   OTPSendMode?: string | null;
 }
 
+const setNewOtp = (now: string) => `OTPValue = @otp, OTPSentDateTime = ${now}, RequestId = @requestId,
+              AppName = @appName, AppVersion = @appVersion, AppDatetime = @appDatetime,
+              OTPValidationAttemptCount = 0, RequestType = @requestType,
+              OTPStatus = '1', OTPSendMode = @sendMode`;
+const INSERT_COLUMNS = `(LoginID, DeviceIMEINumber, OTPValue, OTPSentDateTime, RequestId,
+            AppName, AppVersion, AppDatetime, OTPValidationAttemptCount,
+            RequestType, OTPStatus, OTPSendMode)`;
+const insertValues = (now: string) => `(@username, @imei, @otp, ${now}, @requestId,
+                 @appName, @appVersion, @appDatetime, 0, @requestType, '1', @sendMode)`;
+
+/**
+ * Statements per Users DB engine. SQL Server returns the SeqNo through OUTPUT;
+ * MySQL has no OUTPUT, so the update tags the row with LAST_INSERT_ID(SeqNo)
+ * and the driver's insertId carries it back — still ONE atomic statement (a
+ * `WHERE SeqNo = (SELECT MAX…)` on the same table is error 1093 in MySQL).
+ */
+const SQL: Record<UsersDbDialect, { update: string; insert: string; latest: string; isnull: string }> = {
+  mssql: {
+    update: `UPDATE HMC_RHAP_OTP_tbl
+          SET ${setNewOtp('GETDATE()')}
+       OUTPUT INSERTED.SeqNo AS SeqNo
+        WHERE SeqNo = (SELECT MAX(SeqNo) FROM HMC_RHAP_OTP_tbl
+                        WHERE LoginID = @username AND DeviceIMEINumber = @imei)`,
+    insert: `INSERT INTO HMC_RHAP_OTP_tbl
+           ${INSERT_COLUMNS}
+         OUTPUT INSERTED.SeqNo AS SeqNo
+         VALUES ${insertValues('GETDATE()')}`,
+    latest: `SELECT TOP 1 SeqNo,
+              DATEDIFF(SECOND, OTPSentDateTime, GETDATE()) AS DiffInSeconds,
+              OTPValue, OTPStatus, OTPSendMode
+         FROM HMC_RHAP_OTP_tbl WITH (NOLOCK)
+        WHERE LoginID = @username AND DeviceIMEINumber = @imei
+        ORDER BY SeqNo DESC`,
+    isnull: 'ISNULL',
+  },
+  mysql: {
+    update: `UPDATE HMC_RHAP_OTP_tbl
+          SET ${setNewOtp('NOW()')}, SeqNo = LAST_INSERT_ID(SeqNo)
+        WHERE LoginID = @username AND DeviceIMEINumber = @imei
+        ORDER BY SeqNo DESC
+        LIMIT 1`,
+    insert: `INSERT INTO HMC_RHAP_OTP_tbl
+           ${INSERT_COLUMNS}
+         VALUES ${insertValues('NOW()')}`,
+    latest: `SELECT SeqNo,
+              TIMESTAMPDIFF(SECOND, OTPSentDateTime, NOW()) AS DiffInSeconds,
+              OTPValue, OTPStatus, OTPSendMode
+         FROM HMC_RHAP_OTP_tbl
+        WHERE LoginID = @username AND DeviceIMEINumber = @imei
+        ORDER BY SeqNo DESC
+        LIMIT 1`,
+    isnull: 'IFNULL',
+  },
+};
+
 /**
  * OTP storage backed by the legacy `HMC_RHAP_OTP_tbl` — ONE row per
  * (LoginID, DeviceIMEINumber), per the reworked flow (client request
@@ -34,7 +89,7 @@ interface OtpRow {
  * (INSERT only when none exists), and a still-valid unused OTP is KEPT and
  * reported as PENDING instead of overwritten (the old 429 resend window is
  * gone). The OTP value is stored as-is for legacy compatibility — per the
- * confirmed decision — but is never logged (MssqlService redacts it).
+ * confirmed decision — but is never logged (UsersDbService redacts it).
  *
  * Channel: SMS when the employee has a phone (OtpDeliveryPort); Email
  * (OtpEmailDeliveryPort → SMTP EmailService, OTPSendMode='Email') when they
@@ -55,7 +110,7 @@ export class MssqlOtpRepository implements OtpPort {
   private readonly consumed = new Set<string>();
 
   constructor(
-    private readonly db: MssqlService,
+    private readonly db: UsersDbService,
     @Inject(OTP_DELIVERY_PORT) private readonly delivery: OtpDeliveryPort,
     @Inject(OTP_EMAIL_DELIVERY_PORT) private readonly emailDelivery: OtpEmailDeliveryPort,
     config: ConfigService,
@@ -107,30 +162,15 @@ export class MssqlOtpRepository implements OtpPort {
 
     // Upsert (client request 2026-09-05): overwrite the user+device's newest
     // row instead of accumulating one row per send; INSERT only the first time.
-    const updated = await this.db.execute<{ SeqNo: number }>(
-      `UPDATE HMC_RHAP_OTP_tbl
-          SET OTPValue = @otp, OTPSentDateTime = GETDATE(), RequestId = @requestId,
-              AppName = @appName, AppVersion = @appVersion, AppDatetime = @appDatetime,
-              OTPValidationAttemptCount = 0, RequestType = @requestType,
-              OTPStatus = '1', OTPSendMode = @sendMode
-       OUTPUT INSERTED.SeqNo AS SeqNo
-        WHERE SeqNo = (SELECT MAX(SeqNo) FROM HMC_RHAP_OTP_tbl
-                        WHERE LoginID = @username AND DeviceIMEINumber = @imei)`,
-      params,
-    );
-    let seqNo = updated.rows[0]?.SeqNo;
+    const sql = SQL[this.db.dialect];
+    const updated = await this.db.execute<{ SeqNo: number }>(sql.update, params);
+    let seqNo = updated.rows[0]?.SeqNo ?? updated.insertId;
     if (updated.rowsAffected === 0) {
-      const inserted = await this.db.execute<{ SeqNo: number }>(
-        `INSERT INTO HMC_RHAP_OTP_tbl
-           (LoginID, DeviceIMEINumber, OTPValue, OTPSentDateTime, RequestId,
-            AppName, AppVersion, AppDatetime, OTPValidationAttemptCount,
-            RequestType, OTPStatus, OTPSendMode)
-         OUTPUT INSERTED.SeqNo AS SeqNo
-         VALUES (@username, @imei, @otp, GETDATE(), @requestId,
-                 @appName, @appVersion, @appDatetime, 0, @requestType, '1', @sendMode)`,
-        params,
-      );
-      seqNo = inserted.rows[0]?.SeqNo ?? (await this.latestRow(cmd.username, cmd.imei))?.SeqNo;
+      const inserted = await this.db.execute<{ SeqNo: number }>(sql.insert, params);
+      seqNo =
+        inserted.rows[0]?.SeqNo ??
+        inserted.insertId ??
+        (await this.latestRow(cmd.username, cmd.imei))?.SeqNo;
     }
     if (seqNo === undefined) {
       throw new HttpException(
@@ -200,15 +240,7 @@ export class MssqlOtpRepository implements OtpPort {
 
   /** Legacy OTPValidate projection: newest row for this user+device. */
   private async latestRow(username: string, imei: string): Promise<OtpRow | undefined> {
-    const rows = await this.db.query<OtpRow>(
-      `SELECT TOP 1 SeqNo,
-              DATEDIFF(SECOND, OTPSentDateTime, GETDATE()) AS DiffInSeconds,
-              OTPValue, OTPStatus, OTPSendMode
-         FROM HMC_RHAP_OTP_tbl WITH (NOLOCK)
-        WHERE LoginID = @username AND DeviceIMEINumber = @imei
-        ORDER BY SeqNo DESC`,
-      { username, imei },
-    );
+    const rows = await this.db.query<OtpRow>(SQL[this.db.dialect].latest, { username, imei });
     return rows[0];
   }
 
@@ -231,7 +263,7 @@ export class MssqlOtpRepository implements OtpPort {
     try {
       await this.db.execute(
         `UPDATE HMC_RHAP_OTP_tbl
-            SET OTPValidationAttemptCount = ISNULL(OTPValidationAttemptCount, 0) + 1
+            SET OTPValidationAttemptCount = ${SQL[this.db.dialect].isnull}(OTPValidationAttemptCount, 0) + 1
                 ${success ? ", OTPStatus = '0'" : ''}
           WHERE SeqNo = @seqNo`,
         { seqNo },

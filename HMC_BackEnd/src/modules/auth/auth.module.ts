@@ -37,7 +37,7 @@ import { OracleLoginEmploymentRepository } from './infrastructure/adapters/oracl
  * (APIs 1-7). JWT signing/verification comes from the global core AuthModule.
  *
  * MPIN / device-registry are backed by the legacy Sanaad SQL Server tables
- * (HMC_Sanad_DeviceRegn_tbl) via the global MssqlService pool. The OTP port
+ * (HMC_Sanad_DeviceRegn_tbl) via the global UsersDbService pool. The OTP port
  * is bound by OTP_STORE: `legacy` (default since 2026-09-03) stores/validates
  * in HMC_RHAP_OTP_tbl and delivers through OTP_DELIVERY_PORT; `motc` makes
  * MOTC_SMS_PushTable the store AND the delivery (MotcSmsOtpRepository).

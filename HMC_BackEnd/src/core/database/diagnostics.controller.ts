@@ -20,7 +20,7 @@ import { AppConfig, UsersDbConfig } from '../config/configuration';
 import { Public } from '../auth/decorators/public.decorator';
 import { SkipEnvelope } from '../http/response.interceptor';
 import { DiagnosticsEnabledGuard } from '../http/diagnostics-enabled.guard';
-import { MssqlService } from './mssql.service';
+import { UsersDbService } from './users-db/users-db.service';
 import { MotcSmsDbService } from './motc-sms-db.service';
 import { OracleService } from './oracle.service';
 import { assertOracleReadOnlySelect } from './sql-console.util';
@@ -31,7 +31,7 @@ import {
 } from './oracle-log.store';
 import { ORACLE_LOG_VIEW_HTML } from './oracle-log.view';
 import { OracleMetadataService } from './oracle-metadata.service';
-import { assertReadOnlySelect } from './sql-console.util';
+import { assertMysqlReadOnlySelect, assertReadOnlySelect } from './sql-console.util';
 import { SkipIntegrity } from '../integrity/skip-integrity.decorator';
 
 /** Query filters for GET /diagnostics/oracle-logs. */
@@ -190,7 +190,7 @@ export class DiagnosticsController {
   constructor(
     private readonly store: OracleLogStore,
     private readonly metadata: OracleMetadataService,
-    private readonly mssql: MssqlService,
+    private readonly usersDb: UsersDbService,
     private readonly motcSmsDb: MotcSmsDbService,
     private readonly oracle: OracleService,
     config: ConfigService,
@@ -309,7 +309,11 @@ export class DiagnosticsController {
     operationId: 'diag_usersDbSql',
   })
   async usersDbSql(@Body() body: UsersDbSqlRequestDto) {
-    return this.runSqlConsole(this.mssql, body);
+    return this.runSqlConsole(
+      this.usersDb,
+      body,
+      this.usersDb.dialect === 'mysql' ? assertMysqlReadOnlySelect : assertReadOnlySelect,
+    );
   }
 
   /**
@@ -335,8 +339,9 @@ export class DiagnosticsController {
   }
 
   private async runSqlConsole(
-    db: Pick<MssqlService, 'query'>,
+    db: Pick<UsersDbService, 'query'>,
     body: UsersDbSqlRequestDto,
+    assertReadOnly: (sql: string) => string = assertReadOnlySelect,
   ) {
     // base64 first: the WAF rejects bodies that look like SQL, so that form is
     // the only one that survives the trip in from outside.
@@ -344,7 +349,7 @@ export class DiagnosticsController {
       ? Buffer.from(body.sqlB64, 'base64').toString('utf8')
       : (body.sql ?? '');
     if (!raw.trim()) throw new BadRequestException('Provide `sql` or `sqlB64`.');
-    const statement = assertReadOnlySelect(raw);
+    const statement = assertReadOnly(raw);
     const maxRows = body.maxRows ?? 200;
     const started = Date.now();
     const rows = await db.query(statement, body.params ?? {});

@@ -2,11 +2,11 @@ import { ConfigService } from '@nestjs/config';
 import * as oracledb from 'oracledb';
 import * as sql from 'mssql';
 import { OracleService } from './oracle.service';
-import { MssqlService } from './mssql.service';
+import { MssqlUsersDbService } from './users-db/mssql-users-db.service';
 import { MotcSmsDbService } from './motc-sms-db.service';
 import { OracleLogStore } from './oracle-log.store';
 import { OracleUnavailableException } from './oracle.error';
-import { MssqlUnavailableException } from './mssql.error';
+import { SqlUnavailableException } from './sql.error';
 
 // Both drivers are mocked with explicit factories. Auto-mock cannot be used:
 // jest walks the real module's exports and oracledb's dbObject getters throw
@@ -63,6 +63,7 @@ describe('database boot resilience', () => {
   };
 
   const MSSQL_CFG = {
+    driver: 'mssql',
     disabled: false,
     host: 'sqlhost',
     port: 1433,
@@ -99,18 +100,18 @@ describe('database boot resilience', () => {
   });
 
   it('starts without the Users DB when the pool cannot be created', async () => {
-    const service = new MssqlService(config('usersDb', MSSQL_CFG));
+    const service = new MssqlUsersDbService(config('usersDb', MSSQL_CFG));
 
     await expect(service.onModuleInit()).resolves.toBeUndefined();
 
     await expect(service.ping()).resolves.toBe(false);
     // Since 2026-08-31 the pool is created lazily: a query retries the
     // connection and surfaces the failure as a clean per-request 503.
-    await expect(service.query('SELECT 1 AS ok')).rejects.toThrow(MssqlUnavailableException);
+    await expect(service.query('SELECT 1 AS ok')).rejects.toThrow(SqlUnavailableException);
   });
 
   it('Users DB heals without a restart once the database comes back', async () => {
-    const service = new MssqlService(config('usersDb', MSSQL_CFG));
+    const service = new MssqlUsersDbService(config('usersDb', MSSQL_CFG));
     await service.onModuleInit(); // first attempt fails (mock rejects)
     expect(service.isEnabled()).toBe(false);
 
@@ -125,7 +126,7 @@ describe('database boot resilience', () => {
   });
 
   it('names the missing USERS_DB_* vars when unconfigured', async () => {
-    const service = new MssqlService(
+    const service = new MssqlUsersDbService(
       config('usersDb', { ...MSSQL_CFG, host: '', user: '' }),
     );
     await service.onModuleInit();
@@ -142,7 +143,7 @@ describe('database boot resilience', () => {
     await expect(service.onModuleInit()).resolves.toBeUndefined();
 
     await expect(service.ping()).resolves.toBe(false);
-    expect(() => service['getPool']()).toThrow(MssqlUnavailableException);
+    expect(() => service['getPool']()).toThrow(SqlUnavailableException);
   });
 
   it('reports the real reason on /health instead of dying silently', async () => {

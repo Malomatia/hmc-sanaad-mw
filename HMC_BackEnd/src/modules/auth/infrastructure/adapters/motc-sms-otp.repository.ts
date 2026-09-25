@@ -2,7 +2,7 @@ import { HttpException, HttpStatus, Inject, Injectable, Logger } from '@nestjs/c
 import { ConfigService } from '@nestjs/config';
 import { timingSafeEqual } from 'node:crypto';
 import { MotcSmsDbService } from '@core/database/motc-sms-db.service';
-import { MssqlQueryError } from '@core/database/mssql.error';
+import { SqlQueryError } from '@core/database/sql.error';
 import { MotcSmsConfig, OtpConfig, SmsConfig } from '@core/config/configuration';
 import { DEFAULT_LANG } from '@shared/domain/lang';
 import {
@@ -209,7 +209,7 @@ export class MotcSmsOtpRepository implements OtpPort {
         );
         return messageId;
       } catch (err) {
-        const sqlError = (err as MssqlQueryError).sqlErrorNumber;
+        const sqlError = (err as SqlQueryError).sqlErrorNumber;
         if (
           sqlError !== undefined &&
           DUPLICATE_KEY_ERRORS.has(sqlError) &&

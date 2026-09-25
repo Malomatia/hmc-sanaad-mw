@@ -75,13 +75,16 @@ services:
       ENTRA_LOGIN_BASE_URL: "${ENTRA_LOGIN_BASE_URL:-https://login.microsoftonline.com}"
       ENTRA_LOOKUP_ATTRIBUTE: "${ENTRA_LOOKUP_ATTRIBUTE:-userPrincipalName}"
       ENTRA_TIMEOUT_MS: "${ENTRA_TIMEOUT_MS:-10000}"
-      # ── Users/Sanaad SQL Server DB (auth cycle + API-1 healthcheck tables) ──
+      # ── Users/Sanaad DB (auth cycle + API-1 healthcheck tables) ──
       # DevOps-managed via host env. USERS_DB_PASSWORD must come from the host
       # env, never a committed .env. Leave USERS_DB_HOST unset (or set
       # USERS_DB_DISABLED=true) to boot without the pool — auth-cycle DB calls
       # then fail while the rest of the API keeps working.
+      # USERS_DB_DRIVER: mssql (SQL Server) | mysql. The port stays empty by
+      # default so the app picks the driver's own (1433 / 3306).
+      USERS_DB_DRIVER: "${USERS_DB_DRIVER:-mssql}"
       USERS_DB_HOST: "${USERS_DB_HOST:-}"
-      USERS_DB_PORT: "${USERS_DB_PORT:-1433}"
+      USERS_DB_PORT: "${USERS_DB_PORT:-}"
       USERS_DB_NAME: "${USERS_DB_NAME:-}"
       USERS_DB_USER: "${USERS_DB_USER:-}"
       USERS_DB_PASSWORD: "${USERS_DB_PASSWORD:-}"

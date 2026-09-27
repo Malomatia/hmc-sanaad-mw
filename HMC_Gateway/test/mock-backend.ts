@@ -33,8 +33,9 @@ export function startMockBackend(jwtSecret: string): Promise<MockBackend> {
       requests.push({ method: req.method, url: req.url, headers: req.headers, body });
 
       if (req.url?.startsWith('/api/v1/auth/login')) {
-        const token = jwt.sign({ username: 'AIBRAHIM39', employeeNumber: '037400' }, jwtSecret, {
-          expiresIn: '1h',
+        const token = jwt.sign({ sub: '037400', username: 'AIBRAHIM39', employeeNumber: '037400',
+          deviceImei: 'test-device', sid: 'test-session', jti: 'test-access', typ: 'access' }, jwtSecret, {
+          expiresIn: '1h', algorithm: 'HS256', issuer: 'sanaad', audience: 'sanaad-b2e',
         });
         res.writeHead(200, { 'content-type': 'application/json' });
         res.end(JSON.stringify({ status: 'success', token }));

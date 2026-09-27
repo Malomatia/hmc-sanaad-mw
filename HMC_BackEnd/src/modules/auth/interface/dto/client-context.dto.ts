@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Expose, Transform } from 'class-transformer';
-import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
 
 /**
  * Common client/device context sent by the mobile app on auth requests.
@@ -16,7 +16,9 @@ import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
 export class ClientContextDto {
   @ApiProperty({ example: 'hmc12345', description: 'Employee NT id / username.' })
   @IsString()
+  @MaxLength(256)
   @IsNotEmpty()
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   username!: string;
 
   @ApiPropertyOptional({
@@ -25,6 +27,7 @@ export class ClientContextDto {
   })
   @IsOptional()
   @IsString()
+  @MaxLength(256)
   deviceid?: string;
 
   @ApiPropertyOptional({
@@ -37,11 +40,13 @@ export class ClientContextDto {
   @Transform(({ value, obj }) => value ?? (obj as ClientContextDto).deviceid)
   @IsString({ message: 'deviceid (or imeinumber) must be a string' })
   @IsNotEmpty({ message: 'deviceid (or imeinumber) should not be empty' })
+  @MaxLength(256)
   imeinumber!: string;
 
   @ApiPropertyOptional({ example: 'Android' })
   @IsOptional()
   @IsString()
+  @MaxLength(256)
   platform?: string;
 
   @ApiPropertyOptional({
@@ -50,6 +55,7 @@ export class ClientContextDto {
   })
   @IsOptional()
   @IsString()
+  @MaxLength(256)
   devicemodel?: string;
 
   @ApiPropertyOptional({
@@ -58,20 +64,24 @@ export class ClientContextDto {
   })
   @IsOptional()
   @IsString()
+  @MaxLength(256)
   osversion?: string;
 
   @ApiPropertyOptional({ example: 'Sanaad' })
   @IsOptional()
   @IsString()
+  @MaxLength(256)
   appname?: string;
 
   @ApiPropertyOptional({ example: '1.0.0' })
   @IsOptional()
   @IsString()
+  @MaxLength(256)
   version?: string;
 
   @ApiPropertyOptional({ example: '2026-01-02T14:20:00' })
   @IsOptional()
   @IsString()
+  @MaxLength(256)
   sysdate?: string;
 }

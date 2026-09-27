@@ -1,6 +1,7 @@
 import { CanActivate, ExecutionContext, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Request } from 'express';
+import { timingSafeEqual } from 'node:crypto';
 import { DevConsoleConfig } from '../config/configuration';
 
 /**
@@ -19,13 +20,14 @@ export class DevConsoleGuard implements CanActivate {
   private readonly cfg: DevConsoleConfig;
 
   constructor(config: ConfigService) {
-    this.cfg = config.get<DevConsoleConfig>('devConsole', {
-      enabled: true,
+    this.cfg = { ...config.get<DevConsoleConfig>('devConsole', {
+      enabled: false,
       token: '',
       allowWrite: false,
       maxRows: 500,
       timeoutMs: 60000,
-    });
+    }) };
+    if (config.get<string>('app.nodeEnv') === 'production') this.cfg.enabled = false;
   }
 
   canActivate(context: ExecutionContext): boolean {
@@ -34,10 +36,10 @@ export class DevConsoleGuard implements CanActivate {
       // Same response as an unknown route: presence of the console is not leaked.
       throw new NotFoundException(`Cannot ${req.method} ${req.path}`);
     }
-    if (!this.cfg.token) return true;
-
-    const supplied = (req.headers['x-console-token'] as string) || (req.query?.token as string) || '';
-    if (supplied !== this.cfg.token) {
+    const supplied = req.headers['x-console-token'];
+    const expected = Buffer.from(this.cfg.token);
+    const actual = Buffer.from(typeof supplied === 'string' ? supplied : '');
+    if (expected.length < 32 || actual.length !== expected.length || !timingSafeEqual(actual, expected)) {
       throw new ForbiddenException('Invalid console token.');
     }
     return true;

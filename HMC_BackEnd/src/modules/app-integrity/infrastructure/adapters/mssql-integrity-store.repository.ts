@@ -1,12 +1,20 @@
 import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
-import { SQL_NOW, UsersDbDialect, UsersDbService } from '@core/database/users-db/users-db.service';
+import {
+  mysqlExact,
+  SQL_NOW,
+  UsersDbDialect,
+  UsersDbService,
+} from '@core/database/users-db/users-db.service';
 import { SqlQueryError } from '@core/database/sql.error';
 import { AttestKey } from '../../domain/attestation';
 import { AttestKeyStorePort, ChallengeStorePort } from '../../domain/ports/integrity.ports';
 
 const CHALLENGE_TABLE = 'HMC_Sanad_AttestChallenge_tbl';
 const KEY_TABLE = 'HMC_Sanad_AttestKey_tbl';
+
+/** The only shape issue() produces: 32 random bytes in base64 (44 characters). */
+const CANONICAL_CHALLENGE = /^[A-Za-z0-9+/]{43}=$/;
 
 /** Challenge expiry, `@ttl` milliseconds from now. */
 const EXPIRES_AT: Record<UsersDbDialect, string> = {
@@ -100,6 +108,15 @@ export class MssqlChallengeStore extends GuardedStore implements ChallengeStoreP
   }
 
   async consume(value: string, deviceId?: string): Promise<boolean> {
+    // The table also holds the auth state's session, grant and rate-budget
+    // nonces (hF./hA./hR./hG./hB.). The value arrives from a client header, so
+    // only the shape issue() produces may reach the UPDATE, compared exactly —
+    // otherwise a client could spend someone's session through this route.
+    if (!CANONICAL_CHALLENGE.test(value ?? '')) return false;
+    const valueMatches =
+      this.db.dialect === 'mysql'
+        ? mysqlExact('Challenge', '@value')
+        : 'Challenge COLLATE Latin1_General_100_BIN2 = @value';
     // One statement: marking it used IS the check, so a challenge cannot be
     // spent twice by two requests arriving together. The device predicate is
     // part of the same statement for the same reason.
@@ -107,7 +124,7 @@ export class MssqlChallengeStore extends GuardedStore implements ChallengeStoreP
       this.db.execute(
         `UPDATE ${CHALLENGE_TABLE}
             SET UsedAt = ${SQL_NOW[this.db.dialect]}
-          WHERE Challenge = @value AND UsedAt IS NULL AND ExpiresAt > ${SQL_NOW[this.db.dialect]}` +
+          WHERE ${valueMatches} AND UsedAt IS NULL AND ExpiresAt > ${SQL_NOW[this.db.dialect]}` +
           (deviceId === undefined ? '' : ' AND LoginID = @deviceId'),
         deviceId === undefined ? { value } : { value, deviceId },
       ),

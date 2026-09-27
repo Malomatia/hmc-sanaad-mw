@@ -23,6 +23,7 @@ import {
 } from '../interface/dto/onboarding.dto';
 import { devIdentity } from './dev-fallback';
 import { maskEmail, maskPhone } from './mask.util';
+import { isDemoUser } from './demo-users.util';
 import { DEFAULT_LANG, Lang } from '@shared/domain/lang';
 
 /** User-facing initiate messages, per the request's `lang` header/query. */
@@ -44,6 +45,10 @@ const INITIATE_FIELDS: readonly (keyof InitiateResponseDto & keyof UserValidateR
   'otpmode',
   'elapsedtimeinmins',
 ];
+
+/** Fixed (already masked) contact returned to DEMO_USERS by /auth/initiate. */
+const DEMO_EMAIL = 'DE********@hamad.qa';
+const DEMO_PHONE = 'XXXXXXXXXX654';
 
 /**
  * API-2 (User Validate) + API-3 (Validate OTP). Reworked flow (client request
@@ -69,6 +74,7 @@ export class OnboardingService {
   private readonly otpInResponse: boolean;
   /** OTP TTL for the dev-bypass response's elapsedtimeinmins. */
   private readonly otpTtlSeconds: number;
+  private readonly demoUsers: string[];
 
   constructor(
     @Inject(LDAP_USER_PORT) private readonly ldap: LdapUserPort,
@@ -80,6 +86,7 @@ export class OnboardingService {
   ) {
     this.devBypass = config.get<boolean>('auth.disabled', false);
     this.otpTtlSeconds = config.get<number>('otp.ttlSeconds', 300);
+    this.demoUsers = config.get<string[]>('auth.demoUsers', []);
     this.otpInResponse =
       config.get<boolean>('otp.inResponse', false) === true &&
       config.get<string>('app.nodeEnv', 'development') !== 'production';
@@ -102,6 +109,24 @@ export class OnboardingService {
   }
 
   private async initiate(dto: UserValidateRequestDto, lang: Lang): Promise<UserValidateResponseDto> {
+    // DEMO_USERS: fixed "existing user" answer — no directory, device table,
+    // OTP or rate limit. They log in with MPIN on any device (AuthService).
+    if (isDemoUser(dto.username, this.demoUsers)) {
+      this.audit.lifecycle(AuthLifecycleEvent.USER_VALIDATE_SUCCESS, {
+        username: dto.username,
+        deviceImei: dto.imeinumber,
+        platform: dto.platform,
+        appVersion: dto.version,
+        status: 'success',
+      });
+      return {
+        status: 'success',
+        email: DEMO_EMAIL,
+        employeephonenumber: DEMO_PHONE,
+        newuser: 'No',
+        vflag: 'Exist',
+      };
+    }
     if (!this.devBypass) {
       await this.state.limit(
         'otp-send',

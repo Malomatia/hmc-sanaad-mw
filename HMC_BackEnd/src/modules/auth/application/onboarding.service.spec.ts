@@ -197,6 +197,38 @@ describe('Onboarding security boundaries', () => {
   });
 });
 
+describe('DEMO_USERS on initiate', () => {
+  const config = { 'auth.demoUsers': ['DEMO1', 'DEMO2'] };
+
+  it.each(['demo1', ' Demo2 ', 'DEMO1'])(
+    'returns the fixed Exist payload for %p without touching any table',
+    async (username) => {
+      const { service, ldap, devices, otp, state } = makeService({ config });
+      await expect(service.validateUser({ ...DTO, username })).resolves.toEqual({
+        status: 'success',
+        message: GENERIC,
+        requestid: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/),
+        email: 'DE********@hamad.qa',
+        employeephonenumber: 'XXXXXXXXXX654',
+        newuser: 'No',
+        vflag: 'Exist',
+      });
+      expect(ldap.validate).not.toHaveBeenCalled();
+      expect(devices.find).not.toHaveBeenCalled();
+      expect(devices.bind).not.toHaveBeenCalled();
+      expect(otp.send).not.toHaveBeenCalled();
+      expect(state.limit).not.toHaveBeenCalled();
+    },
+  );
+
+  it('runs the normal flow for non-demo users', async () => {
+    const { service, ldap, otp } = makeService({ config });
+    await service.validateUser(DTO);
+    expect(ldap.validate).toHaveBeenCalled();
+    expect(otp.send).toHaveBeenCalled();
+  });
+});
+
 describe.each(['validateUser', 'sendOtp'] as const)(
   'OnboardingService.%s language and testing options',
   (method) => {

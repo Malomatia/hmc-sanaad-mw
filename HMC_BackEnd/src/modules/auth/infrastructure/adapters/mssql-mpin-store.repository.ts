@@ -59,6 +59,16 @@ export class MssqlMpinStoreRepository implements MpinStorePort {
     return rows.length > 0;
   }
 
+  async verifyAnyDevice(username: string, mpin: string): Promise<boolean> {
+    const rows = await this.db.query(
+      `SELECT DeviceID
+         FROM HMC_Sanad_DeviceRegn_tbl
+        WHERE LoginID = @username AND MPIN = @mpin AND Status = 'Active'`,
+      { username, mpin },
+    );
+    return rows.length > 0;
+  }
+
   async exists(username: string, imei: string): Promise<boolean> {
     const rows = await this.db.query(
       `SELECT DeviceID

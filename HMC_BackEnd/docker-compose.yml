@@ -175,6 +175,8 @@ services:
       AUTH_DISABLED: "${AUTH_DISABLED:-false}"
       # TESTING ONLY — never enable in production.
       AUTH_STATIC_LOGIN: "${AUTH_STATIC_LOGIN:-false}"
+      # Demo accounts (comma-separated): fixed initiate answer, device-less MPIN login.
+      DEMO_USERS: "${DEMO_USERS:-}"
       # Login functionaccesslist source (Users DB, documented AppMaster query).
       FUNCTION_ACCESS_VIEW: "${FUNCTION_ACCESS_VIEW:-HMC_Sanad_AppMaster_VW}"
       FUNCTION_ACCESS_APP_ID: "${FUNCTION_ACCESS_APP_ID:-1}"

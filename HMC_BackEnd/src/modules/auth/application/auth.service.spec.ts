@@ -36,6 +36,7 @@ const AUTH_CFG = {
   jwtRefreshExpiresIn: '7d',
   disabled: false,
   staticLogin: false,
+  demoUsers: [] as string[],
   functionAccessView: 'HMC_Sanad_AppMaster_VW',
   functionAccessAppId: 1,
 };
@@ -46,7 +47,10 @@ function makeService(overrides: Partial<typeof AUTH_CFG> = {}, identityUsername 
     secret: authCfg.jwtSecret,
     signOptions: { expiresIn: authCfg.jwtExpiresIn as JwtSignOptions['expiresIn'] },
   });
-  const mpinStore = { verify: jest.fn().mockResolvedValue(true) } as unknown as MpinStorePort;
+  const mpinStore = {
+    verify: jest.fn().mockResolvedValue(true),
+    verifyAnyDevice: jest.fn().mockResolvedValue(true),
+  } as unknown as MpinStorePort;
   const ldap = {
     validate: jest.fn().mockResolvedValue({
       username: identityUsername,
@@ -299,6 +303,46 @@ describe('AuthService Oracle user validation', () => {
     });
     expect(oracleUser.validate).not.toHaveBeenCalled();
     expect(functionAccess.list).not.toHaveBeenCalled();
+  });
+});
+
+describe('AuthService DEMO_USERS login', () => {
+  it.each(['demo1', ' Demo1 '])(
+    'verifies the MPIN of %p by username only, then runs the normal flow',
+    async (username) => {
+      const { service, mpinStore, ldap, functionAccess } = makeService({ demoUsers: ['DEMO1'] });
+
+      await expect(service.login({ ...LOGIN, username })).resolves.toMatchObject({
+        status: 'success',
+      });
+      expect(mpinStore.verifyAnyDevice).toHaveBeenCalledWith(username, LOGIN.mpin);
+      expect(mpinStore.verify).not.toHaveBeenCalled();
+      expect(ldap.validate).toHaveBeenCalled();
+      expect(functionAccess.list).toHaveBeenCalled();
+    },
+  );
+
+  it('rejects a demo user with a wrong MPIN', async () => {
+    const { service, mpinStore, ldap } = makeService({ demoUsers: ['DEMO1'] });
+    jest.mocked(mpinStore.verifyAnyDevice).mockResolvedValue(false);
+
+    await expect(service.login({ ...LOGIN, username: 'demo1' })).resolves.toEqual({
+      status: 'error',
+      message: 'Invalid credentials.',
+    });
+    expect(ldap.validate).not.toHaveBeenCalled();
+  });
+
+  it('keeps the device-bound check for non-demo users', async () => {
+    const { service, mpinStore } = makeService({ demoUsers: ['DEMO1'] });
+
+    await service.login(LOGIN);
+    expect(mpinStore.verify).toHaveBeenCalledWith({
+      username: LOGIN.username,
+      imei: LOGIN.imeinumber,
+      mpin: LOGIN.mpin,
+    });
+    expect(mpinStore.verifyAnyDevice).not.toHaveBeenCalled();
   });
 });
 

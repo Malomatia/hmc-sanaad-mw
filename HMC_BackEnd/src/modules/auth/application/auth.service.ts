@@ -30,6 +30,7 @@ import {
 } from '../interface/dto/auth.dto';
 import { DEV_FUNCTION_ACCESS, devIdentity } from './dev-fallback';
 import { STATIC_FUNCTION_ACCESS, STATIC_LOGIN_IDENTITY } from './static-login.data';
+import { isDemoUser } from './demo-users.util';
 import {
   ORACLE_USER_VALIDATION_PORT,
   OracleUserValidationPort,
@@ -117,11 +118,14 @@ export class AuthService {
         this.config.get<number>('mpin.maxAttempts', 5),
         this.config.get<number>('mpin.lockoutMinutes', 15) * 60,
       );
-      const ok = await this.mpinStore.verify({
-        username: dto.username,
-        imei: dto.imeinumber,
-        mpin: dto.mpin,
-      });
+      // DEMO_USERS: MPIN checked by username only (any registered device).
+      const ok = isDemoUser(dto.username, this.authConfig.demoUsers ?? [])
+        ? await this.mpinStore.verifyAnyDevice(dto.username, dto.mpin)
+        : await this.mpinStore.verify({
+            username: dto.username,
+            imei: dto.imeinumber,
+            mpin: dto.mpin,
+          });
       if (!ok) {
         this.audit.lifecycle(AuthLifecycleEvent.LOGIN_FAILURE, { ...ctx, status: 'error' });
         return {

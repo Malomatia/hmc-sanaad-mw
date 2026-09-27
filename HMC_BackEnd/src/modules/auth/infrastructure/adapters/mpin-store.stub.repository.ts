@@ -25,6 +25,12 @@ export class MpinStoreStubRepository implements MpinStorePort {
     );
   }
 
+  verifyAnyDevice(_username: string, _mpin: string): Promise<boolean> {
+    throw new NotImplementedException(
+      'MPIN verification is not wired yet — provide the MPIN store spec. [TODO(spec) API-5]',
+    );
+  }
+
   exists(_username: string, _imei: string): Promise<boolean> {
     throw new NotImplementedException(
       'MPIN store is not wired yet — provide the MPIN persistence spec. [TODO(spec)]',

@@ -21,6 +21,8 @@ export interface MpinStorePort {
   set(cmd: SetMpinCommand): Promise<void>;
   /** Constant-time verify of a presented MPIN for a username + device. */
   verify(query: VerifyMpinQuery): Promise<boolean>;
+  /** Verify a presented MPIN for a username on ANY of its devices (DEMO_USERS only). */
+  verifyAnyDevice(username: string, mpin: string): Promise<boolean>;
   /** True if the user already has an MPIN registered on this device. */
   exists(username: string, imei: string): Promise<boolean>;
 }

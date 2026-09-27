@@ -24,6 +24,7 @@ function makeService(authDisabled = false) {
     set: jest.fn(),
     exists: jest.fn().mockResolvedValue(false),
     verify: jest.fn(),
+    verifyAnyDevice: jest.fn(),
   } as jest.Mocked<MpinStorePort>;
   const otp = {
     send: jest.fn().mockResolvedValue({ requestId: REQUEST_ID }),

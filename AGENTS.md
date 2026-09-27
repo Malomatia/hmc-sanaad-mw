@@ -169,6 +169,18 @@ logs:
   no 4–6 digit check on the client-hashed value, which must pass through
   unchanged. This validation change is scoped to `/auth/mpin/update`; the
   separate reset endpoint still retains its numeric policy.
+  **`DEMO_USERS`** (comma-separated, case-insensitive; `auth.demoUsers`, off
+  when empty) carves out demo/review accounts: `/auth/initiate` answers them
+  with a fixed `vflag: 'Exist'` payload (masked `DE********@hamad.qa` /
+  `XXXXXXXXXX654`, `newuser: 'No'`) short-circuited before the directory,
+  device table, OTP send and resend rate-limit (`OnboardingService.initiate`,
+  shared by `/auth/send-otp`), and `/auth/login` verifies their MPIN with
+  `MpinStorePort.verifyAnyDevice` (`LoginID + MPIN + Status='Active'`, NO
+  IMEI) instead of `verify`. Everything after the MPIN check in login is
+  unchanged, so a demo user must still exist in the directory and have an
+  Active MPIN row (initiate never creates one for them — seed it manually or
+  via a normal onboarding before adding the name). `AUTH_DISABLED` /
+  `AUTH_STATIC_LOGIN` still take precedence.
 - `HMC_RHAP_OTP_tbl` — OTP rows (`OtpPort`, `OTP_STORE=legacy`, the default
   since 2026-09-03): `TOP 1 ... ORDER BY SeqNo DESC` + `DATEDIFF` freshness;
   `SeqNo` doubles as the mobile `requestid`. Resend window/TTL/max-attempts

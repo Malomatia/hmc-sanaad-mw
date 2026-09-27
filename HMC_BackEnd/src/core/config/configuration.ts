@@ -105,6 +105,12 @@ export interface AuthConfig {
  */
   staticLogin: boolean;
   /**
+   * DEMO_USERS (comma-separated, stored upper-cased): /auth/initiate answers
+   * these usernames with a fixed "Exist" payload without touching any table,
+   * and /auth/login verifies their MPIN by username only (no device match).
+   */
+  demoUsers: string[];
+  /**
    * Users-DB view/table holding the login `functionaccesslist` (module name/
    * code/status per function). The documented legacy query is
    * `SELECT FunctionName, FunctionCode, Description, StatusCode FROM
@@ -725,6 +731,10 @@ export default (): RootConfig => ({
     jwtRefreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN ?? '7d',
     disabled: toBool(process.env.AUTH_DISABLED),
     staticLogin: toBool(process.env.AUTH_STATIC_LOGIN),
+    demoUsers: (process.env.DEMO_USERS ?? '')
+      .split(',')
+      .map((u) => u.trim().toUpperCase())
+      .filter(Boolean),
     functionAccessView: process.env.FUNCTION_ACCESS_VIEW ?? 'HMC_Sanad_AppMaster_VW',
     functionAccessAppId: Number(process.env.FUNCTION_ACCESS_APP_ID ?? 1),
   },

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
@@ -34,13 +34,29 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
       secretOrKey: auth.jwtSecret,
+      algorithms: ['HS256'],
+      issuer: auth.jwtIssuer,
+      audience: auth.jwtAudience,
     });
   }
 
   validate(payload: JwtPayload): AuthenticatedUser {
+    const now = Math.floor(Date.now() / 1000);
+    if (!payload || payload.typ !== 'access' ||
+        ['sub', 'username', 'deviceImei', 'sid', 'jti'].some((key) =>
+          typeof payload[key] !== 'string' || !(payload[key] as string).trim() || (payload[key] as string).length > 256) ||
+        !Number.isSafeInteger(payload.exp) || !Number.isSafeInteger(payload.iat) ||
+        (payload.exp as number) <= now || (payload.iat as number) > now + 30 ||
+        (payload.exp as number) <= (payload.iat as number) ||
+        ['employeeNumber', 'enum', 'name', 'dept', 'company'].some((key) =>
+          payload[key] !== undefined && typeof payload[key] !== 'string') ||
+        ['roles', 'functions'].some((key) => payload[key] !== undefined &&
+          (!Array.isArray(payload[key]) || !(payload[key] as unknown[]).every((value) => typeof value === 'string')))) {
+      throw new UnauthorizedException('Invalid session token. Please log in again.');
+    }
     return {
       username: payload.username ?? payload.sub ?? 'unknown',
-      employeeNumber: payload.employeeNumber ?? payload.enum ?? payload.sub,
+      employeeNumber: payload.employeeNumber,
       roles: payload.roles ?? [Role.EMPLOYEE],
       functions: payload.functions,
       employeeName: payload.name,

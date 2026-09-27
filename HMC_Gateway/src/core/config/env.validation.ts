@@ -23,11 +23,14 @@ export const envValidationSchema = Joi.object({
 
   // Auth — MUST match HMC_BackEnd's JWT_SECRET/JWT_ISSUER/JWT_AUDIENCE so
   // tokens issued by the backend at login verify locally at the gateway.
-  JWT_SECRET: Joi.string().min(8).default('dev-only-secret-change-me'),
+  JWT_SECRET: Joi.string().when('NODE_ENV', {
+    is: 'production', then: Joi.string().min(32).invalid('dev-only-secret-change-me', 'replace_with_a_long_random_secret').required(),
+    otherwise: Joi.string().min(8).default('dev-only-secret-change-me'),
+  }),
   JWT_ISSUER: Joi.string().default('sanaad'),
   JWT_AUDIENCE: Joi.string().default('sanaad-b2e'),
   JWT_EXPIRES_IN: Joi.string().default('1h'),
-  AUTH_DISABLED: Joi.boolean().default(false),
+  AUTH_DISABLED: Joi.boolean().when('NODE_ENV', { is: 'production', then: Joi.valid(false) }).default(false),
 
   // Rate limiting for login / OTP / MPIN attempt endpoints
   THROTTLE_LOGIN_LIMIT: Joi.number().min(1).default(5),

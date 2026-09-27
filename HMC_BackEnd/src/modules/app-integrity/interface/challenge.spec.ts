@@ -4,6 +4,7 @@ import { Reflector } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
+import { AuthStateService } from '@core/auth/auth-state.service';
 import { JwtAuthGuard } from '@core/auth/jwt-auth.guard';
 import { JwtStrategy } from '@core/auth/jwt.strategy';
 import { TokenRevocationService } from '@core/auth/token-revocation.service';
@@ -39,6 +40,9 @@ describe('POST /app-integrity/challenge', () => {
           provide: TokenRevocationService,
           useValue: { isRevoked: jest.fn().mockReturnValue(false) },
         },
+        // JwtStrategy checks the server-side session; these routes are public,
+        // so it must never be consulted for them.
+        { provide: AuthStateService, useValue: { sessionActive: jest.fn().mockResolvedValue(true) } },
         { provide: AppIntegrityService, useValue: service },
       ],
     }).compile();

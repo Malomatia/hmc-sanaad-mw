@@ -1,7 +1,12 @@
 import { Injectable } from '@nestjs/common';
-import { createPool, Pool, PoolOptions, ResultSetHeader } from 'mysql2/promise';
+import { createPool, Pool, PoolConnection, PoolOptions, ResultSetHeader } from 'mysql2/promise';
 import { toPositional } from './named-params.util';
-import { UsersDbDiagnostics, UsersDbRawResult, UsersDbService } from './users-db.service';
+import {
+  UsersDbDiagnostics,
+  UsersDbRawResult,
+  UsersDbService,
+  UsersDbTransactionHandle,
+} from './users-db.service';
 
 /**
  * USERS_DB_DRIVER=mysql — the Users DB tables hosted on MySQL, through
@@ -57,12 +62,46 @@ export class MysqlUsersDbService extends UsersDbService {
     await this.pool?.end();
   }
 
-  protected async rawQuery(
+  protected rawQuery(
+    statement: string,
+    params: Record<string, unknown>,
+  ): Promise<UsersDbRawResult> {
+    return this.executeOn(this.pool!, statement, params);
+  }
+
+  protected async begin(): Promise<UsersDbTransactionHandle> {
+    const connection = await this.pool!.getConnection();
+    try {
+      await connection.beginTransaction();
+    } catch (err) {
+      connection.release();
+      throw err;
+    }
+    let open = true;
+    // The connection goes back to the pool exactly once, whatever the outcome.
+    const end = async (finish: () => Promise<void>) => {
+      if (!open) return;
+      open = false;
+      try {
+        await finish();
+      } finally {
+        connection.release();
+      }
+    };
+    return {
+      run: (statement, params) => this.executeOn(connection, statement, params),
+      commit: () => end(() => connection.commit()),
+      rollback: () => end(() => connection.rollback()),
+    };
+  }
+
+  private async executeOn(
+    target: Pool | PoolConnection,
     statement: string,
     params: Record<string, unknown>,
   ): Promise<UsersDbRawResult> {
     const { sql, values } = toPositional(statement, params);
-    const [result] = await this.pool!.execute({
+    const [result] = await target.execute({
       sql,
       values: values as never,
       timeout: this.cfg.requestTimeoutMs,

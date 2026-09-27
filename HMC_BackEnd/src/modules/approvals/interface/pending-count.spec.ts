@@ -7,6 +7,7 @@ import request from 'supertest';
 import { Role } from '@core/auth/auth-user.interface';
 import { JwtAuthGuard } from '@core/auth/jwt-auth.guard';
 import { JwtStrategy } from '@core/auth/jwt.strategy';
+import { AuthStateService } from '@core/auth/auth-state.service';
 import { RolesGuard } from '@core/auth/roles.guard';
 import { TokenRevocationService } from '@core/auth/token-revocation.service';
 import { ResponseInterceptor } from '@core/http/response.interceptor';
@@ -27,7 +28,7 @@ describe.each(['production', 'development'])('pending counts in %s', (nodeEnv) =
   beforeAll(async () => {
     const config = {
       get: (_key: string, fallback: unknown) => fallback,
-      getOrThrow: (key: string) => (key === 'app' ? { nodeEnv } : { jwtSecret: SECRET }),
+      getOrThrow: (key: string) => (key === 'app' ? { nodeEnv } : { jwtSecret: SECRET, jwtIssuer: 'sanaad', jwtAudience: 'sanaad-b2e' }),
     };
     const moduleRef = await Test.createTestingModule({
       controllers: [ApprovalsController],
@@ -37,6 +38,7 @@ describe.each(['production', 'development'])('pending counts in %s', (nodeEnv) =
         JwtStrategy,
         RolesGuard,
         TokenRevocationService,
+        { provide: AuthStateService, useValue: { sessionActive: jest.fn().mockResolvedValue(true) } },
         { provide: ConfigService, useValue: config },
         { provide: APPROVALS_REPOSITORY, useValue: { getPendingCounts } },
         { provide: WorklistService, useValue: {} },
@@ -51,7 +53,8 @@ describe.each(['production', 'development'])('pending counts in %s', (nodeEnv) =
     app.useGlobalGuards(app.get(JwtAuthGuard), app.get(RolesGuard));
     app.useGlobalInterceptors(new ResponseInterceptor(new Reflector()));
     await app.init();
-    token = new JwtService({ secret: SECRET }).sign({
+    token = new JwtService({ secret: SECRET, signOptions: { expiresIn: '1h', issuer: 'sanaad', audience: 'sanaad-b2e', algorithm: 'HS256' } }).sign({
+      sub: '037400', sid: 'test-session', jti: 'test-access', deviceImei: 'test-device', typ: 'access',
       username: 'AIBRAHIM39',
       employeeNumber: '037400',
       roles: [Role.EMPLOYEE],

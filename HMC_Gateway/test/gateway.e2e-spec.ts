@@ -7,7 +7,9 @@ import { MockBackend, startMockBackend } from './mock-backend';
 
 const JWT_SECRET = 'e2e-test-secret-value-not-for-production';
 const signToken = (claims: Record<string, unknown>) =>
-  jwt.sign(claims, JWT_SECRET, { expiresIn: '1h' });
+  jwt.sign({ sub: '037400', username: 'AIBRAHIM39', deviceImei: 'test-device', sid: 'test-session',
+    jti: 'test-access', typ: 'access', ...claims }, JWT_SECRET,
+  { expiresIn: '1h', algorithm: 'HS256', issuer: 'sanaad', audience: 'sanaad-b2e' });
 
 async function expectUnauthorized(
   attempt: request.Test,
@@ -38,7 +40,7 @@ describe('Gateway (e2e) — backend reachable', () => {
     process.env.BACKEND_API_PREFIX = 'api/v1';
     process.env.JWT_SECRET = JWT_SECRET;
     process.env.AUTH_DISABLED = 'false';
-    process.env.THROTTLE_LOGIN_LIMIT = '2';
+    process.env.THROTTLE_LOGIN_LIMIT = '200';
     process.env.THROTTLE_LOGIN_TTL_MS = '60000';
     app = await createApp();
   });
@@ -89,6 +91,18 @@ describe('Gateway (e2e) — backend reachable', () => {
 
   it('rejects an unauthenticated request to a proxied (wildcard) route with 401', async () => {
     await request(app.getHttpServer()).get('/api/v1/employee/profile').expect(401);
+  });
+
+  it.each([
+    { issuer: 'other', audience: 'sanaad-b2e', typ: 'access' },
+    { issuer: 'sanaad', audience: 'other', typ: 'access' },
+    { issuer: 'sanaad', audience: 'sanaad-b2e', typ: 'refresh' },
+  ])('rejects incompatible bearer token %j before proxying', async ({ issuer, audience, typ }) => {
+    const bearer = jwt.sign({ sub: '037400', username: 'TESTUSER', sid: 'session', jti: 'token-id',
+      deviceImei: 'device', typ }, JWT_SECRET, { expiresIn: '1h', issuer, audience, algorithm: 'HS256' });
+    const count = backend.requests.length;
+    await request(app.getHttpServer()).get('/api/v1/employee/profile').auth(bearer, { type: 'bearer' }).expect(401);
+    expect(backend.requests).toHaveLength(count);
   });
 
   it('proxies an authenticated request through the wildcard controller with the bearer token forwarded', async () => {
@@ -215,7 +229,7 @@ describe('Gateway (e2e) — backend reachable', () => {
       await expectUnauthorized(
         request(app.getHttpServer())
           .get(`${profile}?${query}`)
-          .set('Authorization', `Bearer ${signToken(payload)}`),
+          .set('Authorization', `Bearer ${signToken({ username: undefined, ...payload })}`),
         backend,
       );
     });
@@ -314,6 +328,15 @@ describe('Gateway (e2e) — throttling', () => {
     await backend.close();
   });
 
+  it.each(['initiate', 'mpin/update'])('rate-limits /auth/%s before forwarding', async (route) => {
+    const attempt = () => request(app.getHttpServer()).post(`/api/v1/auth/${route}`).send({ username: 'test' });
+    await attempt().expect(404);
+    await attempt().expect(404);
+    const count = backend.requests.length;
+    await attempt().expect(429);
+    expect(backend.requests).toHaveLength(count);
+  });
+
   it('rate-limits repeated login attempts beyond THROTTLE_LOGIN_LIMIT', async () => {
     const attempt = () =>
       request(app.getHttpServer()).post('/api/v1/auth/login').send({ username: 'x', mpin: '0000' });
@@ -336,6 +359,7 @@ describe('Gateway (e2e) — query identity with AUTH_DISABLED=true', () => {
     process.env.BACKEND_API_PREFIX = 'api/v1';
     process.env.JWT_SECRET = JWT_SECRET;
     process.env.AUTH_DISABLED = 'true';
+    process.env.THROTTLE_LOGIN_LIMIT = '200';
     app = await createApp();
   });
 

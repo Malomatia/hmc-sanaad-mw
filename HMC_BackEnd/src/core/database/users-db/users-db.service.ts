@@ -46,6 +46,29 @@ export interface UsersDbRawResult {
   insertId?: number;
 }
 
+/** The statements available inside `UsersDbService.transaction`. */
+export interface UsersDbExecutor {
+  query<T = Record<string, any>>(statement: string, params?: Record<string, unknown>): Promise<T[]>;
+  execute<T = Record<string, any>>(
+    statement: string,
+    params?: Record<string, unknown>,
+  ): Promise<UsersDbExecuteResult<T>>;
+}
+
+/** A driver's open transaction: one connection until commit or rollback. */
+export interface UsersDbTransactionHandle {
+  run(statement: string, params: Record<string, unknown>): Promise<UsersDbRawResult>;
+  commit(): Promise<void>;
+  rollback(): Promise<void>;
+}
+
+/**
+ * MySQL exact (binary, case-sensitive) match that can still use the column's
+ * index — the equivalent of SQL Server's `COLLATE Latin1_General_100_BIN2`.
+ */
+export const mysqlExact = (column: string, bind: string): string =>
+  `${column} = ${bind} AND CAST(${column} AS BINARY) = ${bind}`;
+
 /**
  * The Users/Sanaad database — the second database wired into the app (sibling
  * of OracleService). Backs the auth cycle (HMC_Sanad_DeviceRegn_tbl,
@@ -96,6 +119,8 @@ export abstract class UsersDbService implements OnModuleInit, OnModuleDestroy {
   /** Server version + current time, for the boot probe and /health/users-db. */
   protected abstract probe(): Promise<{ version: string; dbTime: string }>;
   protected abstract poolStats(): UsersDbDiagnostics['pool'];
+  /** Take a connection from the pool and open a transaction on it. */
+  protected abstract begin(): Promise<UsersDbTransactionHandle>;
 
   async onModuleInit(): Promise<void> {
     // Eager attempt so the boot log states the pool's fate — but never fatal:
@@ -154,7 +179,13 @@ export abstract class UsersDbService implements OnModuleInit, OnModuleDestroy {
       );
       await this.verifyConnectivity();
     } catch (err) {
-      this.logger.error(`Failed to create Users DB pool: ${(err as Error).message}`);
+      // The driver's message alone ("connect ETIMEDOUT") does not say where it
+      // tried to go; the effective target is what a deployment gets wrong.
+      // Server log only — the HTTP error must not reveal internal addresses.
+      this.logger.error(
+        `Failed to create Users DB pool (${this.dialect} → ${this.cfg.host}:${this.cfg.port}/${this.cfg.database}, ` +
+          `encrypt=${this.cfg.encrypt}, connectTimeout=${this.cfg.connectTimeoutMs}ms): ${(err as Error).message}`,
+      );
       throw new SqlUnavailableException(
         `The users database is currently unavailable: ${(err as Error).message}`,
       );
@@ -210,7 +241,41 @@ export abstract class UsersDbService implements OnModuleInit, OnModuleDestroy {
     statement: string,
     params: Record<string, unknown> = {},
   ): Promise<UsersDbExecuteResult<T>> {
-    const result = await this.run(statement, params);
+    return UsersDbService.toExecuteResult<T>(await this.run(statement, params));
+  }
+
+  /**
+   * Run `work` in one transaction on one connection: committed when it
+   * resolves, rolled back when it throws. For multi-statement units that SQL
+   * Server can send as one batch but MySQL cannot (its prepared statements are
+   * single-statement, and multi-statement queries stay disabled on purpose).
+   */
+  async transaction<T>(work: (tx: UsersDbExecutor) => Promise<T>): Promise<T> {
+    await this.ensurePool();
+    let handle: UsersDbTransactionHandle;
+    try {
+      handle = await this.begin();
+    } catch (err) {
+      throw SqlQueryError.from(err);
+    }
+    const tx: UsersDbExecutor = {
+      query: async <R>(statement: string, params: Record<string, unknown> = {}) =>
+        (await this.run(statement, params, handle)).rows as R[],
+      execute: async <R>(statement: string, params: Record<string, unknown> = {}) =>
+        UsersDbService.toExecuteResult<R>(await this.run(statement, params, handle)),
+    };
+    try {
+      const result = await work(tx);
+      await handle.commit();
+      return result;
+    } catch (err) {
+      // Statement failures already arrive as SqlQueryError (see run()).
+      await handle.rollback().catch(() => undefined);
+      throw err;
+    }
+  }
+
+  private static toExecuteResult<T>(result: UsersDbRawResult): UsersDbExecuteResult<T> {
     return {
       rowsAffected: result.rowsAffected,
       rows: result.rows as T[],
@@ -221,6 +286,7 @@ export abstract class UsersDbService implements OnModuleInit, OnModuleDestroy {
   private async run(
     statement: string,
     params: Record<string, unknown>,
+    via?: UsersDbTransactionHandle,
   ): Promise<UsersDbRawResult> {
     const id = ++this.callSeq;
     const started = Date.now();
@@ -228,7 +294,7 @@ export abstract class UsersDbService implements OnModuleInit, OnModuleDestroy {
     this.logger.log(`[usersdb#${id}] → ${label} params=${this.formatParams(params)}`);
     await this.ensurePool();
     try {
-      const result = await this.rawQuery(statement, params);
+      const result = via ? await via.run(statement, params) : await this.rawQuery(statement, params);
       this.logger.log(
         `[usersdb#${id}] done ${label} ${result.rows.length} row(s), ${result.rowsAffected} affected (${Date.now() - started}ms)`,
       );

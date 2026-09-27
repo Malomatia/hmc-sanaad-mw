@@ -43,29 +43,42 @@ describe('MssqlChallengeStore', () => {
     await expect(store.issue('device-1')).rejects.toBeInstanceOf(ServiceUnavailableException);
   });
 
+  // The shape issue() produces: 32 random bytes in base64.
+  const CHALLENGE = 'A'.repeat(43) + '=';
+
   it('preserves the atomic single-use and expiration checks without requiring an identity', async () => {
     execute.mockResolvedValueOnce({ rowsAffected: 1, rows: [] });
     execute.mockResolvedValueOnce({ rowsAffected: 0, rows: [] });
 
-    await expect(store.consume('one-time-challenge')).resolves.toBe(true);
-    await expect(store.consume('one-time-challenge')).resolves.toBe(false);
+    await expect(store.consume(CHALLENGE)).resolves.toBe(true);
+    await expect(store.consume(CHALLENGE)).resolves.toBe(false);
     const [sql, params] = execute.mock.calls[0];
     expect(sql).toContain('SET UsedAt = GETDATE()');
-    expect(sql).toContain('WHERE Challenge = @value AND UsedAt IS NULL AND ExpiresAt > GETDATE()');
+    expect(sql).toContain(
+      'WHERE Challenge COLLATE Latin1_General_100_BIN2 = @value AND UsedAt IS NULL AND ExpiresAt > GETDATE()',
+    );
     expect(sql).not.toContain('LoginID');
-    expect(params).toEqual({ value: 'one-time-challenge' });
+    expect(params).toEqual({ value: CHALLENGE });
   });
 
   it('ties consumption to the issuing device in the SAME statement when asked', async () => {
     // Anonymous registration has no user linking the two calls; the device
     // predicate must be atomic with the spend, not a separate read.
-    await store.consume('one-time-challenge', 'mobile-installation-1');
+    await store.consume(CHALLENGE, 'mobile-installation-1');
 
     const [sql, params] = execute.mock.calls[0];
     expect(sql).toMatch(/UsedAt IS NULL AND ExpiresAt > GETDATE\(\) AND LoginID = @deviceId/);
     expect(sql).not.toContain('mobile-installation-1');
-    expect(params).toEqual({ value: 'one-time-challenge', deviceId: 'mobile-installation-1' });
+    expect(params).toEqual({ value: CHALLENGE, deviceId: 'mobile-installation-1' });
   });
+
+  it.each(['one-time-challenge', 'hF.' + 'x'.repeat(40), 'A'.repeat(44), ''])(
+    'refuses %j without SQL — not a value issue() could have produced',
+    async (value) => {
+      await expect(store.consume(value)).resolves.toBe(false);
+      expect(execute).not.toHaveBeenCalled();
+    },
+  );
 });
 
 describe('MssqlAttestKeyStore', () => {

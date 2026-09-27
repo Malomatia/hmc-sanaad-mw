@@ -27,9 +27,9 @@ describe('MssqlFunctionAccessRepository', () => {
 
     expect(db.query).toHaveBeenCalledWith(
       expect.stringMatching(
-        /SELECT A\.FunctionName, A\.FunctionCode, A\.Description, A\.StatusCode[\s\S]*FROM HMC_Sanad_AppMaster_VW A WHERE A\.AppID = @appId/,
+        /SELECT A\.FunctionName, A\.FunctionCode, A\.Description, A\.StatusCode[\s\S]*FROM HMC_Sanad_AppMaster_VW A WHERE A\.AppID = @appId AND A\.StatusCode = @StatusCode/,
       ),
-      { appId: 1 },
+      { appId: 1, StatusCode: 1 },
     );
     expect(list).toEqual([
       {

@@ -7,6 +7,7 @@ import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { JwtAuthGuard } from '@core/auth/jwt-auth.guard';
 import { JwtStrategy } from '@core/auth/jwt.strategy';
+import { AuthStateService } from '@core/auth/auth-state.service';
 import { TokenRevocationService } from '@core/auth/token-revocation.service';
 import { OracleService } from '@core/database/oracle.service';
 import { OracleSchemaService } from '@core/database/oracle-schema.service';
@@ -491,14 +492,15 @@ describe('LovOracleRepository', () => {
 describe('Localized LOV HTTP responses', () => {
   const path = '/api/v1/lookups/lov';
   const secret = 'default-lov-test-secret-not-for-production';
-  const token = new JwtService({ secret }).sign({ username: 'TESTUSER', employeeNumber: '037400' });
+  const token = new JwtService({ secret, signOptions: { expiresIn: '1h', issuer: 'sanaad', audience: 'sanaad-b2e', algorithm: 'HS256' } })
+    .sign({ sub: '037400', sid: 'test-session', jti: 'test-access', deviceImei: 'test-device', typ: 'access', username: 'TESTUSER', employeeNumber: '037400' });
   const query = jest.fn();
   let app: INestApplication;
 
   beforeAll(async () => {
     const config = {
       get: (key: string, fallback: unknown) => (key === 'app.lovCacheTtlMs' ? 0 : fallback),
-      getOrThrow: () => ({ jwtSecret: secret }),
+      getOrThrow: () => ({ jwtSecret: secret, jwtIssuer: 'sanaad', jwtAudience: 'sanaad-b2e' }),
     };
     const moduleRef = await Test.createTestingModule({
       controllers: [LookupsController, DependentsController],
@@ -510,6 +512,7 @@ describe('Localized LOV HTTP responses', () => {
         JwtAuthGuard,
         JwtStrategy,
         TokenRevocationService,
+        { provide: AuthStateService, useValue: { sessionActive: jest.fn().mockResolvedValue(true) } },
         OracleContractCatalog,
         OracleSchemaService,
         { provide: LOV_REPOSITORY, useClass: LovOracleRepository },
@@ -695,8 +698,9 @@ describe('Localized LOV HTTP responses', () => {
 describe('CONTRACT_YEARS_V authenticated lookup', () => {
   const path = '/api/v1/lookups/lov';
   const secret = 'contract-years-test-secret-not-for-production';
-  const jwt = new JwtService({ secret });
-  const tokenFor = (username: string) => jwt.sign({ username, employeeNumber: '037400' });
+  const jwt = new JwtService({ secret, signOptions: { expiresIn: '1h', issuer: 'sanaad', audience: 'sanaad-b2e', algorithm: 'HS256' } });
+  const tokenFor = (username: string) => jwt.sign({ sub: '037400', sid: 'test-session', jti: 'test-access',
+    deviceImei: 'test-device', typ: 'access', username, employeeNumber: '037400' });
   let app: INestApplication;
   let query: jest.Mock;
   let hasColumn: jest.Mock;
@@ -706,7 +710,7 @@ describe('CONTRACT_YEARS_V authenticated lookup', () => {
     hasColumn = jest.fn().mockResolvedValue(true);
     const config = {
       get: (key: string, fallback: unknown) => (key === 'app.lovCacheTtlMs' ? 300000 : fallback),
-      getOrThrow: () => ({ jwtSecret: secret }),
+      getOrThrow: () => ({ jwtSecret: secret, jwtIssuer: 'sanaad', jwtAudience: 'sanaad-b2e' }),
     };
     const moduleRef = await Test.createTestingModule({
       controllers: [LookupsController],
@@ -715,6 +719,7 @@ describe('CONTRACT_YEARS_V authenticated lookup', () => {
         JwtAuthGuard,
         JwtStrategy,
         TokenRevocationService,
+        { provide: AuthStateService, useValue: { sessionActive: jest.fn().mockResolvedValue(true) } },
         { provide: LOV_REPOSITORY, useClass: LovOracleRepository },
         { provide: OracleService, useValue: { query } },
         {

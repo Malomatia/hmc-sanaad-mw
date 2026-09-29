@@ -148,6 +148,26 @@
 | 70 | GET* | `/approvals/worklist/:id/history?lang` | `ApprovalDetailQueryDto` | `ActionHistoryResponseDto` | `ACTION_HISTORY_V` |
 | 71 | POST* | `/approvals/:id/reassign` | `ReassignApprovalRequestDto` | `SubmitResultDto` | `REASSIGN_PR` |
 
+## Module: `otl` (OTL timecard — `XXHMC_SND_OTL_PKG`, not a legacy op)
+Every route acts on the JWT caller (a `username` query value is accepted and ignored). Dates are `YYYY-MM-DD`; `period`/`startDate` is the TIME_PERIOD_V `START_DATE`. Objects exist on EBSDEV only (not yet on staging/EBSPRJ) — see AGENTS.md "OTL timecards".
+
+| Method | Route | Req DTO | operationId | Oracle |
+|---|---|---|---|---|
+| GET | `/otl/timecard/periods?year&status&lang` | `OtlPeriodsQueryDto` | `otl_getPeriods` | `OTL_EMP_TIME_PERIOD_V` + `OTL_SUMMARY_V` (status derived) |
+| GET | `/otl/timecard/summary?period&lang` | `OtlSummaryQueryDto` | `otl_getSummary` | `OTL_SUMMARY_V` (INVALID today → `available:false`) |
+| GET | `/otl/timecard/summary/elements?period&lang` | `OtlPeriodQueryDto` | `otl_getSummaryByElement` | `OTL_SUMMARY_ELE_V` |
+| GET | `/otl/timecard/details?period&lang` | `OtlPeriodQueryDto` | `otl_getDetails` | `OTL_TIMECARD_DEATIS_V` (template fallback) |
+| GET | `/otl/template?startDate&endDate&lang` | `OtlDateRangeQueryDto` | `otl_getTemplate` | `OTL_PKG.get_template` + `get_absence_details` |
+| GET | `/otl/absence-details?startDate&endDate&lang` | `OtlDateRangeQueryDto` | `otl_getAbsenceDetails` | `OTL_PKG.get_absence_details` |
+| GET | `/otl/element-details?startDate&endDate&lang` | `OtlDateRangeQueryDto` | `otl_getElementDetails` | `OTL_PKG.get_element_name` (hour-type picker) |
+| GET | `/otl/timecard/elements?lang` | `LangQueryDto` | `otl_getElements` | `OTL_ELEMENT_V` (display catalog only) |
+| GET | `/otl/timecard/facilities?lang` | `LangQueryDto` | `otl_getFacilities` | `OTL_FACILITY_V` |
+| GET | `/otl/timecard/cost-centers?facilityId&lang` | `OtlCostCenterQueryDto` | `otl_getCostCenters` | `OTL_COST_CENTER_V` |
+| POST | `/otl/timecard/submit` (HTTP 200) | `SubmitTimecardRequestDto` | `otl_submitTimecard` | `OTL_PKG.XXHMC_SND_TIMECARD_SUBMIT_PR` (CLOB JSON) |
+| GET | `/approvals/:id/timecard-details?requestor&lang` | `OtlTimecardNotificationQueryDto` | `approvals_getTimecardDetails` | `OTL_PKG.get_time_card_details` (caller must be the recipient; 403 otherwise) |
+
+**Submit result:** action envelope with `result: { referenceNo, submittedDate, cardStatus, approvalChain }` — `referenceNo` is always `null` and `approvalChain` `[]` (Oracle bug B9). Oracle `E` → `successflag: N`. Invalid months (missing day, unknown element, > 24 h/day, label instead of code) answer `N` without calling Oracle.
+
 ## Module: `lookups` (shared — ops 15, 26 + generic)
 | Op | Method | Route | Req DTO | Resp DTO | Oracle |
 |---|---|---|---|---|---|

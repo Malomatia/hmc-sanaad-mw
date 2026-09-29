@@ -14,6 +14,7 @@ import { LeaveController } from '@modules/leave/interface/leave.controller';
 import { IdentityController } from '@modules/identity/interface/identity.controller';
 import { DependentsController } from '@modules/dependents/interface/dependents.controller';
 import { SchoolFeesController } from '@modules/school-fees/interface/school-fees.controller';
+import { OtlController } from '@modules/otl/interface/otl.controller';
 
 /**
  * This interceptor sits on EVERY POST in the API, so its failure mode matters
@@ -318,6 +319,7 @@ describe('NotificationTriggerInterceptor', () => {
         DependentsController.prototype.passportApply,
       ],
       ['school-fees/apply', 'schoolFees_apply', SchoolFeesController.prototype.apply],
+      ['otl/timecard/submit', 'otl_submitTimecard', OtlController.prototype.submitTimecard],
     ] as const;
 
     it.each(operations)(

@@ -13,6 +13,7 @@ import { TicketOracleRepository } from '@modules/annual-ticket/infrastructure/or
 import { ProfileOracleRepository } from '@modules/profile/infrastructure/oracle/profile.oracle.repository';
 import { ApprovalsOracleRepository } from '@modules/approvals/infrastructure/oracle/approvals.oracle.repository';
 import { LeaveOracleRepository } from '@modules/leave/infrastructure/oracle/leave.oracle.repository';
+import { OtlOracleRepository } from '@modules/otl/infrastructure/oracle/otl.oracle.repository';
 
 /**
  * The submit adapters bound to the declarations transcribed from the client's
@@ -421,5 +422,52 @@ describe('Confirmed submit contracts (2026-09-14 export)', () => {
     ]);
     expect(binds).toMatchObject({ p_user_name: 'TEST.USER', p_result: 'APPROVED', p_user_comment: 'ok' });
     expect(binds.p_notification_id).toEqual({ type: oracledb.DB_TYPE_NUMBER, val: 12345 });
+  });
+
+  // Package spec on EBSDEV (2026-09-29): this one DOES declare p_language, and
+  // its CLOB IN / DATE OUT / SYS_REFCURSOR OUT are the first of their kind here.
+  it('OTL TIMECARD_SUBMIT_PR: 5 VARCHAR2 + CLOB IN, 4 VARCHAR2 + DATE + REF CURSOR OUT', async () => {
+    const callMultiCursor = jest.fn().mockResolvedValue({
+      cursors: { p_approval_chain: [] },
+      scalars: {
+        p_success_flag: 'S',
+        p_error_msg: 'Success',
+        p_reference_no: null,
+        p_card_status: 'Submitted',
+      },
+    });
+    const ora = { callMultiCursor } as unknown as OracleService;
+    const schema = new OracleSchemaService(new OracleContractCatalog());
+    await new OtlOracleRepository(ora, schema).submitTimecard({
+      username: 'test.User',
+      period: 'July 2026',
+      confirmationFlag: 'Y',
+      language: 'EN',
+      comments: 'notes',
+      entries: '{"p_entries":[]}',
+    });
+    const [plsql, binds, cursorNames] = callMultiCursor.mock.calls[0];
+    const sql = String(plsql).replace(/\s+/g, ' ');
+    const scalarOuts = ['p_success_flag', 'p_error_msg', 'p_reference_no'];
+    const declared = [
+      ...['p_user_name', 'p_period', 'p_confirmation_flag', 'p_language', 'p_comments', 'p_entries'],
+      ...[...scalarOuts, 'p_submitted_date', 'p_card_status', 'p_approval_chain'],
+    ];
+    expect(sql).toContain('BEGIN XXHMC_SND_OTL_PKG.XXHMC_SND_TIMECARD_SUBMIT_PR(');
+    expect(Object.keys(binds)).toEqual(declared);
+    for (const name of declared) expect(sql).toContain(`${name} => :${name}`);
+    expect(cursorNames).toEqual(['p_approval_chain']);
+    expect(binds).toMatchObject({
+      p_user_name: 'TEST.USER',
+      p_period: 'July 2026',
+      p_confirmation_flag: 'Y',
+      p_language: 'EN',
+      p_comments: 'notes',
+    });
+    expect(binds.p_entries).toEqual({ type: oracledb.DB_TYPE_CLOB, val: '{"p_entries":[]}' });
+    const varcharOut = { dir: oracledb.BIND_OUT, type: oracledb.DB_TYPE_VARCHAR, maxSize: 4000 };
+    for (const name of [...scalarOuts, 'p_card_status']) expect(binds[name]).toEqual(varcharOut);
+    expect(binds.p_submitted_date).toEqual({ dir: oracledb.BIND_OUT, type: oracledb.DB_TYPE_DATE });
+    expect(binds.p_approval_chain).toEqual({ dir: oracledb.BIND_OUT, type: oracledb.CURSOR });
   });
 });

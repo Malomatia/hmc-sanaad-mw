@@ -11738,6 +11738,3106 @@
       ]
     },
     {
+      "name": "OTL Timecard",
+      "item": [
+        {
+          "name": "GET /otl/timecard/periods",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Response time is less than 5 seconds\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(5000);",
+                  "});",
+                  "",
+                  "pm.test(\"Response is valid JSON\", function () {",
+                  "    pm.response.to.be.json;",
+                  "});",
+                  "",
+                  "pm.test(\"Has success envelope fields\", function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json).to.have.property('status', 'success');",
+                  "    pm.expect(json).to.have.property('result');",
+                  "    pm.expect(json).to.have.property('httpStatusCode');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/otl/timecard/periods?lang=en&year=2026",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "otl",
+                "timecard",
+                "periods"
+              ],
+              "query": [
+                {
+                  "key": "lang",
+                  "value": "en"
+                },
+                {
+                  "key": "year",
+                  "value": "2026"
+                }
+              ]
+            },
+            "description": "**Purpose:** Timecard periods (with derived status)\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang, year\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+          },
+          "response": [
+            {
+              "name": "Success (200)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/otl/timecard/periods?lang=en&year=2026",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "otl",
+                    "timecard",
+                    "periods"
+                  ],
+                  "query": [
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    },
+                    {
+                      "key": "year",
+                      "value": "2026"
+                    }
+                  ]
+                },
+                "description": "**Purpose:** Timecard periods (with derived status)\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang, year\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"result\": {\n    \"summaryAvailable\": true,\n    \"items\": [\n      {\n        \"timePeriodId\": 176543,\n        \"startDate\": \"2026-08-01\",\n        \"endDate\": \"2026-08-31\",\n        \"label\": \"August 01, 2026 - August 31, 2026\",\n        \"status\": \"OPEN\",\n        \"recordedHours\": null,\n        \"absenceDays\": null,\n        \"timecardId\": null\n      },\n      {\n        \"timePeriodId\": 176542,\n        \"startDate\": \"2026-07-01\",\n        \"endDate\": \"2026-07-31\",\n        \"label\": \"July 01, 2026 - July 31, 2026\",\n        \"status\": \"SUBMITTED\",\n        \"recordedHours\": 186,\n        \"absenceDays\": 0,\n        \"timecardId\": 9812345\n      }\n    ]\n  },\n  \"opstatus\": 0,\n  \"status\": \"success\",\n  \"httpStatusCode\": 200\n}"
+            },
+            {
+              "name": "Error (400)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/otl/timecard/periods?lang=en&year=2026",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "otl",
+                    "timecard",
+                    "periods"
+                  ],
+                  "query": [
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    },
+                    {
+                      "key": "year",
+                      "value": "2026"
+                    }
+                  ]
+                },
+                "description": "**Purpose:** Timecard periods (with derived status)\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang, year\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"message\": \"Validation failed.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 400,\n  \"errors\": {\n    \"details\": [\n      \"field must not be empty\"\n    ]\n  }\n}"
+            },
+            {
+              "name": "Error (401)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/otl/timecard/periods?lang=en&year=2026",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "otl",
+                    "timecard",
+                    "periods"
+                  ],
+                  "query": [
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    },
+                    {
+                      "key": "year",
+                      "value": "2026"
+                    }
+                  ]
+                },
+                "description": "**Purpose:** Timecard periods (with derived status)\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang, year\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+              },
+              "status": "Unauthorized",
+              "code": 401,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"message\": \"Authentication failed.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 401\n}"
+            },
+            {
+              "name": "Error (500)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/otl/timecard/periods?lang=en&year=2026",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "otl",
+                    "timecard",
+                    "periods"
+                  ],
+                  "query": [
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    },
+                    {
+                      "key": "year",
+                      "value": "2026"
+                    }
+                  ]
+                },
+                "description": "**Purpose:** Timecard periods (with derived status)\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang, year\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+              },
+              "status": "Internal Server Error",
+              "code": 500,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"message\": \"A database operation could not be completed. Please contact support if the problem persists.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 500\n}"
+            },
+            {
+              "name": "Error (503)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/otl/timecard/periods?lang=en&year=2026",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "otl",
+                    "timecard",
+                    "periods"
+                  ],
+                  "query": [
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    },
+                    {
+                      "key": "year",
+                      "value": "2026"
+                    }
+                  ]
+                },
+                "description": "**Purpose:** Timecard periods (with derived status)\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang, year\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+              },
+              "status": "Service Unavailable",
+              "code": 503,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"message\": \"An external service is currently unavailable.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 503\n}"
+            }
+          ]
+        },
+        {
+          "name": "GET /otl/timecard/summary",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Response time is less than 5 seconds\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(5000);",
+                  "});",
+                  "",
+                  "pm.test(\"Response is valid JSON\", function () {",
+                  "    pm.response.to.be.json;",
+                  "});",
+                  "",
+                  "pm.test(\"Has success envelope fields\", function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json).to.have.property('status', 'success');",
+                  "    pm.expect(json).to.have.property('result');",
+                  "    pm.expect(json).to.have.property('httpStatusCode');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/otl/timecard/summary?lang=en&period=2026-07-01",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "otl",
+                "timecard",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "lang",
+                  "value": "en"
+                },
+                {
+                  "key": "period",
+                  "value": "2026-07-01"
+                }
+              ]
+            },
+            "description": "**Purpose:** Timecard summary\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang, period\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+          },
+          "response": [
+            {
+              "name": "Success (200)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/otl/timecard/summary?lang=en&period=2026-07-01",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "otl",
+                    "timecard",
+                    "summary"
+                  ],
+                  "query": [
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    },
+                    {
+                      "key": "period",
+                      "value": "2026-07-01"
+                    }
+                  ]
+                },
+                "description": "**Purpose:** Timecard summary\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang, period\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"result\": {\n    \"available\": true,\n    \"items\": [\n      {\n        \"period\": \"Jul 2026\",\n        \"startDate\": \"2026-07-01\",\n        \"endDate\": \"2026-07-31\",\n        \"recordedHours\": 186,\n        \"absenceDays\": 0,\n        \"status\": \"SUBMITTED\",\n        \"timecardId\": 9812345,\n        \"comment\": \"July 2026 timecard\"\n      }\n    ]\n  },\n  \"opstatus\": 0,\n  \"status\": \"success\",\n  \"httpStatusCode\": 200\n}"
+            },
+            {
+              "name": "Error (400)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/otl/timecard/summary?lang=en&period=2026-07-01",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "otl",
+                    "timecard",
+                    "summary"
+                  ],
+                  "query": [
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    },
+                    {
+                      "key": "period",
+                      "value": "2026-07-01"
+                    }
+                  ]
+                },
+                "description": "**Purpose:** Timecard summary\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang, period\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"message\": \"Validation failed.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 400,\n  \"errors\": {\n    \"details\": [\n      \"field must not be empty\"\n    ]\n  }\n}"
+            },
+            {
+              "name": "Error (401)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/otl/timecard/summary?lang=en&period=2026-07-01",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "otl",
+                    "timecard",
+                    "summary"
+                  ],
+                  "query": [
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    },
+                    {
+                      "key": "period",
+                      "value": "2026-07-01"
+                    }
+                  ]
+                },
+                "description": "**Purpose:** Timecard summary\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang, period\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+              },
+              "status": "Unauthorized",
+              "code": 401,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"message\": \"Authentication failed.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 401\n}"
+            },
+            {
+              "name": "Error (500)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/otl/timecard/summary?lang=en&period=2026-07-01",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "otl",
+                    "timecard",
+                    "summary"
+                  ],
+                  "query": [
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    },
+                    {
+                      "key": "period",
+                      "value": "2026-07-01"
+                    }
+                  ]
+                },
+                "description": "**Purpose:** Timecard summary\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang, period\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+              },
+              "status": "Internal Server Error",
+              "code": 500,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"message\": \"A database operation could not be completed. Please contact support if the problem persists.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 500\n}"
+            },
+            {
+              "name": "Error (503)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/otl/timecard/summary?lang=en&period=2026-07-01",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "otl",
+                    "timecard",
+                    "summary"
+                  ],
+                  "query": [
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    },
+                    {
+                      "key": "period",
+                      "value": "2026-07-01"
+                    }
+                  ]
+                },
+                "description": "**Purpose:** Timecard summary\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang, period\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+              },
+              "status": "Service Unavailable",
+              "code": 503,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"message\": \"An external service is currently unavailable.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 503\n}"
+            }
+          ]
+        },
+        {
+          "name": "GET /otl/timecard/summary/elements",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Response time is less than 5 seconds\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(5000);",
+                  "});",
+                  "",
+                  "pm.test(\"Response is valid JSON\", function () {",
+                  "    pm.response.to.be.json;",
+                  "});",
+                  "",
+                  "pm.test(\"Has success envelope fields\", function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json).to.have.property('status', 'success');",
+                  "    pm.expect(json).to.have.property('result');",
+                  "    pm.expect(json).to.have.property('httpStatusCode');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/otl/timecard/summary/elements?lang=en&period=2026-07-01",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "otl",
+                "timecard",
+                "summary",
+                "elements"
+              ],
+              "query": [
+                {
+                  "key": "lang",
+                  "value": "en"
+                },
+                {
+                  "key": "period",
+                  "value": "2026-07-01"
+                }
+              ]
+            },
+            "description": "**Purpose:** Timecard summary by hour type\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang, period\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+          },
+          "response": [
+            {
+              "name": "Success (200)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/otl/timecard/summary/elements?lang=en&period=2026-07-01",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "otl",
+                    "timecard",
+                    "summary",
+                    "elements"
+                  ],
+                  "query": [
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    },
+                    {
+                      "key": "period",
+                      "value": "2026-07-01"
+                    }
+                  ]
+                },
+                "description": "**Purpose:** Timecard summary by hour type\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang, period\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"result\": {\n    \"period\": {\n      \"startDate\": \"2026-07-01\",\n      \"label\": \"Jul 2026\"\n    },\n    \"status\": \"SUBMITTED\",\n    \"recordedHours\": 186,\n    \"totalHours\": 186,\n    \"overtimeHours\": 2,\n    \"byElement\": [\n      {\n        \"elementName\": \"Regular Hours\",\n        \"hours\": 184\n      },\n      {\n        \"elementName\": \"Regular OT\",\n        \"hours\": 2\n      }\n    ],\n    \"rows\": [\n      {\n        \"elementName\": \"Regular Hours\",\n        \"facility\": \"09\",\n        \"costCenter\": \"4410\",\n        \"hours\": 184\n      },\n      {\n        \"elementName\": \"Regular OT\",\n        \"facility\": \"09\",\n        \"costCenter\": \"4471\",\n        \"hours\": 2\n      }\n    ]\n  },\n  \"opstatus\": 0,\n  \"status\": \"success\",\n  \"httpStatusCode\": 200\n}"
+            },
+            {
+              "name": "Error (400)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/otl/timecard/summary/elements?lang=en&period=2026-07-01",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "otl",
+                    "timecard",
+                    "summary",
+                    "elements"
+                  ],
+                  "query": [
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    },
+                    {
+                      "key": "period",
+                      "value": "2026-07-01"
+                    }
+                  ]
+                },
+                "description": "**Purpose:** Timecard summary by hour type\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang, period\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"message\": \"Validation failed.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 400,\n  \"errors\": {\n    \"details\": [\n      \"field must not be empty\"\n    ]\n  }\n}"
+            },
+            {
+              "name": "Error (401)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/otl/timecard/summary/elements?lang=en&period=2026-07-01",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "otl",
+                    "timecard",
+                    "summary",
+                    "elements"
+                  ],
+                  "query": [
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    },
+                    {
+                      "key": "period",
+                      "value": "2026-07-01"
+                    }
+                  ]
+                },
+                "description": "**Purpose:** Timecard summary by hour type\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang, period\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+              },
+              "status": "Unauthorized",
+              "code": 401,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"message\": \"Authentication failed.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 401\n}"
+            },
+            {
+              "name": "Error (500)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/otl/timecard/summary/elements?lang=en&period=2026-07-01",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "otl",
+                    "timecard",
+                    "summary",
+                    "elements"
+                  ],
+                  "query": [
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    },
+                    {
+                      "key": "period",
+                      "value": "2026-07-01"
+                    }
+                  ]
+                },
+                "description": "**Purpose:** Timecard summary by hour type\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang, period\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+              },
+              "status": "Internal Server Error",
+              "code": 500,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"message\": \"A database operation could not be completed. Please contact support if the problem persists.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 500\n}"
+            },
+            {
+              "name": "Error (503)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/otl/timecard/summary/elements?lang=en&period=2026-07-01",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "otl",
+                    "timecard",
+                    "summary",
+                    "elements"
+                  ],
+                  "query": [
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    },
+                    {
+                      "key": "period",
+                      "value": "2026-07-01"
+                    }
+                  ]
+                },
+                "description": "**Purpose:** Timecard summary by hour type\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang, period\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+              },
+              "status": "Service Unavailable",
+              "code": 503,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"message\": \"An external service is currently unavailable.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 503\n}"
+            }
+          ]
+        },
+        {
+          "name": "GET /otl/timecard/details",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Response time is less than 5 seconds\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(5000);",
+                  "});",
+                  "",
+                  "pm.test(\"Response is valid JSON\", function () {",
+                  "    pm.response.to.be.json;",
+                  "});",
+                  "",
+                  "pm.test(\"Has success envelope fields\", function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json).to.have.property('status', 'success');",
+                  "    pm.expect(json).to.have.property('result');",
+                  "    pm.expect(json).to.have.property('httpStatusCode');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/otl/timecard/details?lang=en&period=2026-07-01",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "otl",
+                "timecard",
+                "details"
+              ],
+              "query": [
+                {
+                  "key": "lang",
+                  "value": "en"
+                },
+                {
+                  "key": "period",
+                  "value": "2026-07-01"
+                }
+              ]
+            },
+            "description": "**Purpose:** Timecard details (grid)\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang, period\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+          },
+          "response": [
+            {
+              "name": "Success (200)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/otl/timecard/details?lang=en&period=2026-07-01",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "otl",
+                    "timecard",
+                    "details"
+                  ],
+                  "query": [
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    },
+                    {
+                      "key": "period",
+                      "value": "2026-07-01"
+                    }
+                  ]
+                },
+                "description": "**Purpose:** Timecard details (grid)\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang, period\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"result\": {\n    \"source\": \"timecard\",\n    \"period\": {\n      \"startDate\": \"2026-07-01\",\n      \"endDate\": \"2026-07-31\",\n      \"label\": \"Jul 2026\"\n    },\n    \"header\": {\n      \"timecardId\": 9812345,\n      \"status\": \"SUBMITTED\",\n      \"submittedBy\": \"Amir Sami Ibrahim (037400)\",\n      \"submissionDate\": \"2026-08-02\",\n      \"approvedBy\": \"Usama Mahmoud Abdelsamad (037915)\",\n      \"approvalDate\": \"2026-08-02\"\n    },\n    \"rows\": [\n      {\n        \"hourType\": \"Regular Hours\",\n        \"facility\": \"09\",\n        \"costCenter\": \"4410\",\n        \"totalHours\": 16,\n        \"entries\": [\n          {\n            \"entryDate\": \"2026-07-01\",\n            \"value\": 8,\n            \"locked\": false\n          },\n          {\n            \"entryDate\": \"2026-07-02\",\n            \"value\": 8,\n            \"locked\": false\n          },\n          {\n            \"entryDate\": \"2026-07-03\",\n            \"value\": 0,\n            \"locked\": true\n          }\n        ]\n      }\n    ]\n  },\n  \"opstatus\": 0,\n  \"status\": \"success\",\n  \"httpStatusCode\": 200\n}"
+            },
+            {
+              "name": "Error (400)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/otl/timecard/details?lang=en&period=2026-07-01",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "otl",
+                    "timecard",
+                    "details"
+                  ],
+                  "query": [
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    },
+                    {
+                      "key": "period",
+                      "value": "2026-07-01"
+                    }
+                  ]
+                },
+                "description": "**Purpose:** Timecard details (grid)\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang, period\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"message\": \"Validation failed.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 400,\n  \"errors\": {\n    \"details\": [\n      \"field must not be empty\"\n    ]\n  }\n}"
+            },
+            {
+              "name": "Error (401)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/otl/timecard/details?lang=en&period=2026-07-01",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "otl",
+                    "timecard",
+                    "details"
+                  ],
+                  "query": [
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    },
+                    {
+                      "key": "period",
+                      "value": "2026-07-01"
+                    }
+                  ]
+                },
+                "description": "**Purpose:** Timecard details (grid)\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang, period\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+              },
+              "status": "Unauthorized",
+              "code": 401,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"message\": \"Authentication failed.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 401\n}"
+            },
+            {
+              "name": "Error (500)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/otl/timecard/details?lang=en&period=2026-07-01",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "otl",
+                    "timecard",
+                    "details"
+                  ],
+                  "query": [
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    },
+                    {
+                      "key": "period",
+                      "value": "2026-07-01"
+                    }
+                  ]
+                },
+                "description": "**Purpose:** Timecard details (grid)\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang, period\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+              },
+              "status": "Internal Server Error",
+              "code": 500,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"message\": \"A database operation could not be completed. Please contact support if the problem persists.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 500\n}"
+            },
+            {
+              "name": "Error (503)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/otl/timecard/details?lang=en&period=2026-07-01",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "otl",
+                    "timecard",
+                    "details"
+                  ],
+                  "query": [
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    },
+                    {
+                      "key": "period",
+                      "value": "2026-07-01"
+                    }
+                  ]
+                },
+                "description": "**Purpose:** Timecard details (grid)\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang, period\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+              },
+              "status": "Service Unavailable",
+              "code": 503,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"message\": \"An external service is currently unavailable.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 503\n}"
+            }
+          ]
+        },
+        {
+          "name": "GET /otl/template",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Response time is less than 5 seconds\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(5000);",
+                  "});",
+                  "",
+                  "pm.test(\"Response is valid JSON\", function () {",
+                  "    pm.response.to.be.json;",
+                  "});",
+                  "",
+                  "pm.test(\"Has success envelope fields\", function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json).to.have.property('status', 'success');",
+                  "    pm.expect(json).to.have.property('result');",
+                  "    pm.expect(json).to.have.property('httpStatusCode');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/otl/template?lang=en&startDate=2026-07-01&endDate=2026-07-31",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "otl",
+                "template"
+              ],
+              "query": [
+                {
+                  "key": "lang",
+                  "value": "en"
+                },
+                {
+                  "key": "startDate",
+                  "value": "2026-07-01"
+                },
+                {
+                  "key": "endDate",
+                  "value": "2026-07-31"
+                }
+              ]
+            },
+            "description": "**Purpose:** Timecard template (month pre-fill)\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang, startDate, endDate\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+          },
+          "response": [
+            {
+              "name": "Success (200)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/otl/template?lang=en&startDate=2026-07-01&endDate=2026-07-31",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "otl",
+                    "template"
+                  ],
+                  "query": [
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    },
+                    {
+                      "key": "startDate",
+                      "value": "2026-07-01"
+                    },
+                    {
+                      "key": "endDate",
+                      "value": "2026-07-31"
+                    }
+                  ]
+                },
+                "description": "**Purpose:** Timecard template (month pre-fill)\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang, startDate, endDate\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"result\": {\n    \"startDate\": \"2026-07-01\",\n    \"endDate\": \"2026-07-31\",\n    \"days\": [\n      {\n        \"date\": \"2026-07-01\",\n        \"elementName\": \"Regular Hours\",\n        \"hours\": 8,\n        \"locked\": false,\n        \"absent\": false\n      },\n      {\n        \"date\": \"2026-07-02\",\n        \"elementName\": \"Regular Hours\",\n        \"hours\": 8,\n        \"locked\": false,\n        \"absent\": true\n      },\n      {\n        \"date\": \"2026-07-03\",\n        \"elementName\": \"Regular Hours\",\n        \"hours\": 0,\n        \"locked\": true,\n        \"absent\": false\n      }\n    ]\n  },\n  \"opstatus\": 0,\n  \"status\": \"success\",\n  \"httpStatusCode\": 200\n}"
+            },
+            {
+              "name": "Error (400)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/otl/template?lang=en&startDate=2026-07-01&endDate=2026-07-31",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "otl",
+                    "template"
+                  ],
+                  "query": [
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    },
+                    {
+                      "key": "startDate",
+                      "value": "2026-07-01"
+                    },
+                    {
+                      "key": "endDate",
+                      "value": "2026-07-31"
+                    }
+                  ]
+                },
+                "description": "**Purpose:** Timecard template (month pre-fill)\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang, startDate, endDate\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"message\": \"Validation failed.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 400,\n  \"errors\": {\n    \"details\": [\n      \"field must not be empty\"\n    ]\n  }\n}"
+            },
+            {
+              "name": "Error (401)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/otl/template?lang=en&startDate=2026-07-01&endDate=2026-07-31",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "otl",
+                    "template"
+                  ],
+                  "query": [
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    },
+                    {
+                      "key": "startDate",
+                      "value": "2026-07-01"
+                    },
+                    {
+                      "key": "endDate",
+                      "value": "2026-07-31"
+                    }
+                  ]
+                },
+                "description": "**Purpose:** Timecard template (month pre-fill)\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang, startDate, endDate\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+              },
+              "status": "Unauthorized",
+              "code": 401,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"message\": \"Authentication failed.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 401\n}"
+            },
+            {
+              "name": "Error (500)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/otl/template?lang=en&startDate=2026-07-01&endDate=2026-07-31",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "otl",
+                    "template"
+                  ],
+                  "query": [
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    },
+                    {
+                      "key": "startDate",
+                      "value": "2026-07-01"
+                    },
+                    {
+                      "key": "endDate",
+                      "value": "2026-07-31"
+                    }
+                  ]
+                },
+                "description": "**Purpose:** Timecard template (month pre-fill)\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang, startDate, endDate\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+              },
+              "status": "Internal Server Error",
+              "code": 500,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"message\": \"A database operation could not be completed. Please contact support if the problem persists.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 500\n}"
+            },
+            {
+              "name": "Error (503)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/otl/template?lang=en&startDate=2026-07-01&endDate=2026-07-31",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "otl",
+                    "template"
+                  ],
+                  "query": [
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    },
+                    {
+                      "key": "startDate",
+                      "value": "2026-07-01"
+                    },
+                    {
+                      "key": "endDate",
+                      "value": "2026-07-31"
+                    }
+                  ]
+                },
+                "description": "**Purpose:** Timecard template (month pre-fill)\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang, startDate, endDate\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+              },
+              "status": "Service Unavailable",
+              "code": 503,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"message\": \"An external service is currently unavailable.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 503\n}"
+            }
+          ]
+        },
+        {
+          "name": "GET /otl/absence-details",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Response time is less than 5 seconds\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(5000);",
+                  "});",
+                  "",
+                  "pm.test(\"Response is valid JSON\", function () {",
+                  "    pm.response.to.be.json;",
+                  "});",
+                  "",
+                  "pm.test(\"Has success envelope fields\", function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json).to.have.property('status', 'success');",
+                  "    pm.expect(json).to.have.property('result');",
+                  "    pm.expect(json).to.have.property('httpStatusCode');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/otl/absence-details?lang=en&startDate=2026-07-01&endDate=2026-07-31",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "otl",
+                "absence-details"
+              ],
+              "query": [
+                {
+                  "key": "lang",
+                  "value": "en"
+                },
+                {
+                  "key": "startDate",
+                  "value": "2026-07-01"
+                },
+                {
+                  "key": "endDate",
+                  "value": "2026-07-31"
+                }
+              ]
+            },
+            "description": "**Purpose:** Absence details\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang, startDate, endDate\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+          },
+          "response": [
+            {
+              "name": "Success (200)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/otl/absence-details?lang=en&startDate=2026-07-01&endDate=2026-07-31",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "otl",
+                    "absence-details"
+                  ],
+                  "query": [
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    },
+                    {
+                      "key": "startDate",
+                      "value": "2026-07-01"
+                    },
+                    {
+                      "key": "endDate",
+                      "value": "2026-07-31"
+                    }
+                  ]
+                },
+                "description": "**Purpose:** Absence details\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang, startDate, endDate\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"result\": {\n    \"items\": [\n      {\n        \"employeeNumber\": \"037400\",\n        \"dateStart\": \"2026-07-02\",\n        \"dateEnd\": \"2026-07-02\",\n        \"absenceDays\": 1\n      }\n    ]\n  },\n  \"opstatus\": 0,\n  \"status\": \"success\",\n  \"httpStatusCode\": 200\n}"
+            },
+            {
+              "name": "Error (400)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/otl/absence-details?lang=en&startDate=2026-07-01&endDate=2026-07-31",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "otl",
+                    "absence-details"
+                  ],
+                  "query": [
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    },
+                    {
+                      "key": "startDate",
+                      "value": "2026-07-01"
+                    },
+                    {
+                      "key": "endDate",
+                      "value": "2026-07-31"
+                    }
+                  ]
+                },
+                "description": "**Purpose:** Absence details\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang, startDate, endDate\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"message\": \"Validation failed.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 400,\n  \"errors\": {\n    \"details\": [\n      \"field must not be empty\"\n    ]\n  }\n}"
+            },
+            {
+              "name": "Error (401)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/otl/absence-details?lang=en&startDate=2026-07-01&endDate=2026-07-31",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "otl",
+                    "absence-details"
+                  ],
+                  "query": [
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    },
+                    {
+                      "key": "startDate",
+                      "value": "2026-07-01"
+                    },
+                    {
+                      "key": "endDate",
+                      "value": "2026-07-31"
+                    }
+                  ]
+                },
+                "description": "**Purpose:** Absence details\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang, startDate, endDate\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+              },
+              "status": "Unauthorized",
+              "code": 401,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"message\": \"Authentication failed.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 401\n}"
+            },
+            {
+              "name": "Error (500)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/otl/absence-details?lang=en&startDate=2026-07-01&endDate=2026-07-31",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "otl",
+                    "absence-details"
+                  ],
+                  "query": [
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    },
+                    {
+                      "key": "startDate",
+                      "value": "2026-07-01"
+                    },
+                    {
+                      "key": "endDate",
+                      "value": "2026-07-31"
+                    }
+                  ]
+                },
+                "description": "**Purpose:** Absence details\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang, startDate, endDate\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+              },
+              "status": "Internal Server Error",
+              "code": 500,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"message\": \"A database operation could not be completed. Please contact support if the problem persists.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 500\n}"
+            },
+            {
+              "name": "Error (503)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/otl/absence-details?lang=en&startDate=2026-07-01&endDate=2026-07-31",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "otl",
+                    "absence-details"
+                  ],
+                  "query": [
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    },
+                    {
+                      "key": "startDate",
+                      "value": "2026-07-01"
+                    },
+                    {
+                      "key": "endDate",
+                      "value": "2026-07-31"
+                    }
+                  ]
+                },
+                "description": "**Purpose:** Absence details\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang, startDate, endDate\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+              },
+              "status": "Service Unavailable",
+              "code": 503,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"message\": \"An external service is currently unavailable.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 503\n}"
+            }
+          ]
+        },
+        {
+          "name": "GET /otl/element-details",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Response time is less than 5 seconds\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(5000);",
+                  "});",
+                  "",
+                  "pm.test(\"Response is valid JSON\", function () {",
+                  "    pm.response.to.be.json;",
+                  "});",
+                  "",
+                  "pm.test(\"Has success envelope fields\", function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json).to.have.property('status', 'success');",
+                  "    pm.expect(json).to.have.property('result');",
+                  "    pm.expect(json).to.have.property('httpStatusCode');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/otl/element-details?lang=en&startDate=2026-07-01&endDate=2026-07-31",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "otl",
+                "element-details"
+              ],
+              "query": [
+                {
+                  "key": "lang",
+                  "value": "en"
+                },
+                {
+                  "key": "startDate",
+                  "value": "2026-07-01"
+                },
+                {
+                  "key": "endDate",
+                  "value": "2026-07-31"
+                }
+              ]
+            },
+            "description": "**Purpose:** Hour types for the caller (picker)\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang, startDate, endDate\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+          },
+          "response": [
+            {
+              "name": "Success (200)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/otl/element-details?lang=en&startDate=2026-07-01&endDate=2026-07-31",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "otl",
+                    "element-details"
+                  ],
+                  "query": [
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    },
+                    {
+                      "key": "startDate",
+                      "value": "2026-07-01"
+                    },
+                    {
+                      "key": "endDate",
+                      "value": "2026-07-31"
+                    }
+                  ]
+                },
+                "description": "**Purpose:** Hour types for the caller (picker)\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang, startDate, endDate\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"result\": {\n    \"items\": [\n      {\n        \"elementTypeId\": 154,\n        \"elementName\": \"Regular Hours\"\n      },\n      {\n        \"elementTypeId\": 152,\n        \"elementName\": \"Ramadan Regular OT\"\n      },\n      {\n        \"elementTypeId\": 155,\n        \"elementName\": \"Regular OT\"\n      },\n      {\n        \"elementTypeId\": 163,\n        \"elementName\": \"Absent Hours Deduction\"\n      }\n    ]\n  },\n  \"opstatus\": 0,\n  \"status\": \"success\",\n  \"httpStatusCode\": 200\n}"
+            },
+            {
+              "name": "Error (400)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/otl/element-details?lang=en&startDate=2026-07-01&endDate=2026-07-31",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "otl",
+                    "element-details"
+                  ],
+                  "query": [
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    },
+                    {
+                      "key": "startDate",
+                      "value": "2026-07-01"
+                    },
+                    {
+                      "key": "endDate",
+                      "value": "2026-07-31"
+                    }
+                  ]
+                },
+                "description": "**Purpose:** Hour types for the caller (picker)\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang, startDate, endDate\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"message\": \"Validation failed.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 400,\n  \"errors\": {\n    \"details\": [\n      \"field must not be empty\"\n    ]\n  }\n}"
+            },
+            {
+              "name": "Error (401)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/otl/element-details?lang=en&startDate=2026-07-01&endDate=2026-07-31",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "otl",
+                    "element-details"
+                  ],
+                  "query": [
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    },
+                    {
+                      "key": "startDate",
+                      "value": "2026-07-01"
+                    },
+                    {
+                      "key": "endDate",
+                      "value": "2026-07-31"
+                    }
+                  ]
+                },
+                "description": "**Purpose:** Hour types for the caller (picker)\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang, startDate, endDate\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+              },
+              "status": "Unauthorized",
+              "code": 401,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"message\": \"Authentication failed.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 401\n}"
+            },
+            {
+              "name": "Error (500)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/otl/element-details?lang=en&startDate=2026-07-01&endDate=2026-07-31",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "otl",
+                    "element-details"
+                  ],
+                  "query": [
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    },
+                    {
+                      "key": "startDate",
+                      "value": "2026-07-01"
+                    },
+                    {
+                      "key": "endDate",
+                      "value": "2026-07-31"
+                    }
+                  ]
+                },
+                "description": "**Purpose:** Hour types for the caller (picker)\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang, startDate, endDate\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+              },
+              "status": "Internal Server Error",
+              "code": 500,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"message\": \"A database operation could not be completed. Please contact support if the problem persists.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 500\n}"
+            },
+            {
+              "name": "Error (503)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/otl/element-details?lang=en&startDate=2026-07-01&endDate=2026-07-31",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "otl",
+                    "element-details"
+                  ],
+                  "query": [
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    },
+                    {
+                      "key": "startDate",
+                      "value": "2026-07-01"
+                    },
+                    {
+                      "key": "endDate",
+                      "value": "2026-07-31"
+                    }
+                  ]
+                },
+                "description": "**Purpose:** Hour types for the caller (picker)\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang, startDate, endDate\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+              },
+              "status": "Service Unavailable",
+              "code": 503,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"message\": \"An external service is currently unavailable.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 503\n}"
+            }
+          ]
+        },
+        {
+          "name": "GET /otl/timecard/elements",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Response time is less than 5 seconds\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(5000);",
+                  "});",
+                  "",
+                  "pm.test(\"Response is valid JSON\", function () {",
+                  "    pm.response.to.be.json;",
+                  "});",
+                  "",
+                  "pm.test(\"Has success envelope fields\", function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json).to.have.property('status', 'success');",
+                  "    pm.expect(json).to.have.property('result');",
+                  "    pm.expect(json).to.have.property('httpStatusCode');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/otl/timecard/elements?lang=en",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "otl",
+                "timecard",
+                "elements"
+              ],
+              "query": [
+                {
+                  "key": "lang",
+                  "value": "en"
+                }
+              ]
+            },
+            "description": "**Purpose:** Hour-type catalog (display only)\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+          },
+          "response": [
+            {
+              "name": "Success (200)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/otl/timecard/elements?lang=en",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "otl",
+                    "timecard",
+                    "elements"
+                  ],
+                  "query": [
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    }
+                  ]
+                },
+                "description": "**Purpose:** Hour-type catalog (display only)\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"result\": {\n    \"items\": [\n      {\n        \"elementTypeId\": 154,\n        \"elementName\": \"Regular Hours\"\n      },\n      {\n        \"elementTypeId\": 152,\n        \"elementName\": \"Ramadan Regular OT\"\n      },\n      {\n        \"elementTypeId\": 155,\n        \"elementName\": \"Regular OT\"\n      },\n      {\n        \"elementTypeId\": 163,\n        \"elementName\": \"Absent Hours Deduction\"\n      }\n    ]\n  },\n  \"opstatus\": 0,\n  \"status\": \"success\",\n  \"httpStatusCode\": 200\n}"
+            },
+            {
+              "name": "Error (401)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/otl/timecard/elements?lang=en",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "otl",
+                    "timecard",
+                    "elements"
+                  ],
+                  "query": [
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    }
+                  ]
+                },
+                "description": "**Purpose:** Hour-type catalog (display only)\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+              },
+              "status": "Unauthorized",
+              "code": 401,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"message\": \"Authentication failed.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 401\n}"
+            },
+            {
+              "name": "Error (500)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/otl/timecard/elements?lang=en",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "otl",
+                    "timecard",
+                    "elements"
+                  ],
+                  "query": [
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    }
+                  ]
+                },
+                "description": "**Purpose:** Hour-type catalog (display only)\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+              },
+              "status": "Internal Server Error",
+              "code": 500,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"message\": \"A database operation could not be completed. Please contact support if the problem persists.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 500\n}"
+            },
+            {
+              "name": "Error (503)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/otl/timecard/elements?lang=en",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "otl",
+                    "timecard",
+                    "elements"
+                  ],
+                  "query": [
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    }
+                  ]
+                },
+                "description": "**Purpose:** Hour-type catalog (display only)\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+              },
+              "status": "Service Unavailable",
+              "code": 503,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"message\": \"An external service is currently unavailable.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 503\n}"
+            }
+          ]
+        },
+        {
+          "name": "GET /otl/timecard/facilities",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Response time is less than 5 seconds\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(5000);",
+                  "});",
+                  "",
+                  "pm.test(\"Response is valid JSON\", function () {",
+                  "    pm.response.to.be.json;",
+                  "});",
+                  "",
+                  "pm.test(\"Has success envelope fields\", function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json).to.have.property('status', 'success');",
+                  "    pm.expect(json).to.have.property('result');",
+                  "    pm.expect(json).to.have.property('httpStatusCode');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/otl/timecard/facilities?lang=en",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "otl",
+                "timecard",
+                "facilities"
+              ],
+              "query": [
+                {
+                  "key": "lang",
+                  "value": "en"
+                }
+              ]
+            },
+            "description": "**Purpose:** Facility LOV\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+          },
+          "response": [
+            {
+              "name": "Success (200)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/otl/timecard/facilities?lang=en",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "otl",
+                    "timecard",
+                    "facilities"
+                  ],
+                  "query": [
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    }
+                  ]
+                },
+                "description": "**Purpose:** Facility LOV\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"result\": {\n    \"items\": [\n      {\n        \"facilityCode\": \"09\",\n        \"facilityName\": \"09-Hamad General Hospital\",\n        \"description\": \"Hamad General Hospital\"\n      }\n    ]\n  },\n  \"opstatus\": 0,\n  \"status\": \"success\",\n  \"httpStatusCode\": 200\n}"
+            },
+            {
+              "name": "Error (401)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/otl/timecard/facilities?lang=en",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "otl",
+                    "timecard",
+                    "facilities"
+                  ],
+                  "query": [
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    }
+                  ]
+                },
+                "description": "**Purpose:** Facility LOV\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+              },
+              "status": "Unauthorized",
+              "code": 401,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"message\": \"Authentication failed.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 401\n}"
+            },
+            {
+              "name": "Error (500)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/otl/timecard/facilities?lang=en",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "otl",
+                    "timecard",
+                    "facilities"
+                  ],
+                  "query": [
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    }
+                  ]
+                },
+                "description": "**Purpose:** Facility LOV\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+              },
+              "status": "Internal Server Error",
+              "code": 500,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"message\": \"A database operation could not be completed. Please contact support if the problem persists.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 500\n}"
+            },
+            {
+              "name": "Error (503)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/otl/timecard/facilities?lang=en",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "otl",
+                    "timecard",
+                    "facilities"
+                  ],
+                  "query": [
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    }
+                  ]
+                },
+                "description": "**Purpose:** Facility LOV\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+              },
+              "status": "Service Unavailable",
+              "code": 503,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"message\": \"An external service is currently unavailable.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 503\n}"
+            }
+          ]
+        },
+        {
+          "name": "GET /otl/timecard/cost-centers",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Response time is less than 5 seconds\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(5000);",
+                  "});",
+                  "",
+                  "pm.test(\"Response is valid JSON\", function () {",
+                  "    pm.response.to.be.json;",
+                  "});",
+                  "",
+                  "pm.test(\"Has success envelope fields\", function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json).to.have.property('status', 'success');",
+                  "    pm.expect(json).to.have.property('result');",
+                  "    pm.expect(json).to.have.property('httpStatusCode');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/otl/timecard/cost-centers?lang=en&facilityId=09",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "otl",
+                "timecard",
+                "cost-centers"
+              ],
+              "query": [
+                {
+                  "key": "lang",
+                  "value": "en"
+                },
+                {
+                  "key": "facilityId",
+                  "value": "09"
+                }
+              ]
+            },
+            "description": "**Purpose:** Cost-center LOV\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang, facilityId\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+          },
+          "response": [
+            {
+              "name": "Success (200)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/otl/timecard/cost-centers?lang=en&facilityId=09",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "otl",
+                    "timecard",
+                    "cost-centers"
+                  ],
+                  "query": [
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    },
+                    {
+                      "key": "facilityId",
+                      "value": "09"
+                    }
+                  ]
+                },
+                "description": "**Purpose:** Cost-center LOV\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang, facilityId\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"result\": {\n    \"items\": [\n      {\n        \"facilityCode\": \"09\",\n        \"costCenterCode\": \"4471\",\n        \"costCenterName\": \"4471-Corporate Events\",\n        \"description\": \"Corporate Events\"\n      }\n    ]\n  },\n  \"opstatus\": 0,\n  \"status\": \"success\",\n  \"httpStatusCode\": 200\n}"
+            },
+            {
+              "name": "Error (400)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/otl/timecard/cost-centers?lang=en&facilityId=09",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "otl",
+                    "timecard",
+                    "cost-centers"
+                  ],
+                  "query": [
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    },
+                    {
+                      "key": "facilityId",
+                      "value": "09"
+                    }
+                  ]
+                },
+                "description": "**Purpose:** Cost-center LOV\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang, facilityId\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"message\": \"Validation failed.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 400,\n  \"errors\": {\n    \"details\": [\n      \"field must not be empty\"\n    ]\n  }\n}"
+            },
+            {
+              "name": "Error (401)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/otl/timecard/cost-centers?lang=en&facilityId=09",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "otl",
+                    "timecard",
+                    "cost-centers"
+                  ],
+                  "query": [
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    },
+                    {
+                      "key": "facilityId",
+                      "value": "09"
+                    }
+                  ]
+                },
+                "description": "**Purpose:** Cost-center LOV\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang, facilityId\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+              },
+              "status": "Unauthorized",
+              "code": 401,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"message\": \"Authentication failed.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 401\n}"
+            },
+            {
+              "name": "Error (500)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/otl/timecard/cost-centers?lang=en&facilityId=09",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "otl",
+                    "timecard",
+                    "cost-centers"
+                  ],
+                  "query": [
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    },
+                    {
+                      "key": "facilityId",
+                      "value": "09"
+                    }
+                  ]
+                },
+                "description": "**Purpose:** Cost-center LOV\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang, facilityId\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+              },
+              "status": "Internal Server Error",
+              "code": 500,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"message\": \"A database operation could not be completed. Please contact support if the problem persists.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 500\n}"
+            },
+            {
+              "name": "Error (503)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/otl/timecard/cost-centers?lang=en&facilityId=09",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "otl",
+                    "timecard",
+                    "cost-centers"
+                  ],
+                  "query": [
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    },
+                    {
+                      "key": "facilityId",
+                      "value": "09"
+                    }
+                  ]
+                },
+                "description": "**Purpose:** Cost-center LOV\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang, facilityId\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+              },
+              "status": "Service Unavailable",
+              "code": 503,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"message\": \"An external service is currently unavailable.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 503\n}"
+            }
+          ]
+        },
+        {
+          "name": "POST /otl/timecard/submit",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Response time is less than 5 seconds\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(5000);",
+                  "});",
+                  "",
+                  "pm.test(\"Response is valid JSON\", function () {",
+                  "    pm.response.to.be.json;",
+                  "});",
+                  "",
+                  "pm.test(\"Has action envelope fields\", function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json).to.have.property('status');",
+                  "    pm.expect(json).to.have.property('successflag');",
+                  "    pm.expect(json).to.have.property('message');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/otl/timecard/submit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "otl",
+                "timecard",
+                "submit"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"periodStart\": \"2026-07-01\",\n  \"p_confirmation_flag\": \"Y\",\n  \"p_employee_notes\": \"July 2026 timecard\",\n  \"p_entries\": [\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-01\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-02\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-03\",\n      \"p_value\": 0,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-04\",\n      \"p_value\": 0,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-05\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-06\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-07\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-08\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-09\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-10\",\n      \"p_value\": 0,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-11\",\n      \"p_value\": 0,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-12\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-13\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-14\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-15\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-16\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-17\",\n      \"p_value\": 0,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-18\",\n      \"p_value\": 0,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-19\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-20\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-21\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-22\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-23\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-24\",\n      \"p_value\": 0,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-25\",\n      \"p_value\": 0,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-26\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-27\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-28\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-29\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-30\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-31\",\n      \"p_value\": 0,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular OT\",\n      \"p_entry_date\": \"2026-07-09\",\n      \"p_value\": 2,\n      \"p_cross_dept_flag\": \"Y\",\n      \"p_dept_id\": \"09\",\n      \"p_cost_center\": \"4471\",\n      \"p_comments\": \"Corporate event support\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "**Purpose:** Submit timecard\n\n**Auth:** Bearer {{token}} required\n**Request body:** see the raw body below.\n\n**Response:** Sanaad action envelope — `{ status, successflag, message, httpStatusCode, result? }`."
+          },
+          "response": [
+            {
+              "name": "Success (200)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/otl/timecard/submit",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "otl",
+                    "timecard",
+                    "submit"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"periodStart\": \"2026-07-01\",\n  \"p_confirmation_flag\": \"Y\",\n  \"p_employee_notes\": \"July 2026 timecard\",\n  \"p_entries\": [\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-01\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-02\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-03\",\n      \"p_value\": 0,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-04\",\n      \"p_value\": 0,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-05\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-06\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-07\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-08\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-09\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-10\",\n      \"p_value\": 0,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-11\",\n      \"p_value\": 0,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-12\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-13\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-14\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-15\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-16\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-17\",\n      \"p_value\": 0,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-18\",\n      \"p_value\": 0,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-19\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-20\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-21\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-22\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-23\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-24\",\n      \"p_value\": 0,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-25\",\n      \"p_value\": 0,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-26\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-27\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-28\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-29\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-30\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-31\",\n      \"p_value\": 0,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular OT\",\n      \"p_entry_date\": \"2026-07-09\",\n      \"p_value\": 2,\n      \"p_cross_dept_flag\": \"Y\",\n      \"p_dept_id\": \"09\",\n      \"p_cost_center\": \"4471\",\n      \"p_comments\": \"Corporate event support\"\n    }\n  ]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "**Purpose:** Submit timecard\n\n**Auth:** Bearer {{token}} required\n**Request body:** see the raw body below.\n\n**Response:** Sanaad action envelope — `{ status, successflag, message, httpStatusCode, result? }`."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": \"success\",\n  \"successflag\": \"S\",\n  \"message\": \"Success\",\n  \"httpStatusCode\": 200,\n  \"result\": {\n    \"referenceNo\": null,\n    \"submittedDate\": \"2026-08-02T06:15:00.000Z\",\n    \"cardStatus\": \"Submitted\",\n    \"approvalChain\": []\n  }\n}"
+            },
+            {
+              "name": "Error (400)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/otl/timecard/submit",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "otl",
+                    "timecard",
+                    "submit"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"periodStart\": \"2026-07-01\",\n  \"p_confirmation_flag\": \"Y\",\n  \"p_employee_notes\": \"July 2026 timecard\",\n  \"p_entries\": [\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-01\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-02\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-03\",\n      \"p_value\": 0,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-04\",\n      \"p_value\": 0,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-05\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-06\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-07\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-08\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-09\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-10\",\n      \"p_value\": 0,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-11\",\n      \"p_value\": 0,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-12\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-13\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-14\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-15\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-16\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-17\",\n      \"p_value\": 0,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-18\",\n      \"p_value\": 0,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-19\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-20\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-21\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-22\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-23\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-24\",\n      \"p_value\": 0,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-25\",\n      \"p_value\": 0,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-26\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-27\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-28\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-29\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-30\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-31\",\n      \"p_value\": 0,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular OT\",\n      \"p_entry_date\": \"2026-07-09\",\n      \"p_value\": 2,\n      \"p_cross_dept_flag\": \"Y\",\n      \"p_dept_id\": \"09\",\n      \"p_cost_center\": \"4471\",\n      \"p_comments\": \"Corporate event support\"\n    }\n  ]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "**Purpose:** Submit timecard\n\n**Auth:** Bearer {{token}} required\n**Request body:** see the raw body below.\n\n**Response:** Sanaad action envelope — `{ status, successflag, message, httpStatusCode, result? }`."
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"message\": \"Validation failed.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 400,\n  \"errors\": {\n    \"details\": [\n      \"field must not be empty\"\n    ]\n  }\n}"
+            },
+            {
+              "name": "Error (401)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/otl/timecard/submit",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "otl",
+                    "timecard",
+                    "submit"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"periodStart\": \"2026-07-01\",\n  \"p_confirmation_flag\": \"Y\",\n  \"p_employee_notes\": \"July 2026 timecard\",\n  \"p_entries\": [\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-01\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-02\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-03\",\n      \"p_value\": 0,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-04\",\n      \"p_value\": 0,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-05\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-06\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-07\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-08\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-09\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-10\",\n      \"p_value\": 0,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-11\",\n      \"p_value\": 0,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-12\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-13\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-14\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-15\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-16\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-17\",\n      \"p_value\": 0,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-18\",\n      \"p_value\": 0,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-19\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-20\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-21\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-22\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-23\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-24\",\n      \"p_value\": 0,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-25\",\n      \"p_value\": 0,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-26\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-27\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-28\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-29\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-30\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-31\",\n      \"p_value\": 0,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular OT\",\n      \"p_entry_date\": \"2026-07-09\",\n      \"p_value\": 2,\n      \"p_cross_dept_flag\": \"Y\",\n      \"p_dept_id\": \"09\",\n      \"p_cost_center\": \"4471\",\n      \"p_comments\": \"Corporate event support\"\n    }\n  ]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "**Purpose:** Submit timecard\n\n**Auth:** Bearer {{token}} required\n**Request body:** see the raw body below.\n\n**Response:** Sanaad action envelope — `{ status, successflag, message, httpStatusCode, result? }`."
+              },
+              "status": "Unauthorized",
+              "code": 401,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"message\": \"Authentication failed.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 401\n}"
+            },
+            {
+              "name": "Error (500)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/otl/timecard/submit",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "otl",
+                    "timecard",
+                    "submit"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"periodStart\": \"2026-07-01\",\n  \"p_confirmation_flag\": \"Y\",\n  \"p_employee_notes\": \"July 2026 timecard\",\n  \"p_entries\": [\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-01\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-02\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-03\",\n      \"p_value\": 0,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-04\",\n      \"p_value\": 0,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-05\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-06\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-07\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-08\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-09\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-10\",\n      \"p_value\": 0,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-11\",\n      \"p_value\": 0,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-12\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-13\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-14\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-15\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-16\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-17\",\n      \"p_value\": 0,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-18\",\n      \"p_value\": 0,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-19\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-20\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-21\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-22\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-23\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-24\",\n      \"p_value\": 0,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-25\",\n      \"p_value\": 0,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-26\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-27\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-28\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-29\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-30\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-31\",\n      \"p_value\": 0,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular OT\",\n      \"p_entry_date\": \"2026-07-09\",\n      \"p_value\": 2,\n      \"p_cross_dept_flag\": \"Y\",\n      \"p_dept_id\": \"09\",\n      \"p_cost_center\": \"4471\",\n      \"p_comments\": \"Corporate event support\"\n    }\n  ]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "**Purpose:** Submit timecard\n\n**Auth:** Bearer {{token}} required\n**Request body:** see the raw body below.\n\n**Response:** Sanaad action envelope — `{ status, successflag, message, httpStatusCode, result? }`."
+              },
+              "status": "Internal Server Error",
+              "code": 500,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"message\": \"A database operation could not be completed. Please contact support if the problem persists.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 500\n}"
+            },
+            {
+              "name": "Error (503)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/otl/timecard/submit",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "otl",
+                    "timecard",
+                    "submit"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"periodStart\": \"2026-07-01\",\n  \"p_confirmation_flag\": \"Y\",\n  \"p_employee_notes\": \"July 2026 timecard\",\n  \"p_entries\": [\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-01\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-02\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-03\",\n      \"p_value\": 0,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-04\",\n      \"p_value\": 0,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-05\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-06\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-07\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-08\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-09\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-10\",\n      \"p_value\": 0,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-11\",\n      \"p_value\": 0,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-12\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-13\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-14\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-15\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-16\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-17\",\n      \"p_value\": 0,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-18\",\n      \"p_value\": 0,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-19\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-20\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-21\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-22\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-23\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-24\",\n      \"p_value\": 0,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-25\",\n      \"p_value\": 0,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-26\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-27\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-28\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-29\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-30\",\n      \"p_value\": 8,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular Hours\",\n      \"p_entry_date\": \"2026-07-31\",\n      \"p_value\": 0,\n      \"p_cross_dept_flag\": \"N\"\n    },\n    {\n      \"p_hour_type_id\": \"Regular OT\",\n      \"p_entry_date\": \"2026-07-09\",\n      \"p_value\": 2,\n      \"p_cross_dept_flag\": \"Y\",\n      \"p_dept_id\": \"09\",\n      \"p_cost_center\": \"4471\",\n      \"p_comments\": \"Corporate event support\"\n    }\n  ]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "**Purpose:** Submit timecard\n\n**Auth:** Bearer {{token}} required\n**Request body:** see the raw body below.\n\n**Response:** Sanaad action envelope — `{ status, successflag, message, httpStatusCode, result? }`."
+              },
+              "status": "Service Unavailable",
+              "code": 503,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"message\": \"An external service is currently unavailable.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 503\n}"
+            }
+          ]
+        },
+        {
+          "name": "GET /approvals/:id/timecard-details",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Response time is less than 5 seconds\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(5000);",
+                  "});",
+                  "",
+                  "pm.test(\"Response is valid JSON\", function () {",
+                  "    pm.response.to.be.json;",
+                  "});",
+                  "",
+                  "pm.test(\"Has success envelope fields\", function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json).to.have.property('status', 'success');",
+                  "    pm.expect(json).to.have.property('result');",
+                  "    pm.expect(json).to.have.property('httpStatusCode');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/approvals/:id/timecard-details?lang=en&requestor=V-NFERNANDO",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "approvals",
+                ":id",
+                "timecard-details"
+              ],
+              "query": [
+                {
+                  "key": "lang",
+                  "value": "en"
+                },
+                {
+                  "key": "requestor",
+                  "value": "V-NFERNANDO"
+                }
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "123864402"
+                }
+              ]
+            },
+            "description": "**Purpose:** Timecard of an approval notification\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang, requestor\n**Path variables:** id\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+          },
+          "response": [
+            {
+              "name": "Success (200)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/approvals/:id/timecard-details?lang=en&requestor=V-NFERNANDO",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "approvals",
+                    ":id",
+                    "timecard-details"
+                  ],
+                  "query": [
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    },
+                    {
+                      "key": "requestor",
+                      "value": "V-NFERNANDO"
+                    }
+                  ],
+                  "variable": [
+                    {
+                      "key": "id",
+                      "value": "123864402"
+                    }
+                  ]
+                },
+                "description": "**Purpose:** Timecard of an approval notification\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang, requestor\n**Path variables:** id\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"result\": {\n    \"header\": {\n      \"fullName\": \"Mr. Amir Sami Samir Ibrahim\",\n      \"employeeNumber\": \"037400\",\n      \"period\": \"Jul 2026\",\n      \"startDate\": \"2026-07-01\",\n      \"endDate\": \"2026-07-31\",\n      \"timecardId\": 9812345,\n      \"status\": \"SUBMITTED\",\n      \"submittedBy\": \"Amir Sami Ibrahim (037400)\",\n      \"submissionDate\": \"2026-08-02\",\n      \"comments\": \"July 2026 timecard\"\n    },\n    \"rows\": [\n      {\n        \"hourType\": \"Regular Hours\",\n        \"facility\": \"09\",\n        \"costCenter\": \"4410\",\n        \"totalHours\": 16,\n        \"entries\": [\n          {\n            \"entryDate\": \"2026-07-01\",\n            \"value\": 8,\n            \"locked\": false\n          },\n          {\n            \"entryDate\": \"2026-07-02\",\n            \"value\": 8,\n            \"locked\": false\n          },\n          {\n            \"entryDate\": \"2026-07-03\",\n            \"value\": 0,\n            \"locked\": true\n          }\n        ]\n      }\n    ]\n  },\n  \"opstatus\": 0,\n  \"status\": \"success\",\n  \"httpStatusCode\": 200\n}"
+            },
+            {
+              "name": "Error (400)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/approvals/:id/timecard-details?lang=en&requestor=V-NFERNANDO",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "approvals",
+                    ":id",
+                    "timecard-details"
+                  ],
+                  "query": [
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    },
+                    {
+                      "key": "requestor",
+                      "value": "V-NFERNANDO"
+                    }
+                  ],
+                  "variable": [
+                    {
+                      "key": "id",
+                      "value": "123864402"
+                    }
+                  ]
+                },
+                "description": "**Purpose:** Timecard of an approval notification\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang, requestor\n**Path variables:** id\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"message\": \"Validation failed.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 400,\n  \"errors\": {\n    \"details\": [\n      \"field must not be empty\"\n    ]\n  }\n}"
+            },
+            {
+              "name": "Error (401)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/approvals/:id/timecard-details?lang=en&requestor=V-NFERNANDO",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "approvals",
+                    ":id",
+                    "timecard-details"
+                  ],
+                  "query": [
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    },
+                    {
+                      "key": "requestor",
+                      "value": "V-NFERNANDO"
+                    }
+                  ],
+                  "variable": [
+                    {
+                      "key": "id",
+                      "value": "123864402"
+                    }
+                  ]
+                },
+                "description": "**Purpose:** Timecard of an approval notification\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang, requestor\n**Path variables:** id\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+              },
+              "status": "Unauthorized",
+              "code": 401,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"message\": \"Authentication failed.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 401\n}"
+            },
+            {
+              "name": "Error (403)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/approvals/:id/timecard-details?lang=en&requestor=V-NFERNANDO",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "approvals",
+                    ":id",
+                    "timecard-details"
+                  ],
+                  "query": [
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    },
+                    {
+                      "key": "requestor",
+                      "value": "V-NFERNANDO"
+                    }
+                  ],
+                  "variable": [
+                    {
+                      "key": "id",
+                      "value": "123864402"
+                    }
+                  ]
+                },
+                "description": "**Purpose:** Timecard of an approval notification\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang, requestor\n**Path variables:** id\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+              },
+              "status": "Forbidden",
+              "code": 403,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"message\": \"You do not have permission to perform this action.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 403\n}"
+            },
+            {
+              "name": "Error (500)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/approvals/:id/timecard-details?lang=en&requestor=V-NFERNANDO",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "approvals",
+                    ":id",
+                    "timecard-details"
+                  ],
+                  "query": [
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    },
+                    {
+                      "key": "requestor",
+                      "value": "V-NFERNANDO"
+                    }
+                  ],
+                  "variable": [
+                    {
+                      "key": "id",
+                      "value": "123864402"
+                    }
+                  ]
+                },
+                "description": "**Purpose:** Timecard of an approval notification\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang, requestor\n**Path variables:** id\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+              },
+              "status": "Internal Server Error",
+              "code": 500,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"message\": \"A database operation could not be completed. Please contact support if the problem persists.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 500\n}"
+            },
+            {
+              "name": "Error (503)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/approvals/:id/timecard-details?lang=en&requestor=V-NFERNANDO",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "approvals",
+                    ":id",
+                    "timecard-details"
+                  ],
+                  "query": [
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    },
+                    {
+                      "key": "requestor",
+                      "value": "V-NFERNANDO"
+                    }
+                  ],
+                  "variable": [
+                    {
+                      "key": "id",
+                      "value": "123864402"
+                    }
+                  ]
+                },
+                "description": "**Purpose:** Timecard of an approval notification\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang, requestor\n**Path variables:** id\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+              },
+              "status": "Service Unavailable",
+              "code": 503,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"message\": \"An external service is currently unavailable.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 503\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
       "name": "Appointments",
       "item": [
         {

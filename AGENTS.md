@@ -1971,3 +1971,53 @@ auth module, before the wildcard. Like `/healthcheck`, it has no `@SkipIntegrity
 The audit action is `view` (GET default), operationId `auth_appSetting`. Tests:
 backend `modules/auth/application/app-setting.service.spec.ts`, gateway e2e
 `forwards GET /app-setting ...`.
+
+## OTL timecards (`/otl/*`, 2026-09-29)
+
+`modules/otl` wraps `XXHMC_SND_OTL_PKG` and seven `XXHMC_SND_OTL_*_V` views. Contract
+source: `.workbench/artifacts/otl-db-findings.md` (dictionary + package source,
+EBSDEV). Plan: `.workbench/artifacts/otl-implementation-plan.md` sections 0-11.
+
+- **Deployment:** the objects exist on **EBSDEV** (APPS; record types owned by
+  HMCERP) and are **absent from EBSPRJ** (HMCERP, behind staging). Until the DBA
+  deploys them there with `GRANT EXECUTE/SELECT` + HMCERP synonyms, every OTL
+  call from staging fails with ORA-00942 / PLS-00201. Tests mock Oracle.
+- **Reads are table functions, not cursors:** `get_absence_details`,
+  `get_element_name`, `get_template` and `get_time_card_details` go through
+  `callRowsOrTableFunction` → `SELECT * FROM TABLE(pkg.fn(:arg0, ...))`, positional
+  in declared order, DATE/NUMBER types from the static contract.
+  `get_time_card_details(p_notification_id, p_user_name)` wants the timecard
+  OWNER, not the approver; `GET /approvals/:id/timecard-details?requestor=` (served
+  by the OTL module) first checks that the caller is the notification's
+  recipient in `WORKLISTS_V`, else 403.
+- **Never read `TIMECARD_DEATIS_V` or `SUMMARY_ELE_V` unfiltered** — heavy HXC
+  joins that did not return on EBSDEV. The repository always binds `USER_NAME` and
+  `TRUNC(START_TIME) = :p_start_date`. `DEATIS` is the real spelling.
+- **Submit** (`POST /otl/timecard/submit`, operationId `otl_submitTimecard`, in
+  `WORKLIST_SUBMIT_OPERATIONS`): Oracle reads ONLY the CLOB `p_entries`; its five
+  scalar INs are ignored. The service builds the JSON envelope server-side
+  (`p_user_name` from the JWT, `p_period`, `p_confirmation_flag`, `p_language`,
+  `p_employee_notes`, `p_entries[]` of `p_hour_type_id` = element NAME,
+  `p_entry_date`, `p_value`, `p_cross_dept_flag`, `p_dept_id`, `p_cost_center`,
+  `p_comments`) and binds the same values to the scalars. The OUTs are read with
+  `callMultiCursorProc`, because `p_approval_chain` is never OPENed (→ `[]`) and
+  `p_reference_no` is always NULL. Oracle's `E` becomes `successflag: N`. The
+  backend pre-checks the element name, the period, raw codes, ≤24 h/day and that
+  every day of the month has an entry (200/`N` without an Oracle call).
+- **Period formats:** the identifier is TIME_PERIOD_V `START_DATE`/`END_DATE`
+  (`YYYY-MM-DD` on the wire). Derived with fixed English names, never parsed:
+  `Month YYYY` for the submit JSON, `Mon YYYY` for summary/detail PERIOD, and
+  `DD-Mon-YYYY` for entry dates. Date binds are LOCAL-midnight Dates (node-oracledb
+  writes DB_TYPE_DATE from local components); Oracle DATEs are read back by their
+  local calendar day.
+- **Oracle bugs blocking UAT (plan 0.2, owner: Oracle team):** B1 hours deposited
+  as NULL, B2 0..24 check ineffective, B3 last row decides validation, B4
+  `SUMMARY_V` INVALID (ORA-04063 → the read degrades to `available: false` and
+  period status `UNKNOWN`), B5 `SUMMARY_ELE_V.FULL_NAME` is the user id, B6
+  NLS-dependent period parsing, B7 facility/cost-center stored in VARCHAR2(10), B8
+  range entries dropped (not accepted by the DTO), B9 no reference number /
+  approval chain, B10 no HXCEMP rows in `WORKLISTS_V`. No UAT submit before B1-B4
+  are fixed on the target instance.
+
+Checks: `npx.cmd jest src/modules/otl src/core/database/confirmed-submit-contracts.spec.ts
+src/modules/notifications --forceExit` and `npm.cmd run build` from `HMC_BackEnd/`.

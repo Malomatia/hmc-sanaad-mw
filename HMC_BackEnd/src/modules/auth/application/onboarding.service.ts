@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { randomBytes, randomInt } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import { AuthStateService, ENROLLMENT_TTL_SECONDS } from '@core/auth/auth-state.service';
 import { AuditService } from '@core/audit/audit.service';
 import { AuthLifecycleEvent } from '@core/audit/audit-event';
@@ -26,7 +26,8 @@ import { maskEmail, maskPhone } from './mask.util';
 import { DEFAULT_LANG, Lang } from '@shared/domain/lang';
 
 /** User-facing initiate messages, per the request's `lang` header/query. */
-const MESSAGES: Record<'otpSent' | 'otpPending', Record<Lang, string>> = {
+const MESSAGES: Record<'invalidUsername' | 'otpSent' | 'otpPending', Record<Lang, string>> = {
+  invalidUsername: { en: 'Invalid Username.', ar: 'اسم المستخدم غير صحيح.' },
   otpSent: { en: 'OTP sent successfully', ar: 'تم إرسال رمز التحقق بنجاح' },
   otpPending: {
     en: 'An OTP was already sent and is still valid',
@@ -44,30 +45,18 @@ const INITIATE_FIELDS: readonly (keyof InitiateResponseDto & keyof UserValidateR
   'elapsedtimeinmins',
 ];
 
-/**
- * Anti-enumeration decoy for an unknown username. /auth/initiate must not
- * reveal whether a username exists, so it answers like a first-time user: a
- * plausible masked email derived from the submitted username, and a random
- * masked phone (10 masked digits + 3 random). No OTP is ever generated.
- */
-function decoyEmail(username: string): string {
-  const letters = username.replace(/[^A-Za-z]/g, '').toUpperCase();
-  return `${(letters.slice(0, 2) || 'XX').padEnd(2, 'X')}****@hamad.qa`;
-}
-
-function decoyPhone(): string {
-  return `XXXXXXXXXX${randomInt(1000).toString().padStart(3, '0')}`;
-}
+/** Shared rate-limit bucket for the /auth/initiate invalid-username device block. */
+const INVALID_USERNAME_SCOPE = 'initiate-invalid-username';
 
 /**
  * API-2 (User Validate) + API-3 (Validate OTP). Reworked flow (client request
  * 2026-09-03):
  *
  *  1. The username is resolved through the identity port (AUTH_DIRECTORY=
- *     usersdb → HMC_SND_LIV_EMP_MASTER_VW on the MOTC_SMS DB). An unknown user
- *     is NOT rejected: it gets an anti-enumeration decoy shaped like a new
- *     user (fake masked contact, no OTP), so the response cannot confirm
- *     whether a username exists.
+ *     usersdb → HMC_SND_LIV_EMP_MASTER_VW on the MOTC_SMS DB). An unknown
+ *     username returns the "Invalid Username." error, and each attempt is
+ *     counted against the caller's constantId (device id when absent) so a
+ *     caller is blocked after INITIATE_INVALID_USERNAME_MAX_ATTEMPTS tries.
  *  2. The exact user+device registration is read from HMC_Sanad_DeviceRegn_tbl.
  *  3. Registered WITH an MPIN → existing user: the response carries the full
  *     identity from both tables and NO OTP is sent (they log in with MPIN).
@@ -85,6 +74,9 @@ export class OnboardingService {
   private readonly otpInResponse: boolean;
   /** OTP TTL for the dev-bypass response's elapsedtimeinmins. */
   private readonly otpTtlSeconds: number;
+  /** Device block on repeated invalid usernames (0 = disabled). */
+  private readonly invalidUsernameMaxAttempts: number;
+  private readonly invalidUsernameBlockSeconds: number;
 
   constructor(
     @Inject(LDAP_USER_PORT) private readonly ldap: LdapUserPort,
@@ -99,6 +91,9 @@ export class OnboardingService {
     this.otpInResponse =
       config.get<boolean>('otp.inResponse', false) === true &&
       config.get<string>('app.nodeEnv', 'development') !== 'production';
+    this.invalidUsernameMaxAttempts = config.get<number>('auth.invalidUsernameMaxAttempts', 0);
+    this.invalidUsernameBlockSeconds =
+      config.get<number>('auth.invalidUsernameBlockMinutes', 15) * 60;
   }
 
   /**
@@ -111,14 +106,33 @@ export class OnboardingService {
     lang: Lang = DEFAULT_LANG,
   ): Promise<InitiateResponseDto> {
     const result = await this.initiate(dto, lang);
+    // An invalid username is surfaced as a real error on /auth/initiate,
+    // not wrapped in the generic OTP envelope.
+    if (result.status === 'error') return { status: 'error', message: result.message };
     const extra = Object.fromEntries(
       INITIATE_FIELDS.filter((key) => result[key] !== undefined).map((key) => [key, result[key]]),
     );
     return { ...this.genericOtpResponse(result, lang), ...extra };
   }
 
+  /** Identity for the invalid-username block: the stable constantId, else the device id. */
+  private blockKey(dto: UserValidateRequestDto): string {
+    return dto.constantId?.trim() || dto.imeinumber;
+  }
+
   private async initiate(dto: UserValidateRequestDto, lang: Lang): Promise<UserValidateResponseDto> {
     if (!this.devBypass) {
+      // Device block: reject up front if this constantId/device has already
+      // exceeded the invalid-username budget (see the record in
+      // validateUserInternal). Runs before any directory work so a blocked
+      // caller does nothing further.
+      if (this.invalidUsernameMaxAttempts > 0) {
+        await this.state.assertUnderLimit(
+          INVALID_USERNAME_SCOPE,
+          this.blockKey(dto),
+          this.invalidUsernameMaxAttempts,
+        );
+      }
       await this.state.limit(
         'otp-send',
         dto.username.trim().toUpperCase(),
@@ -167,22 +181,20 @@ export class OnboardingService {
     }
 
     if (!identity.isEmployee) {
-      // Anti-enumeration: never disclose that the username is unknown. The
-      // failure is logged internally, but the client gets a decoy shaped
-      // exactly like a first-time (new) user — a fake masked email + a random
-      // masked phone. No OTP is stored or sent, so a follow-up
-      // /auth/otp/validate simply fails, exactly as a wrong OTP would.
       this.audit.lifecycle(AuthLifecycleEvent.USER_VALIDATE_FAILURE, { ...ctx, status: 'error' });
-      return {
-        status: 'success',
-        email: decoyEmail(dto.username),
-        employeephonenumber: decoyPhone(),
-        newuser: 'Yes',
-        vflag: 'New',
-        otpmode: 'SMS',
-        elapsedtimeinmins: Math.ceil(this.otpTtlSeconds / 60),
-        requestid: randomBytes(32).toString('base64url'),
-      };
+      // Count this invalid-username attempt against the caller's constantId
+      // (device id when absent). Once the cap is reached, the NEXT
+      // /auth/initiate from that key is blocked for the configured minutes
+      // (assertUnderLimit in initiate).
+      if (!this.devBypass && this.invalidUsernameMaxAttempts > 0) {
+        await this.state.limit(
+          INVALID_USERNAME_SCOPE,
+          this.blockKey(dto),
+          this.invalidUsernameMaxAttempts,
+          this.invalidUsernameBlockSeconds,
+        );
+      }
+      return { status: 'error', message: MESSAGES.invalidUsername[lang] };
     }
 
     // Step 2 — this exact user+device registration.

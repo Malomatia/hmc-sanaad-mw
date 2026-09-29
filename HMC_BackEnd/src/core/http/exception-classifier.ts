@@ -143,7 +143,9 @@ function classifyHttp(ex: HttpException): ClassifiedError {
     case HttpStatus.CONFLICT:
       return of(ErrorCategory.BUSINESS_RULE_ERROR);
     case HttpStatus.TOO_MANY_REQUESTS:
-      return of(ErrorCategory.BUSINESS_RULE_ERROR, { httpStatus: status, message: 'Too many attempts. Please try again later.' });
+      // Rate limits answer a translated 400 (client request); the category's
+      // own message is used so AllExceptionsFilter localizes it by `lang`.
+      return of(ErrorCategory.TOO_MANY_ATTEMPTS);
     case HttpStatus.BAD_GATEWAY:
     case HttpStatus.SERVICE_UNAVAILABLE:
       return of(ErrorCategory.EXTERNAL_SERVICE_ERROR, { httpStatus: status });

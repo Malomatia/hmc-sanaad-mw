@@ -43,6 +43,17 @@ export class ClientContextDto {
   @MaxLength(256)
   imeinumber!: string;
 
+  @ApiPropertyOptional({
+    example: 'c0nstant-install-id-123',
+    description:
+      'Stable per-install identifier. Used to rate-limit /auth/initiate invalid-username ' +
+      'attempts (falls back to the device id when absent).',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(256)
+  constantId?: string;
+
   @ApiPropertyOptional({ example: 'Android' })
   @IsOptional()
   @IsString()

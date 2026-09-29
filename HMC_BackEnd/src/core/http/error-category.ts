@@ -17,6 +17,12 @@ export enum ErrorCategory {
    */
   UNRESOLVED_VALUE = 'UNRESOLVED_VALUE',
   BUSINESS_RULE_ERROR = 'BUSINESS_RULE_ERROR',
+  /**
+   * A rate limit / lockout was hit (AuthStateService budgets, OTP resend
+   * window). Its own category so it answers a translated 400 instead of the
+   * generic business-rule text; the Retry-After header is still set.
+   */
+  TOO_MANY_ATTEMPTS = 'TOO_MANY_ATTEMPTS',
   DATABASE_ERROR = 'DATABASE_ERROR',
   EXTERNAL_SERVICE_ERROR = 'EXTERNAL_SERVICE_ERROR',
   TIMEOUT = 'TIMEOUT',
@@ -53,6 +59,7 @@ export const CATEGORY_MESSAGE: Readonly<Record<ErrorCategory, string>> = Object.
     'lookup (LOV) endpoint — the letter name and language must be a valid pair, and ' +
     'the phone number and delivery location must be ones already on record.',
   [ErrorCategory.BUSINESS_RULE_ERROR]: 'The requested operation cannot be completed.',
+  [ErrorCategory.TOO_MANY_ATTEMPTS]: 'Too many attempts. Please try again later.',
   [ErrorCategory.DATABASE_ERROR]: GENERIC_ERROR_MESSAGE.en,
   [ErrorCategory.EXTERNAL_SERVICE_ERROR]: 'An external service is currently unavailable.',
   [ErrorCategory.TIMEOUT]: 'The request took too long to process. Please try again.',
@@ -74,6 +81,7 @@ export const CATEGORY_MESSAGE_AR: Readonly<Record<ErrorCategory, string>> = Obje
     'إحدى القيم المُرسلة غير معروفة. يرجى التحقق من كل قيمة مقابل قائمة الاختيار الخاصة بها — ' +
     'اسم الخطاب ولغته يجب أن يكونا زوجًا صحيحًا، ورقم الهاتف وموقع التسليم يجب أن يكونا مسجَّلين مسبقًا.',
   [ErrorCategory.BUSINESS_RULE_ERROR]: 'تعذر إتمام العملية المطلوبة.',
+  [ErrorCategory.TOO_MANY_ATTEMPTS]: 'لقد تجاوزت عدد المحاولات المسموح به. يرجى المحاولة لاحقًا.',
   [ErrorCategory.DATABASE_ERROR]: GENERIC_ERROR_MESSAGE.ar,
   [ErrorCategory.EXTERNAL_SERVICE_ERROR]: 'الخدمة الخارجية غير متاحة حاليًا.',
   [ErrorCategory.TIMEOUT]: 'استغرق الطلب وقتًا طويلاً. يرجى المحاولة مرة أخرى.',
@@ -94,6 +102,7 @@ export const CATEGORY_STATUS: Readonly<Record<ErrorCategory, number>> = Object.f
   // 422: the request is well-formed but a value in it could not be resolved.
   [ErrorCategory.UNRESOLVED_VALUE]: 422,
   [ErrorCategory.BUSINESS_RULE_ERROR]: 409,
+  [ErrorCategory.TOO_MANY_ATTEMPTS]: 400,
   [ErrorCategory.DATABASE_ERROR]: 500,
   [ErrorCategory.EXTERNAL_SERVICE_ERROR]: 503,
   [ErrorCategory.TIMEOUT]: 408,

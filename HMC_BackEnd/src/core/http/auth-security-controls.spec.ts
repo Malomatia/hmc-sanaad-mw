@@ -76,26 +76,36 @@ describe('Hardened configuration and throttling', () => {
     expect(() => service.setWriteMode(true)).toThrow('disabled by server policy');
     expect(service.settings().allowWrite).toBe(false);
   });
-  it('preserves a bounded Retry-After header with the normal error envelope', () => {
-    const res = { setHeader: jest.fn(), status: jest.fn().mockReturnThis(), json: jest.fn() };
-    const host = {
-      switchToHttp: () => ({
-        getRequest: () => ({ method: 'POST', url: '/auth/login' }),
-        getResponse: () => res,
-      }),
-    };
-    new AllExceptionsFilter().catch(
-      new HttpException({ message: 'Limited', retryAfterSeconds: 60 }, 429),
-      host as ArgumentsHost,
-    );
-    expect(res.setHeader).toHaveBeenCalledWith('Retry-After', '60');
-    expect(res.status).toHaveBeenCalledWith(429);
-    expect(res.json).toHaveBeenCalledWith(
-      expect.objectContaining({
+  it.each([
+    [undefined, 'Too many attempts. Please try again later.'],
+    ['en', 'Too many attempts. Please try again later.'],
+    ['ar', 'لقد تجاوزت عدد المحاولات المسموح به. يرجى المحاولة لاحقًا.'],
+  ])(
+    'answers a rate limit with a translated 400 (lang=%s) and keeps Retry-After',
+    (lang, message) => {
+      const res = { setHeader: jest.fn(), status: jest.fn().mockReturnThis(), json: jest.fn() };
+      const host = {
+        switchToHttp: () => ({
+          getRequest: () => ({
+            method: 'POST',
+            url: '/auth/initiate',
+            headers: lang ? { lang } : {},
+          }),
+          getResponse: () => res,
+        }),
+      };
+      new AllExceptionsFilter().catch(
+        new HttpException({ message: 'Limited', retryAfterSeconds: 60 }, 429),
+        host as ArgumentsHost,
+      );
+      expect(res.setHeader).toHaveBeenCalledWith('Retry-After', '60');
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith({
+        success: false,
         status: 'error',
-        httpStatusCode: 429,
-        message: 'Too many attempts. Please try again later.',
-      }),
-    );
-  });
+        httpStatusCode: 400,
+        message,
+      });
+    },
+  );
 });

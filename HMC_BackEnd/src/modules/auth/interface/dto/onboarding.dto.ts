@@ -28,8 +28,7 @@ export class UserValidateRequestDto extends ClientContextDto {}
  * user (device registered with an MPIN): full identity from the employee view
  * + device registration, newuser=No, no OTP. New user/device: registration
  * created, OTP sent, requestid + "OTP sent successfully". Unknown username:
- * an anti-enumeration decoy shaped like a new user (fake masked contact, no
- * OTP), never an error that would confirm whether the username exists.
+ * status=error, "Invalid Username.".
  */
 export class UserValidateResponseDto {
   @ApiPropertyOptional({ example: 'employee nt id' })
@@ -170,13 +169,13 @@ export class SendOtpResponseDto {
 export class InitiateResponseDto extends SendOtpResponseDto {
   @ApiPropertyOptional({
     example: 'MK****@hamad.qa',
-    description: 'Masked — first 2 characters visible; a decoy for an unknown username.',
+    description: 'Masked — first 2 characters visible. Absent when unknown.',
   })
   email?: string;
 
   @ApiPropertyOptional({
     example: 'XXXXX206',
-    description: 'Masked — only the last 3 digits visible; a random decoy for an unknown username.',
+    description: 'Masked — only the last 3 digits visible. Absent when unknown.',
   })
   employeephonenumber?: string;
 

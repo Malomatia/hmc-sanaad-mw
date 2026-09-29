@@ -536,8 +536,8 @@ Accepts the legacy misspelled `p_*` names (`p_gendar`, `p_relation_ship`, `p_vis
 |---|---|---|---|
 | GET | /annual-ticket/master | op 66 | JWT |
 | POST | /annual-ticket/apply | op 67 — `p_employee` MUST be the Oracle PERSON_ID; `p_contractual_year` must exist in HMC_HR_CONTRACTUAL_YEAR_SIT | JWT |
-| GET | /annual-ticket/cancel-options | op 72 — tickets + takenAs + repayment methods (parallel) | JWT |
-| POST | /annual-ticket/cancel | op 72 | JWT |
+| GET | /annual-ticket/cancel-options | op 72 — tickets + takenAs + repayment methods (parallel), always the caller's own: PERSON_ID derived from EMPLOYMENT_DETAILS_V by the JWT username; optional legacy `?person_id=` → 403 when it is not the caller's | JWT |
+| POST | /annual-ticket/cancel | op 72 — `CANCEL_TKT_PR`; `p_annual_tkt` = `ANNUAL_LEAVE_PASS_TKT_VALUE` from cancel-options, verbatim | JWT |
 
 ## 8.12 approvals — ops 20-23, 68-71 + RFMI
 

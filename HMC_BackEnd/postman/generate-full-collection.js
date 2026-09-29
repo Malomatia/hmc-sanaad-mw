@@ -318,6 +318,23 @@ const MODULES = [
         success: lovGeneric([{ code: 'Economy', meaning: 'Economy' }]), errors: [401, 500] },
       { name: 'Submit annual ticket', method: 'POST', p: 'annual-ticket/apply', auth: 'bearer', kind: 'action',
         body: { p_ticket_class: 'Economy', p_travel_year: '2026' }, success: actionSuccess, errors: [400, 401, 409, 500] },
+      { name: 'Ticket-cancellation options (caller-scoped; person_id derived from the JWT)', method: 'GET', p: 'annual-ticket/cancel-options', auth: 'bearer', kind: 'read', query: { lang: 'en' },
+        success: {
+          tickets: [{ PERSON_ID: 26023, ANNUAL_LEAVE_PASS_TKT_VALUE: 'Self and Family |Amir |Caroline |Jerome Amir Sami |Jolie Amir Sami | |01-SEP-2025 to 31-AUG-2026 |Cash |20920' }],
+          takenAs: [{ PERSON_ID: 26023, TAKES_AS: 'Cash' }],
+          repaymentMethods: [{ PERSON_ID: 26023, FLEX_VALUE: 'Payroll Deduction' }],
+        },
+        errors: [400, 401, 403, 500] },
+      { name: 'Cancel annual ticket', method: 'POST', p: 'annual-ticket/cancel', auth: 'bearer', kind: 'action',
+        body: {
+          p_annual_tkt: 'Self and Family |Amir |Caroline |Jerome Amir Sami |Jolie Amir Sami | |01-SEP-2025 to 31-AUG-2026 |Cash |20920',
+          p_contractual_year: '01-SEP-2025 to 31-AUG-2026',
+          p_reason: 'Travel plans cancelled',
+          p_ticket_as: 'Cash',
+          p_repayment_method: 'Payroll Deduction',
+          p_comments: 'Cancelling the unused ticket.',
+        },
+        success: actionSuccess, errors: [400, 401, 500] },
     ],
   },
   {

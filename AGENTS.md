@@ -529,6 +529,11 @@ responses as examples.
   `HMC_HR_CONTRACTUAL_YEAR_SIT` ('01-SEP-2025 to 31-AUG-2026' passes,
   calendar-year strings do not). With correct values the test user gets the
   real business answer "No ticket balance available..." (no entitlement).
+- op 72 `GET /annual-ticket/cancel-options` is bound to the JWT caller: the
+  three `CANCEL_*_V` views have NO `USER_NAME` column (PERSON_ID only), so the
+  PERSON_ID is derived from `EMPLOYMENT_DETAILS_V` by username and bound as a
+  NUMBER. A client `?person_id=` is optional; a different one → 403, and no
+  employment row → empty lists. Never query these views with a client id.
 - `UPD_ADDRESS_PR`: `p_country` takes the country NAME (`Qatar`; `QA` →
   "Invalid Country"), `p_address_type` must equal the target address's own
   type, and repeating an update on the same `p_effective_date` fails

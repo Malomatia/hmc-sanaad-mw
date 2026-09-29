@@ -13,6 +13,7 @@ import {
   AnnualTicketApplyRequestDto,
   AnnualTicketCancelRequestDto,
   TicketCancelOptionsQueryDto,
+  TicketCancelOptionsResponseDto,
 } from './dto/annual-ticket.dto';
 import { ANNUAL_TICKET_APPLY_BODY } from './annual-ticket.examples';
 
@@ -50,15 +51,18 @@ export class AnnualTicketController {
   /**
    * Inputs of the cancellation form. Three PERSON-scoped views in one call:
    * the cancellable tickets, how each was taken (Cash|Voucher) and the
-   * available repayment methods.
+   * available repayment methods — always the JWT caller's own. The PERSON_ID
+   * is derived server-side (EMPLOYMENT_DETAILS_V); a `person_id` query param
+   * is optional and answers 403 when it is not the caller's.
    */
   @Get('cancel-options')
   @ApiOperation({
     summary: 'op 72 — Ticket-cancellation options (tickets + takenAs + repayment)',
     operationId: 'annualTicket_cancelOptions',
   })
-  cancelOptions(@Query() q: TicketCancelOptionsQueryDto) {
-    return this.service.cancelOptions(q.person_id);
+  @ApiOkResponse({ type: TicketCancelOptionsResponseDto })
+  cancelOptions(@Query() q: TicketCancelOptionsQueryDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.service.cancelOptions(user, q);
   }
 
   @Post('cancel')

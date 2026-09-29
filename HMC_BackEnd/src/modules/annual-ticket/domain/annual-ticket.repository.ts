@@ -9,7 +9,8 @@ export interface TicketRequestCommand {
 
 /**
  * Inputs of the cancellation form (op 72). The three views are PERSON-scoped
- * (`PERSON_ID`), not username-scoped like most of the other LOVs.
+ * (`PERSON_ID`), not username-scoped like most of the other LOVs, so the
+ * caller's PERSON_ID is resolved server-side first (`resolvePersonId`).
  */
 export interface TicketCancelOptions {
   /** Cancellable tickets — `ANNUAL_LEAVE_PASS_TKT_VALUE` feeds `p_annual_tkt`. */
@@ -25,6 +26,8 @@ export interface TicketRepository {
   apply(cmd: TicketRequestCommand): Promise<SubmitResult>;
   cancel(cmd: TicketRequestCommand): Promise<SubmitResult>;
   cancelOptions(personId: string): Promise<TicketCancelOptions>;
+  /** The caller's Oracle PERSON_ID (EMPLOYMENT_DETAILS_V by USER_NAME), or null when there is none. */
+  resolvePersonId(username: string): Promise<string | null>;
 }
 
 export const TICKET_REPOSITORY = Symbol('TICKET_REPOSITORY');

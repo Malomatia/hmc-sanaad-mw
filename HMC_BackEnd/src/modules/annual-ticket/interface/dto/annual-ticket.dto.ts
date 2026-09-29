@@ -1,5 +1,5 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsString } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
 import { LangQueryDto } from '@shared/dto/lang-query.dto';
 import {
   ATTACHMENT_FIELDS,
@@ -45,16 +45,94 @@ defineOptionalStringFields(AnnualTicketApplyRequestDto, [
   ...ATTACHMENT_FIELDS,
 ]);
 
-/** op 72 — `GET /annual-ticket/cancel-options?person_id=&lang=`. */
+/**
+ * op 72 — `GET /annual-ticket/cancel-options?lang=`. The caller's PERSON_ID is
+ * derived from the JWT (EMPLOYMENT_DETAILS_V); `person_id` stays accepted only
+ * for backward compatibility.
+ */
 export class TicketCancelOptionsQueryDto extends LangQueryDto {
-  @ApiProperty({
+  @ApiPropertyOptional({
     example: '26023',
     description:
-      'Oracle PERSON_ID — the three cancellation views are person-scoped (they expose PERSON_ID, not a username column).',
+      "Optional and not needed: the caller's PERSON_ID is derived from the JWT. " +
+      "Ignored unless it differs from the caller's own PERSON_ID, then 403.",
   })
+  @IsOptional()
   @IsString()
   @IsNotEmpty()
-  person_id!: string;
+  person_id?: string;
+}
+
+/** `tickets[]` row — XXHMC_SND_CANCEL_TICKETS_V. */
+export class TicketCancelTicketDto {
+  @ApiProperty({ example: 26023, description: 'Oracle PERSON_ID of the caller.' })
+  PERSON_ID!: number;
+
+  @ApiProperty({ type: Number, description: 'ANALYSIS_CRITERIA_ID of the ticket record.' })
+  ANALYSIS_CRITERIA_ID!: number;
+
+  @ApiProperty({
+    example:
+      'Self and Family |Amir |Caroline |Jerome Amir Sami |Jolie Amir Sami | |01-SEP-2025 to 31-AUG-2026 |Cash |20920',
+    description:
+      'Composite ticket value — send it verbatim as `p_annual_tkt` to POST /annual-ticket/cancel.',
+  })
+  ANNUAL_LEAVE_PASS_TKT_VALUE!: string;
+}
+
+/** `takenAs[]` row — XXHMC_SND_CANCEL_TAKENAS_V. */
+export class TicketCancelTakenAsDto {
+  @ApiProperty({ example: 26023, description: 'Oracle PERSON_ID of the caller.' })
+  PERSON_ID!: number;
+
+  @ApiProperty({ type: Number, description: 'ANALYSIS_CRITERIA_ID of the ticket record.' })
+  ANALYSIS_CRITERIA_ID!: number;
+
+  @ApiProperty({ example: 'Cash', description: 'Cash | Voucher — send as `p_ticket_as`.' })
+  TAKES_AS!: string;
+
+  @ApiPropertyOptional({ type: String, nullable: true, description: 'Arabic label of TAKES_AS.' })
+  TAKEN_AS_AR?: string | null;
+}
+
+/** `repaymentMethods[]` row — XXHMC_SND_CANCEL_REPAYMENT_METHODS_V. */
+export class TicketCancelRepaymentMethodDto {
+  @ApiProperty({ example: 26023, description: 'Oracle PERSON_ID of the caller.' })
+  PERSON_ID!: number;
+
+  @ApiProperty({ type: Number, description: 'ANALYSIS_CRITERIA_ID of the ticket record.' })
+  ANALYSIS_CRITERIA_ID!: number;
+
+  @ApiProperty({
+    example: 'Payroll Deduction',
+    description:
+      'Send as `p_repayment_method` (Cash → Payroll Deduction, Voucher → Cancel Voucher).',
+  })
+  FLEX_VALUE!: string;
+
+  @ApiPropertyOptional({ type: String, nullable: true })
+  DESCRIPTION?: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description:
+      'Arabic twin of FLEX_VALUE. The global ResponseInterceptor folds it into FLEX_VALUE for lang=ar ' +
+      'and removes it from the response.',
+  })
+  FLEX_VALUE_AR?: string | null;
+}
+
+/** op 72 — `GET /annual-ticket/cancel-options` response (caller-scoped). */
+export class TicketCancelOptionsResponseDto {
+  @ApiProperty({ type: [TicketCancelTicketDto] })
+  tickets!: TicketCancelTicketDto[];
+
+  @ApiProperty({ type: [TicketCancelTakenAsDto] })
+  takenAs!: TicketCancelTakenAsDto[];
+
+  @ApiProperty({ type: [TicketCancelRepaymentMethodDto] })
+  repaymentMethods!: TicketCancelRepaymentMethodDto[];
 }
 
 /**

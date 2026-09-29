@@ -1,10 +1,11 @@
 import { Injectable } from '@nestjs/common';
+import * as oracledb from 'oracledb';
 import { OracleService } from '@core/database/oracle.service';
 import { OracleSchemaService } from '@core/database/oracle-schema.service';
 import { BaseOracleRepository } from '@core/database/base.repository';
 import { SubmitResult } from '@shared/domain/submit-result';
 import { ORACLE_OBJECTS } from '@shared/constants/oracle-objects';
-import { PERSON_ID_COLUMN } from '@shared/constants/oracle-columns';
+import { PERSON_ID_COLUMN, USERNAME_KEY_CANDIDATES } from '@shared/constants/oracle-columns';
 import {
   TicketCancelOptions,
   TicketRepository,
@@ -69,17 +70,56 @@ export class TicketOracleRepository extends BaseOracleRepository implements Tick
     });
   }
 
-  /** The three cancellation LOVs in one round trip; all keyed by PERSON_ID. */
+  /**
+   * The caller's PERSON_ID from EMPLOYMENT_DETAILS_V, keyed by the JWT
+   * username. The cancellation views expose no USER_NAME column, so this is
+   * the only way to scope them to the caller. Null when the user has no
+   * employment row (or the row carries no PERSON_ID).
+   */
+  async resolvePersonId(username: string): Promise<string | null> {
+    const rows = await this.readByResolvedKey(
+      ORACLE_OBJECTS.EMPLOYMENT_DETAILS_V,
+      username,
+      USERNAME_KEY_CANDIDATES,
+    );
+    const personId = rows
+      .map((row) => String(row.PERSON_ID ?? '').trim())
+      .find((value) => /^\d+$/.test(value));
+    return personId ?? null;
+  }
+
+  /**
+   * The three cancellation LOVs in parallel; all keyed by PERSON_ID. The id is
+   * the server-resolved one (never a client value) and is bound as a NUMBER
+   * against the contract's key column.
+   */
   async cancelOptions(personId: string): Promise<TicketCancelOptions> {
+    const id = Number(personId);
+    if (!/^\d+$/.test(personId) || !Number.isSafeInteger(id)) {
+      return { tickets: [], takenAs: [], repaymentMethods: [] };
+    }
     const [tickets, takenAs, repaymentMethods] = await Promise.all([
-      this.readByPerson(ORACLE_OBJECTS.CANCEL_TICKETS_V, personId),
-      this.readByPerson(ORACLE_OBJECTS.CANCEL_TAKENAS_V, personId),
-      this.readByPerson(ORACLE_OBJECTS.CANCEL_REPAYMENT_METHODS_V, personId),
+      this.readByPerson(ORACLE_OBJECTS.CANCEL_TICKETS_V, id),
+      this.readByPerson(ORACLE_OBJECTS.CANCEL_TAKENAS_V, id),
+      this.readByPerson(ORACLE_OBJECTS.CANCEL_REPAYMENT_METHODS_V, id),
     ]);
     return { tickets, takenAs, repaymentMethods };
   }
 
-  private readByPerson(object: string, personId: string): Promise<Record<string, unknown>[]> {
-    return this.query(`SELECT * FROM ${object} WHERE ${PERSON_ID_COLUMN} = :p`, { p: personId });
+  /**
+   * Not `readByResolvedKey`: that binds the key as text, and PERSON_ID is a
+   * NUMBER column. The key column still comes from the static contract, so a
+   * view without a registered PERSON_ID fails closed (503) before any SQL.
+   */
+  private async readByPerson(object: string, personId: number): Promise<Record<string, unknown>[]> {
+    if (!this.schema) {
+      throw new Error(
+        `${this.constructor.name} must inject OracleSchemaService to read ${object}.`,
+      );
+    }
+    const keyColumn = await this.schema.resolveKeyColumn(object, [PERSON_ID_COLUMN]);
+    return this.query(`SELECT * FROM ${object} WHERE ${keyColumn} = :p`, {
+      p: { type: oracledb.DB_TYPE_NUMBER, val: personId },
+    });
   }
 }

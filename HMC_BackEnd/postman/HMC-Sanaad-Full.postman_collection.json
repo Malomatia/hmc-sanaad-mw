@@ -10260,6 +10260,460 @@
               "body": "{\n  \"success\": false,\n  \"message\": \"Validation failed.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 400,\n  \"errors\": {\n    \"details\": [\n      \"p_request_for must be a string\",\n      \"p_request_for should not be empty\",\n      \"p_employee must be a string\",\n      \"p_employee should not be empty\",\n      \"p_request_type must be a string\",\n      \"p_request_type should not be empty\",\n      \"p_contractual_year must be a string\",\n      \"p_contractual_year should not be empty\",\n      \"p_traveling_dest must be a string\",\n      \"p_traveling_dest should not be empty\",\n      \"p_travel_class must be a string\",\n      \"p_travel_class should not be empty\"\n    ]\n  }\n}"
             }
           ]
+        },
+        {
+          "name": "GET /annual-ticket/cancel-options",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Response time is less than 5 seconds\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(5000);",
+                  "});",
+                  "",
+                  "pm.test(\"Response is valid JSON\", function () {",
+                  "    pm.response.to.be.json;",
+                  "});",
+                  "",
+                  "pm.test(\"Has success envelope fields\", function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json).to.have.property('status', 'success');",
+                  "    pm.expect(json).to.have.property('result');",
+                  "    pm.expect(json).to.have.property('httpStatusCode');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/annual-ticket/cancel-options?lang=en",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "annual-ticket",
+                "cancel-options"
+              ],
+              "query": [
+                {
+                  "key": "lang",
+                  "value": "en"
+                }
+              ]
+            },
+            "description": "**Purpose:** Ticket-cancellation options (caller-scoped; person_id derived from the JWT)\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+          },
+          "response": [
+            {
+              "name": "Success (200)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/annual-ticket/cancel-options?lang=en",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "annual-ticket",
+                    "cancel-options"
+                  ],
+                  "query": [
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    }
+                  ]
+                },
+                "description": "**Purpose:** Ticket-cancellation options (caller-scoped; person_id derived from the JWT)\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"result\": {\n    \"tickets\": [\n      {\n        \"PERSON_ID\": 26023,\n        \"ANNUAL_LEAVE_PASS_TKT_VALUE\": \"Self and Family |Amir |Caroline |Jerome Amir Sami |Jolie Amir Sami | |01-SEP-2025 to 31-AUG-2026 |Cash |20920\"\n      }\n    ],\n    \"takenAs\": [\n      {\n        \"PERSON_ID\": 26023,\n        \"TAKES_AS\": \"Cash\"\n      }\n    ],\n    \"repaymentMethods\": [\n      {\n        \"PERSON_ID\": 26023,\n        \"FLEX_VALUE\": \"Payroll Deduction\"\n      }\n    ]\n  },\n  \"opstatus\": 0,\n  \"status\": \"success\",\n  \"httpStatusCode\": 200\n}"
+            },
+            {
+              "name": "Error (400)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/annual-ticket/cancel-options?lang=en",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "annual-ticket",
+                    "cancel-options"
+                  ],
+                  "query": [
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    }
+                  ]
+                },
+                "description": "**Purpose:** Ticket-cancellation options (caller-scoped; person_id derived from the JWT)\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"message\": \"Validation failed.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 400,\n  \"errors\": {\n    \"details\": [\n      \"field must not be empty\"\n    ]\n  }\n}"
+            },
+            {
+              "name": "Error (401)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/annual-ticket/cancel-options?lang=en",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "annual-ticket",
+                    "cancel-options"
+                  ],
+                  "query": [
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    }
+                  ]
+                },
+                "description": "**Purpose:** Ticket-cancellation options (caller-scoped; person_id derived from the JWT)\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+              },
+              "status": "Unauthorized",
+              "code": 401,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"message\": \"Authentication failed.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 401\n}"
+            },
+            {
+              "name": "Error (403)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/annual-ticket/cancel-options?lang=en",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "annual-ticket",
+                    "cancel-options"
+                  ],
+                  "query": [
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    }
+                  ]
+                },
+                "description": "**Purpose:** Ticket-cancellation options (caller-scoped; person_id derived from the JWT)\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+              },
+              "status": "Forbidden",
+              "code": 403,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"message\": \"You do not have permission to perform this action.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 403\n}"
+            },
+            {
+              "name": "Error (500)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/annual-ticket/cancel-options?lang=en",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "annual-ticket",
+                    "cancel-options"
+                  ],
+                  "query": [
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    }
+                  ]
+                },
+                "description": "**Purpose:** Ticket-cancellation options (caller-scoped; person_id derived from the JWT)\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+              },
+              "status": "Internal Server Error",
+              "code": 500,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"message\": \"A database operation could not be completed. Please contact support if the problem persists.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 500\n}"
+            }
+          ]
+        },
+        {
+          "name": "POST /annual-ticket/cancel",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Response time is less than 5 seconds\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(5000);",
+                  "});",
+                  "",
+                  "pm.test(\"Response is valid JSON\", function () {",
+                  "    pm.response.to.be.json;",
+                  "});",
+                  "",
+                  "pm.test(\"Has action envelope fields\", function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json).to.have.property('status');",
+                  "    pm.expect(json).to.have.property('successflag');",
+                  "    pm.expect(json).to.have.property('message');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/annual-ticket/cancel",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "annual-ticket",
+                "cancel"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"p_annual_tkt\": \"Self and Family |Amir |Caroline |Jerome Amir Sami |Jolie Amir Sami | |01-SEP-2025 to 31-AUG-2026 |Cash |20920\",\n  \"p_contractual_year\": \"01-SEP-2025 to 31-AUG-2026\",\n  \"p_reason\": \"Travel plans cancelled\",\n  \"p_ticket_as\": \"Cash\",\n  \"p_repayment_method\": \"Payroll Deduction\",\n  \"p_comments\": \"Cancelling the unused ticket.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "**Purpose:** Cancel annual ticket\n\n**Auth:** Bearer {{token}} required\n**Request body:** see the raw body below.\n\n**Response:** Sanaad action envelope — `{ status, successflag, message, httpStatusCode, result? }`."
+          },
+          "response": [
+            {
+              "name": "Success (200)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/annual-ticket/cancel",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "annual-ticket",
+                    "cancel"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"p_annual_tkt\": \"Self and Family |Amir |Caroline |Jerome Amir Sami |Jolie Amir Sami | |01-SEP-2025 to 31-AUG-2026 |Cash |20920\",\n  \"p_contractual_year\": \"01-SEP-2025 to 31-AUG-2026\",\n  \"p_reason\": \"Travel plans cancelled\",\n  \"p_ticket_as\": \"Cash\",\n  \"p_repayment_method\": \"Payroll Deduction\",\n  \"p_comments\": \"Cancelling the unused ticket.\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "**Purpose:** Cancel annual ticket\n\n**Auth:** Bearer {{token}} required\n**Request body:** see the raw body below.\n\n**Response:** Sanaad action envelope — `{ status, successflag, message, httpStatusCode, result? }`."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": \"success\",\n  \"successflag\": \"S\",\n  \"message\": \"Success\",\n  \"httpStatusCode\": 200\n}"
+            },
+            {
+              "name": "Error (400)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/annual-ticket/cancel",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "annual-ticket",
+                    "cancel"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"p_annual_tkt\": \"Self and Family |Amir |Caroline |Jerome Amir Sami |Jolie Amir Sami | |01-SEP-2025 to 31-AUG-2026 |Cash |20920\",\n  \"p_contractual_year\": \"01-SEP-2025 to 31-AUG-2026\",\n  \"p_reason\": \"Travel plans cancelled\",\n  \"p_ticket_as\": \"Cash\",\n  \"p_repayment_method\": \"Payroll Deduction\",\n  \"p_comments\": \"Cancelling the unused ticket.\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "**Purpose:** Cancel annual ticket\n\n**Auth:** Bearer {{token}} required\n**Request body:** see the raw body below.\n\n**Response:** Sanaad action envelope — `{ status, successflag, message, httpStatusCode, result? }`."
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"message\": \"Validation failed.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 400,\n  \"errors\": {\n    \"details\": [\n      \"field must not be empty\"\n    ]\n  }\n}"
+            },
+            {
+              "name": "Error (401)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/annual-ticket/cancel",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "annual-ticket",
+                    "cancel"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"p_annual_tkt\": \"Self and Family |Amir |Caroline |Jerome Amir Sami |Jolie Amir Sami | |01-SEP-2025 to 31-AUG-2026 |Cash |20920\",\n  \"p_contractual_year\": \"01-SEP-2025 to 31-AUG-2026\",\n  \"p_reason\": \"Travel plans cancelled\",\n  \"p_ticket_as\": \"Cash\",\n  \"p_repayment_method\": \"Payroll Deduction\",\n  \"p_comments\": \"Cancelling the unused ticket.\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "**Purpose:** Cancel annual ticket\n\n**Auth:** Bearer {{token}} required\n**Request body:** see the raw body below.\n\n**Response:** Sanaad action envelope — `{ status, successflag, message, httpStatusCode, result? }`."
+              },
+              "status": "Unauthorized",
+              "code": 401,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"message\": \"Authentication failed.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 401\n}"
+            },
+            {
+              "name": "Error (500)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/annual-ticket/cancel",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "annual-ticket",
+                    "cancel"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"p_annual_tkt\": \"Self and Family |Amir |Caroline |Jerome Amir Sami |Jolie Amir Sami | |01-SEP-2025 to 31-AUG-2026 |Cash |20920\",\n  \"p_contractual_year\": \"01-SEP-2025 to 31-AUG-2026\",\n  \"p_reason\": \"Travel plans cancelled\",\n  \"p_ticket_as\": \"Cash\",\n  \"p_repayment_method\": \"Payroll Deduction\",\n  \"p_comments\": \"Cancelling the unused ticket.\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "**Purpose:** Cancel annual ticket\n\n**Auth:** Bearer {{token}} required\n**Request body:** see the raw body below.\n\n**Response:** Sanaad action envelope — `{ status, successflag, message, httpStatusCode, result? }`."
+              },
+              "status": "Internal Server Error",
+              "code": 500,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"message\": \"A database operation could not be completed. Please contact support if the problem persists.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 500\n}"
+            }
+          ]
         }
       ]
     },

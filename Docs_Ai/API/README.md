@@ -130,11 +130,22 @@
 
 **Errors:** 502 on Cerner failure (ACL); no Oracle dependency.
 
-## Module: `annual-ticket` (ops 66, 67)
+## Module: `annual-ticket` (ops 66, 67, 72)
 | Op | Method | Route | Req DTO | Resp DTO | Oracle |
 |---|---|---|---|---|---|
 | 66 | GET* | `/annual-ticket/master?lang` | `LangQueryDto` | `TicketMasterResponseDto` | `TICKET_MASTER` |
 | 67 | POST* | `/annual-ticket/apply` | `SubmitTicketRequestDto` | `SubmitResultDto` | `TICKET_REQ_PR` |
+| 72 | GET | `/annual-ticket/cancel-options?lang` | `TicketCancelOptionsQueryDto` | `TicketCancelOptionsResponseDto` | `CANCEL_TICKETS_V, CANCEL_TAKENAS_V, CANCEL_REPAYMENT_METHODS_V` |
+| 72 | POST | `/annual-ticket/cancel` | `AnnualTicketCancelRequestDto` | `SubmitResultDto` | `CANCEL_TKT_PR` |
+
+**cancel-options is caller-scoped:** `person_id` is no longer needed. The three
+views have no `USER_NAME` column, so the backend resolves the caller's
+`PERSON_ID` from `EMPLOYMENT_DETAILS_V` by the JWT username and reads the views
+with it. A `person_id` query param is still accepted for backward
+compatibility; one that differs from the caller's own PERSON_ID answers
+**403**. A caller without an employment row gets empty lists. Send
+`tickets[].ANNUAL_LEAVE_PASS_TKT_VALUE` verbatim as `p_annual_tkt` to
+`/annual-ticket/cancel`.
 
 ## Module: `approvals` (ops 20, 21, 22, 23, 68, 69, 70, 71) — Roles: `APPROVER`/`SUPERVISOR`
 | Op | Method | Route | Req DTO | Resp DTO | Oracle |

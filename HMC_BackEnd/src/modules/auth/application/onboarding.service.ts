@@ -45,13 +45,18 @@ const INITIATE_FIELDS: readonly (keyof InitiateResponseDto & keyof UserValidateR
   'elapsedtimeinmins',
 ];
 
+/** Shared rate-limit bucket for the /auth/initiate invalid-username device block. */
+const INVALID_USERNAME_SCOPE = 'initiate-invalid-username';
+
 /**
  * API-2 (User Validate) + API-3 (Validate OTP). Reworked flow (client request
  * 2026-09-03):
  *
  *  1. The username is resolved through the identity port (AUTH_DIRECTORY=
- *     usersdb → HMC_SND_LIV_EMP_MASTER_VW on the MOTC_SMS DB). Unknown user →
- *     "Invalid Username." error.
+ *     usersdb → HMC_SND_LIV_EMP_MASTER_VW on the MOTC_SMS DB). An unknown
+ *     username returns the "Invalid Username." error, and each attempt is
+ *     counted against the caller's constantId (device id when absent) so a
+ *     caller is blocked after INITIATE_INVALID_USERNAME_MAX_ATTEMPTS tries.
  *  2. The exact user+device registration is read from HMC_Sanad_DeviceRegn_tbl.
  *  3. Registered WITH an MPIN → existing user: the response carries the full
  *     identity from both tables and NO OTP is sent (they log in with MPIN).
@@ -69,6 +74,9 @@ export class OnboardingService {
   private readonly otpInResponse: boolean;
   /** OTP TTL for the dev-bypass response's elapsedtimeinmins. */
   private readonly otpTtlSeconds: number;
+  /** Device block on repeated invalid usernames (0 = disabled). */
+  private readonly invalidUsernameMaxAttempts: number;
+  private readonly invalidUsernameBlockSeconds: number;
 
   constructor(
     @Inject(LDAP_USER_PORT) private readonly ldap: LdapUserPort,
@@ -83,6 +91,9 @@ export class OnboardingService {
     this.otpInResponse =
       config.get<boolean>('otp.inResponse', false) === true &&
       config.get<string>('app.nodeEnv', 'development') !== 'production';
+    this.invalidUsernameMaxAttempts = config.get<number>('auth.invalidUsernameMaxAttempts', 0);
+    this.invalidUsernameBlockSeconds =
+      config.get<number>('auth.invalidUsernameBlockMinutes', 15) * 60;
   }
 
   /**
@@ -95,14 +106,33 @@ export class OnboardingService {
     lang: Lang = DEFAULT_LANG,
   ): Promise<InitiateResponseDto> {
     const result = await this.initiate(dto, lang);
+    // An invalid username is surfaced as a real error on /auth/initiate,
+    // not wrapped in the generic OTP envelope.
+    if (result.status === 'error') return { status: 'error', message: result.message };
     const extra = Object.fromEntries(
       INITIATE_FIELDS.filter((key) => result[key] !== undefined).map((key) => [key, result[key]]),
     );
     return { ...this.genericOtpResponse(result, lang), ...extra };
   }
 
+  /** Identity for the invalid-username block: the stable constantId, else the device id. */
+  private blockKey(dto: UserValidateRequestDto): string {
+    return dto.constantId?.trim() || dto.imeinumber;
+  }
+
   private async initiate(dto: UserValidateRequestDto, lang: Lang): Promise<UserValidateResponseDto> {
     if (!this.devBypass) {
+      // Device block: reject up front if this constantId/device has already
+      // exceeded the invalid-username budget (see the record in
+      // validateUserInternal). Runs before any directory work so a blocked
+      // caller does nothing further.
+      if (this.invalidUsernameMaxAttempts > 0) {
+        await this.state.assertUnderLimit(
+          INVALID_USERNAME_SCOPE,
+          this.blockKey(dto),
+          this.invalidUsernameMaxAttempts,
+        );
+      }
       await this.state.limit(
         'otp-send',
         dto.username.trim().toUpperCase(),
@@ -152,6 +182,18 @@ export class OnboardingService {
 
     if (!identity.isEmployee) {
       this.audit.lifecycle(AuthLifecycleEvent.USER_VALIDATE_FAILURE, { ...ctx, status: 'error' });
+      // Count this invalid-username attempt against the caller's constantId
+      // (device id when absent). Once the cap is reached, the NEXT
+      // /auth/initiate from that key is blocked for the configured minutes
+      // (assertUnderLimit in initiate).
+      if (!this.devBypass && this.invalidUsernameMaxAttempts > 0) {
+        await this.state.limit(
+          INVALID_USERNAME_SCOPE,
+          this.blockKey(dto),
+          this.invalidUsernameMaxAttempts,
+          this.invalidUsernameBlockSeconds,
+        );
+      }
       return { status: 'error', message: MESSAGES.invalidUsername[lang] };
     }
 

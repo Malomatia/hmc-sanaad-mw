@@ -245,6 +245,28 @@ describe('Existing-table shared authentication state', () => {
     assertSupportedSql(db);
   });
 
+  it('assertUnderLimit peeks the shared bucket read-only and blocks at the cap', async () => {
+    const { state, db } = makeState();
+    db.query.mockResolvedValueOnce([{ Attempts: 2, RetryAfterSeconds: 0 }]);
+    await expect(
+      state.assertUnderLimit('initiate-invalid-username', 'device-1', 5),
+    ).resolves.toBeUndefined();
+    expect(db.execute).not.toHaveBeenCalled();
+    const peekSql = db.query.mock.calls[0][0];
+    expect(peekSql).toContain('COUNT(*) AS Attempts');
+    expect(peekSql).not.toContain('INSERT');
+    // Same bucket scheme as limit(): identical prefix for the same scope+key.
+    await state.limit('initiate-invalid-username', 'device-1', 5, 900);
+    expect(db.query.mock.calls[0][1]!.bucketTokenPrefix).toBe(
+      db.query.mock.calls[1][1]!.bucketTokenPrefix,
+    );
+    db.query.mockResolvedValueOnce([{ Attempts: 5, RetryAfterSeconds: 300 }]);
+    await expect(
+      state.assertUnderLimit('initiate-invalid-username', 'device-1', 5),
+    ).rejects.toMatchObject({ status: 429 });
+    assertSupportedSql(db);
+  });
+
   it('fails closed on an unavailable existing store', async () => {
     const { state, db } = makeState();
     db.query.mockRejectedValue(new Error('Unavailable'));

@@ -89,7 +89,6 @@ const INITIATE_EXTRA = {
   new: { ...CONTACT, newuser: 'Yes', vflag: 'New', otpmode: 'SMS', elapsedtimeinmins: 5 },
   pending: { ...CONTACT, newuser: 'Yes', vflag: 'Pending', otpmode: 'Email', elapsedtimeinmins: 2 },
   existing: { ...CONTACT, newuser: 'No', vflag: 'Exist' },
-  unknown: {},
 };
 
 describe('Onboarding security boundaries', () => {
@@ -129,16 +128,52 @@ describe('Onboarding security boundaries', () => {
         status: 'success',
         message: GENERIC,
         requestid: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/),
-        ...INITIATE_EXTRA[kind],
+        ...(kind === 'unknown'
+          ? {
+              // Decoy shaped like a new user: fake masked email (from the
+              // username) + a random masked phone, no real contact leaked.
+              email: 'TE****@hamad.qa',
+              employeephonenumber: expect.stringMatching(/^XXXXXXXXXX\d{3}$/),
+              newuser: 'Yes',
+              vflag: 'New',
+              otpmode: 'SMS',
+              elapsedtimeinmins: 5,
+            }
+          : INITIATE_EXTRA[kind]),
       });
       for (const key of PII_FIELDS) expect(result).not.toHaveProperty(key);
-      if (kind === 'unknown') {
-        for (const key of Object.keys(INITIATE_EXTRA.new)) expect(result).not.toHaveProperty(key);
-        expect(devices.bind).not.toHaveBeenCalled();
-      }
+      if (kind === 'unknown') expect(devices.bind).not.toHaveBeenCalled();
       if (kind === 'existing' || kind === 'unknown') expect(otp.send).not.toHaveBeenCalled();
     },
   );
+
+  it('returns an anti-enumeration decoy for an unknown username (random phone, no OTP)', async () => {
+    const { service, ldap, otp, devices } = makeService({ identity: { isEmployee: false } });
+
+    const first = await service.validateUser({ ...DTO, username: 'GHOST99' });
+    expect(ldap.validate).toHaveBeenCalled();
+    expect(otp.send).not.toHaveBeenCalled();
+    expect(devices.bind).not.toHaveBeenCalled();
+    expect(first).toMatchObject({
+      status: 'success',
+      email: 'GH****@hamad.qa',
+      newuser: 'Yes',
+      vflag: 'New',
+      otpmode: 'SMS',
+    });
+    expect(first.employeephonenumber).toMatch(/^XXXXXXXXXX\d{3}$/);
+    for (const key of PII_FIELDS) expect(first).not.toHaveProperty(key);
+
+    // Random each call: the masked phone varies between requests.
+    const phones = new Set(
+      await Promise.all(
+        Array.from({ length: 30 }, () =>
+          service.validateUser({ ...DTO, username: 'GHOST99' }).then((r) => r.employeephonenumber),
+        ),
+      ),
+    );
+    expect(phones.size).toBeGreaterThan(1);
+  });
 
   it('returns only the masked contact on initiate, and none of it on send-otp', async () => {
     const { service } = makeService();

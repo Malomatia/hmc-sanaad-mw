@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomInt } from 'node:crypto';
 import { AuthStateService, ENROLLMENT_TTL_SECONDS } from '@core/auth/auth-state.service';
 import { AuditService } from '@core/audit/audit.service';
 import { AuthLifecycleEvent } from '@core/audit/audit-event';
@@ -26,8 +26,7 @@ import { maskEmail, maskPhone } from './mask.util';
 import { DEFAULT_LANG, Lang } from '@shared/domain/lang';
 
 /** User-facing initiate messages, per the request's `lang` header/query. */
-const MESSAGES: Record<'invalidUsername' | 'otpSent' | 'otpPending', Record<Lang, string>> = {
-  invalidUsername: { en: 'Invalid Username.', ar: 'اسم المستخدم غير صحيح.' },
+const MESSAGES: Record<'otpSent' | 'otpPending', Record<Lang, string>> = {
   otpSent: { en: 'OTP sent successfully', ar: 'تم إرسال رمز التحقق بنجاح' },
   otpPending: {
     en: 'An OTP was already sent and is still valid',
@@ -46,12 +45,29 @@ const INITIATE_FIELDS: readonly (keyof InitiateResponseDto & keyof UserValidateR
 ];
 
 /**
+ * Anti-enumeration decoy for an unknown username. /auth/initiate must not
+ * reveal whether a username exists, so it answers like a first-time user: a
+ * plausible masked email derived from the submitted username, and a random
+ * masked phone (10 masked digits + 3 random). No OTP is ever generated.
+ */
+function decoyEmail(username: string): string {
+  const letters = username.replace(/[^A-Za-z]/g, '').toUpperCase();
+  return `${(letters.slice(0, 2) || 'XX').padEnd(2, 'X')}****@hamad.qa`;
+}
+
+function decoyPhone(): string {
+  return `XXXXXXXXXX${randomInt(1000).toString().padStart(3, '0')}`;
+}
+
+/**
  * API-2 (User Validate) + API-3 (Validate OTP). Reworked flow (client request
  * 2026-09-03):
  *
  *  1. The username is resolved through the identity port (AUTH_DIRECTORY=
- *     usersdb → HMC_SND_LIV_EMP_MASTER_VW on the MOTC_SMS DB). Unknown user →
- *     "Invalid Username." error.
+ *     usersdb → HMC_SND_LIV_EMP_MASTER_VW on the MOTC_SMS DB). An unknown user
+ *     is NOT rejected: it gets an anti-enumeration decoy shaped like a new
+ *     user (fake masked contact, no OTP), so the response cannot confirm
+ *     whether a username exists.
  *  2. The exact user+device registration is read from HMC_Sanad_DeviceRegn_tbl.
  *  3. Registered WITH an MPIN → existing user: the response carries the full
  *     identity from both tables and NO OTP is sent (they log in with MPIN).
@@ -151,8 +167,22 @@ export class OnboardingService {
     }
 
     if (!identity.isEmployee) {
+      // Anti-enumeration: never disclose that the username is unknown. The
+      // failure is logged internally, but the client gets a decoy shaped
+      // exactly like a first-time (new) user — a fake masked email + a random
+      // masked phone. No OTP is stored or sent, so a follow-up
+      // /auth/otp/validate simply fails, exactly as a wrong OTP would.
       this.audit.lifecycle(AuthLifecycleEvent.USER_VALIDATE_FAILURE, { ...ctx, status: 'error' });
-      return { status: 'error', message: MESSAGES.invalidUsername[lang] };
+      return {
+        status: 'success',
+        email: decoyEmail(dto.username),
+        employeephonenumber: decoyPhone(),
+        newuser: 'Yes',
+        vflag: 'New',
+        otpmode: 'SMS',
+        elapsedtimeinmins: Math.ceil(this.otpTtlSeconds / 60),
+        requestid: randomBytes(32).toString('base64url'),
+      };
     }
 
     // Step 2 — this exact user+device registration.

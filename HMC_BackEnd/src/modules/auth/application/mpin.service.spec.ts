@@ -215,8 +215,8 @@ describe('MPIN reset', () => {
     await expect(service.resetMpin(reset)).rejects.toMatchObject({
       status: 400,
       messages: {
-        en: 'This password was used before. Please enter a different password.',
-        ar: 'تم استخدام كلمة المرور هذه من قبل. يرجى إدخال كلمة مرور مختلفة.',
+        en: 'This MPIN was used before. Please enter a different MPIN.',
+        ar: 'تم استخدام الرمز التعريفى هذا من قبل. يرجى إدخال رمز تعريفى مختلف.',
       },
     });
     expect(otp.verify).toHaveBeenCalled();

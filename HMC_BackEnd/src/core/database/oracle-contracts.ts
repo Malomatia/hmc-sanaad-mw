@@ -381,6 +381,40 @@ const COLUMNS: Readonly<Record<string, ColumnContract>> = Object.freeze({
     DESCRIPTION: 'VARCHAR2',
     FLEX_VALUE_AR: 'VARCHAR2',
   },
+  // Annual-ticket master (op 66) — confirmed EBSDEV/EBSPRJ 2026-09-29. A UNION
+  // of the passenger / contract-year / request-for / destination / ticket-class
+  // views, split by TAG1; always read WHERE USER_NAME = :u (unfiltered it
+  // exceeded the request timeout).
+  [ORACLE_OBJECTS.TICKET_MASTER]: {
+    TAG1: 'VARCHAR2',
+    PERSON_ID: 'NUMBER',
+    CONTACT_ID: 'NUMBER',
+    USER_NAME: 'VARCHAR2',
+    RECORD_TYPE: 'VARCHAR2',
+    NAME_EN: 'VARCHAR2',
+    NAME_AR: 'VARCHAR2',
+    CURRENT_EMPLOYEE_FLAG: 'VARCHAR2',
+    CONTACT_TYPE: 'VARCHAR2',
+    DATE_OF_BIRTH: 'DATE',
+    SEX: 'VARCHAR2',
+    ROW_NUM: 'NUMBER',
+    EMPLOYEE_NUMBER: 'VARCHAR2',
+    DATE_START: 'DATE',
+    LAW: 'VARCHAR2',
+    TOT_COUNT: 'NUMBER',
+    FROM_DATE: 'NUMBER',
+    TOO_DATE: 'NUMBER',
+    CONTRACT_YEAR: 'VARCHAR2',
+    CONTRACT_YEAR_DEF: 'VARCHAR2',
+    CONTRACT_YEAR_DEF_AR: 'VARCHAR2',
+  },
+  // Annual-ticket eligibility flag (op 66 `eligible`) — confirmed EBSDEV/EBSPRJ
+  // 2026-09-29: one row per user, `Yes`/`No` + Arabic twin. Not the form LOV.
+  [ORACLE_OBJECTS.ANNUAL_TICKT_LOV]: {
+    ANUAL_TKT_DEFAULT: 'VARCHAR2',
+    USER_NAME: 'VARCHAR2',
+    ANUAL_TKT_DEFAULT_AR: 'VARCHAR2',
+  },
   [ORACLE_OBJECTS.CONTRACT_YEAR_V]: { USER_NAME: 'VARCHAR2' },
   [ORACLE_OBJECTS.LETTER_MOBILE_NO_LOV]: { USER_NAME: 'VARCHAR2' },
   [ORACLE_OBJECTS.SCHOOL_NAME_LOV]: { USER_NAME: 'VARCHAR2', NAME: 'VARCHAR2' },
@@ -475,6 +509,7 @@ export const SCOPED_ORACLE_LOVS: ReadonlySet<string> = new Set([
   ORACLE_OBJECTS.RFL_LEAVE_DET_V, ORACLE_OBJECTS.RFL_REL_LEAVE1_V, ORACLE_OBJECTS.RFL_REL_LEAVE2_V,
   ORACLE_OBJECTS.LEAVE_CANCEL_V, ORACLE_OBJECTS.LEAVE_AMEND_V,
   ORACLE_OBJECTS.LETTER_MOBILE_NO_LOV, ORACLE_OBJECTS.SCHOOL_NAME_LOV, ORACLE_OBJECTS.REQUEST_TYPE_LOV,
+  ORACLE_OBJECTS.TICKET_MASTER,
 ]);
 
 @Injectable()

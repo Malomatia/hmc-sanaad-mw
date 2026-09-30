@@ -534,6 +534,18 @@ responses as examples.
   PERSON_ID is derived from `EMPLOYMENT_DETAILS_V` by username and bound as a
   NUMBER. A client `?person_id=` is optional; a different one → 403, and no
   employment row → empty lists. Never query these views with a client id.
+- op 66 `GET /annual-ticket/master` reads `XXHMC_SND_TICKET_MASTER WHERE
+  USER_NAME = :u` (never unfiltered — that hit the HTTP 408) through the
+  repository, not `LovMapper` (it drops `TAG1`), and groups the rows by `TAG1`
+  into the five pickers; `value` / `contactId` is the op-67 value (`label` /
+  `name` carry the `*Ar` twins). `ANNUAL_TICKT_LOV` is only the per-user Yes/No
+  eligibility flag (`eligible`), not the form LOV.
+- op 72 `POST /annual-ticket/cancel` takes `analysis_criteria_id` + the user's
+  text only; the service re-reads the caller's cancel options (joined on
+  ANALYSIS_CRITERIA_ID) and fills `p_annual_tkt` / `p_contractual_year` /
+  `p_ticket_as` / `p_repayment_method` itself. The pipe composite must not come
+  from the client again: the staging F5 WAF blocked the response of every
+  request carrying it, and server-side resolution pins the Cash/Voucher pairing.
 - `UPD_ADDRESS_PR`: `p_country` takes the country NAME (`Qatar`; `QA` →
   "Invalid Country"), `p_address_type` must equal the target address's own
   type, and repeating an update on the same `p_effective_date` fails
@@ -1064,7 +1076,7 @@ typed declarations). Every registered parameter is bound (NULL when absent), so
 this only affects the "unmapped parameter" warning, not the call.
 
 Still unregistered (503 until their columns arrive): `QID_DET_V`,
-`LEAVE_BAL_PLAN_LOV`, `ANNUAL_TICKT_LOV`.
+`LEAVE_BAL_PLAN_LOV`.
 Do not treat unit-test fixtures as production Oracle definitions or restore
 runtime discovery to hide these gaps.
 

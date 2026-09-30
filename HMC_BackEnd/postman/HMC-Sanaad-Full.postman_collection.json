@@ -10007,10 +10007,11 @@
                   "    pm.response.to.be.json;",
                   "});",
                   "",
-                  "pm.test(\"Has items array\", function () {",
+                  "pm.test(\"Has success envelope fields\", function () {",
                   "    const json = pm.response.json();",
-                  "    pm.expect(json.result).to.have.property('items');",
-                  "    pm.expect(json.result.items).to.be.an('array');",
+                  "    pm.expect(json).to.have.property('status', 'success');",
+                  "    pm.expect(json).to.have.property('result');",
+                  "    pm.expect(json).to.have.property('httpStatusCode');",
                   "});"
                 ]
               }
@@ -10035,11 +10036,11 @@
                 }
               ]
             },
-            "description": "**Purpose:** op 66 — Annual-ticket master LOV. NOTE: the Sanaad spec maps op 66 to `XXHMC_SND_TICKET_MASTER` keyed by person_id (rich contract/contact rows), but the backend deliberately reads the user-scoped `XXHMC_SND_ANNUAL_TICKT_LOV` instead (unfiltered TICKET_MASTER exceeded the request timeout). Username comes from the token (staging: AIBRAHIM39).\n\n**Auth: a token is now REQUIRED.** Staging enforces authentication (it no longer runs AUTH_DISABLED). Get one from `POST /auth/login` — while `AUTH_STATIC_LOGIN=true` it accepts the fixed test payload `{\"username\":\"AIBRAHIM39\",\"imeinumber\":\"356789012345678\",\"mpin\":\"555407\"}` and answers without touching the database — then send `Authorization: Bearer {{token}}`. Tip: add `pm.environment.set(\"token\", pm.response.json().token);` to the login request's Scripts tab and every other request picks it up. The token lasts 1 h; after that you get 401.\n\n**Query:** `lang` (en|ar).\n\n**Verified against staging — examples below are real captured responses unless labeled \"Expected\".**"
+            "description": "**Purpose:** op 66 — Annual ticket master (TICKET_MASTER grouped by TAG1 + eligibility flag). The backend reads `XXHMC_SND_TICKET_MASTER WHERE USER_NAME = <token username>` (never unfiltered — that exceeded the request timeout) and groups the rows by `TAG1`. How each group maps to `POST /annual-ticket/apply`: `requestFor[].value` → `p_request_for`; `passengers[]` `type: Self` → `contactId` → `p_employee` (the PERSON_ID); `type: Family` → `contactId` → `p_passenger1..4`; `contractualYears[].value` → `p_contractual_year`; `destinations[].value` → `p_traveling_dest`; `ticketClasses[].value` → `p_travel_class`; `requestType` (constant `Annual Ticket`) → `p_request_type`. `label` / `name` are localized per `lang` (the `labelAr` / `nameAr` twins are folded in); `value` / `contactId` never change. Unknown TAG1 rows land in `other`. `eligible` is the `XXHMC_SND_ANNUAL_TICKT_LOV` Yes/No flag (null when it cannot be read). Optional `person_id` → 403 when it is not the caller's. Username comes from the token (staging: AIBRAHIM39).\n\n**Auth: a token is now REQUIRED.** Staging enforces authentication (it no longer runs AUTH_DISABLED). Get one from `POST /auth/login` — while `AUTH_STATIC_LOGIN=true` it accepts the fixed test payload `{\"username\":\"AIBRAHIM39\",\"imeinumber\":\"356789012345678\",\"mpin\":\"555407\"}` and answers without touching the database — then send `Authorization: Bearer {{token}}`. Tip: add `pm.environment.set(\"token\", pm.response.json().token);` to the login request's Scripts tab and every other request picks it up. The token lasts 1 h; after that you get 401.\n\n**Query:** `lang` (en|ar), optional `person_id`.\n\n**Verified against staging — examples below are real captured responses unless labeled \"Expected\".**"
           },
           "response": [
             {
-              "name": "Success (200)",
+              "name": "Success (200) — Expected (built from the live TICKET_MASTER rows of AIBRAHIM39)",
               "originalRequest": {
                 "method": "GET",
                 "header": [],
@@ -10070,7 +10071,7 @@
                 }
               ],
               "cookie": [],
-              "body": "{\n  \"items\": [\n    {\n      \"code\": \"M\",\n      \"meaning\": \"Married\",\n      \"meaningAr\": \"متزوج\",\n      \"used_value\": \"Married\",\n      \"type\": \"CONTACT\"\n    }\n  ]\n}"
+              "body": "{\n  \"result\": {\n    \"eligible\": \"Yes\",\n    \"contractualYears\": [\n      {\n        \"value\": \"01-SEP-2025 to 31-AUG-2026\",\n        \"label\": \"01-SEP-2025 to 31-AUG-2026\",\n        \"fromYear\": 2025,\n        \"toYear\": 2026,\n        \"law\": \"HMC LAW\",\n        \"totalCount\": 18\n      },\n      {\n        \"value\": \"01-SEP-2026 to 31-AUG-2027\",\n        \"label\": \"01-SEP-2026 to 31-AUG-2027\",\n        \"fromYear\": 2026,\n        \"toYear\": 2027,\n        \"law\": \"HMC LAW\",\n        \"totalCount\": 18\n      },\n      {\n        \"value\": \"01-SEP-2027 to 31-AUG-2028\",\n        \"label\": \"01-SEP-2027 to 31-AUG-2028\",\n        \"fromYear\": 2027,\n        \"toYear\": 2028,\n        \"law\": \"HMC LAW\",\n        \"totalCount\": 18\n      }\n    ],\n    \"destinations\": [\n      {\n        \"value\": \"Cairo\",\n        \"label\": \"Cairo\"\n      }\n    ],\n    \"passengers\": [\n      {\n        \"contactId\": \"26023\",\n        \"name\": \"Mr. Amir Sami Samir Ibrahim\",\n        \"type\": \"Self\",\n        \"contactType\": \"EMP\",\n        \"currentEmployee\": \"Y\",\n        \"dateOfBirth\": \"1984-05-15\",\n        \"sex\": \"M\"\n      },\n      {\n        \"contactId\": \"42465\",\n        \"name\": \"Caroline Victor Francis Fam\",\n        \"type\": \"Family\",\n        \"contactType\": \"S\",\n        \"currentEmployee\": null,\n        \"dateOfBirth\": null,\n        \"sex\": \"F\"\n      },\n      {\n        \"contactId\": \"329302\",\n        \"name\": \"Jerome Amir Sami Samir Ibrahim\",\n        \"type\": \"Family\",\n        \"contactType\": \"C\",\n        \"currentEmployee\": null,\n        \"dateOfBirth\": null,\n        \"sex\": \"M\"\n      },\n      {\n        \"contactId\": \"329303\",\n        \"name\": \"Jolie Amir Sami Samir Ibrahim\",\n        \"type\": \"Family\",\n        \"contactType\": \"C\",\n        \"currentEmployee\": null,\n        \"dateOfBirth\": null,\n        \"sex\": \"F\"\n      }\n    ],\n    \"requestFor\": [\n      {\n        \"value\": \"Family\",\n        \"label\": \"Family\"\n      },\n      {\n        \"value\": \"Self\",\n        \"label\": \"Self\"\n      },\n      {\n        \"value\": \"Self and Family\",\n        \"label\": \"Self and Family\"\n      }\n    ],\n    \"ticketClasses\": [\n      {\n        \"value\": \"Economy\",\n        \"label\": \"Economy\"\n      }\n    ],\n    \"requestType\": \"Annual Ticket\",\n    \"other\": []\n  },\n  \"opstatus\": 0,\n  \"status\": \"success\",\n  \"httpStatusCode\": 200\n}"
             },
             {
               "name": "Validation Error (400) — lang must be en|ar",
@@ -10105,6 +10106,44 @@
               ],
               "cookie": [],
               "body": "{\n  \"success\": false,\n  \"message\": \"Validation failed.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 400,\n  \"errors\": {\n    \"details\": [\n      \"lang must be one of the following values: en, ar\"\n    ]\n  }\n}"
+            },
+            {
+              "name": "Forbidden (403) — Expected: person_id is not the caller's",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/annual-ticket/master?lang=en&person_id=26024",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "annual-ticket",
+                    "master"
+                  ],
+                  "query": [
+                    {
+                      "key": "lang",
+                      "value": "en"
+                    },
+                    {
+                      "key": "person_id",
+                      "value": "26024"
+                    }
+                  ]
+                }
+              },
+              "status": "Forbidden",
+              "code": 403,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"message\": \"You do not have permission to perform this action.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 403\n}"
             }
           ]
         },
@@ -10310,11 +10349,11 @@
                 }
               ]
             },
-            "description": "**Purpose:** Ticket-cancellation options (caller-scoped; person_id derived from the JWT)\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+            "description": "**Purpose:** op 72 — Ticket-cancellation options, always the caller's own (PERSON_ID derived from the JWT via EMPLOYMENT_DETAILS_V; an optional `person_id` that is not the caller's → 403). One `tickets[]` entry per cancellable ticket, joined on `ANALYSIS_CRITERIA_ID` with its taken-as (Cash | Voucher) and its own `repaymentMethods[]`. `value` is the composite `ANNUAL_LEAVE_PASS_TKT_VALUE`, shown parsed (`requestFor`, `employeeName`, `passengers`, `contractualYear`, `amount`) — for display only.\n\n**Next step:** send `tickets[].analysisCriteriaId` (plus one of its `repaymentMethods[].value` when it has several) to `POST /annual-ticket/cancel`. The flat `takenAs` / `repaymentMethods` lists are deprecated and deduplicated.\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`. Success example labelled \"Expected\": built from the live staging rows of person_id 26023."
           },
           "response": [
             {
-              "name": "Success (200)",
+              "name": "Success (200) — Expected (live rows of person_id 26023)",
               "originalRequest": {
                 "method": "GET",
                 "header": [],
@@ -10334,7 +10373,7 @@
                     }
                   ]
                 },
-                "description": "**Purpose:** Ticket-cancellation options (caller-scoped; person_id derived from the JWT)\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+                "description": "**Purpose:** op 72 — Ticket-cancellation options, always the caller's own (PERSON_ID derived from the JWT via EMPLOYMENT_DETAILS_V; an optional `person_id` that is not the caller's → 403). One `tickets[]` entry per cancellable ticket, joined on `ANALYSIS_CRITERIA_ID` with its taken-as (Cash | Voucher) and its own `repaymentMethods[]`. `value` is the composite `ANNUAL_LEAVE_PASS_TKT_VALUE`, shown parsed (`requestFor`, `employeeName`, `passengers`, `contractualYear`, `amount`) — for display only.\n\n**Next step:** send `tickets[].analysisCriteriaId` (plus one of its `repaymentMethods[].value` when it has several) to `POST /annual-ticket/cancel`. The flat `takenAs` / `repaymentMethods` lists are deprecated and deduplicated.\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`. Success example labelled \"Expected\": built from the live staging rows of person_id 26023."
               },
               "status": "OK",
               "code": 200,
@@ -10345,7 +10384,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"result\": {\n    \"tickets\": [\n      {\n        \"PERSON_ID\": 26023,\n        \"ANNUAL_LEAVE_PASS_TKT_VALUE\": \"Self and Family |Amir |Caroline |Jerome Amir Sami |Jolie Amir Sami | |01-SEP-2025 to 31-AUG-2026 |Cash |20920\"\n      }\n    ],\n    \"takenAs\": [\n      {\n        \"PERSON_ID\": 26023,\n        \"TAKES_AS\": \"Cash\"\n      }\n    ],\n    \"repaymentMethods\": [\n      {\n        \"PERSON_ID\": 26023,\n        \"FLEX_VALUE\": \"Payroll Deduction\"\n      }\n    ]\n  },\n  \"opstatus\": 0,\n  \"status\": \"success\",\n  \"httpStatusCode\": 200\n}"
+              "body": "{\n  \"result\": {\n    \"tickets\": [\n      {\n        \"analysisCriteriaId\": \"71794897\",\n        \"value\": \"Self and Family |Amir |Caroline |Jerome Amir Sami |Jolie Amir Sami | |01-SEP-2025 to 31-AUG-2026 |Cash |20920\",\n        \"requestFor\": \"Self and Family\",\n        \"employeeName\": \"Amir\",\n        \"passengers\": [\n          \"Caroline\",\n          \"Jerome Amir Sami\",\n          \"Jolie Amir Sami\"\n        ],\n        \"contractualYear\": \"01-SEP-2025 to 31-AUG-2026\",\n        \"takenAs\": \"Cash\",\n        \"amount\": \"20920\",\n        \"repaymentMethods\": [\n          {\n            \"value\": \"Payroll Deduction\",\n            \"label\": \"Payroll Deduction\",\n            \"appliesTo\": \"Cash\"\n          }\n        ]\n      },\n      {\n        \"analysisCriteriaId\": \"71803898\",\n        \"value\": \"Self and Family |Amir |Caroline |Jerome Amir Sami |Jolie Amir Sami | |01-SEP-2024 to 31-AUG-2025 |Cash |20920\",\n        \"requestFor\": \"Self and Family\",\n        \"employeeName\": \"Amir\",\n        \"passengers\": [\n          \"Caroline\",\n          \"Jerome Amir Sami\",\n          \"Jolie Amir Sami\"\n        ],\n        \"contractualYear\": \"01-SEP-2024 to 31-AUG-2025\",\n        \"takenAs\": \"Cash\",\n        \"amount\": \"20920\",\n        \"repaymentMethods\": [\n          {\n            \"value\": \"Payroll Deduction\",\n            \"label\": \"Payroll Deduction\",\n            \"appliesTo\": \"Cash\"\n          }\n        ]\n      }\n    ],\n    \"takenAs\": [\n      {\n        \"TAKES_AS\": \"Cash\"\n      },\n      {\n        \"TAKES_AS\": \"Voucher\"\n      }\n    ],\n    \"repaymentMethods\": [\n      {\n        \"FLEX_VALUE\": \"Payroll Deduction\",\n        \"DESCRIPTION\": \"Cash\"\n      },\n      {\n        \"FLEX_VALUE\": \"Cancel Voucher\",\n        \"DESCRIPTION\": \"Voucher\"\n      }\n    ]\n  },\n  \"opstatus\": 0,\n  \"status\": \"success\",\n  \"httpStatusCode\": 200\n}"
             },
             {
               "name": "Error (400)",
@@ -10368,7 +10407,7 @@
                     }
                   ]
                 },
-                "description": "**Purpose:** Ticket-cancellation options (caller-scoped; person_id derived from the JWT)\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+                "description": "**Purpose:** op 72 — Ticket-cancellation options, always the caller's own (PERSON_ID derived from the JWT via EMPLOYMENT_DETAILS_V; an optional `person_id` that is not the caller's → 403). One `tickets[]` entry per cancellable ticket, joined on `ANALYSIS_CRITERIA_ID` with its taken-as (Cash | Voucher) and its own `repaymentMethods[]`. `value` is the composite `ANNUAL_LEAVE_PASS_TKT_VALUE`, shown parsed (`requestFor`, `employeeName`, `passengers`, `contractualYear`, `amount`) — for display only.\n\n**Next step:** send `tickets[].analysisCriteriaId` (plus one of its `repaymentMethods[].value` when it has several) to `POST /annual-ticket/cancel`. The flat `takenAs` / `repaymentMethods` lists are deprecated and deduplicated.\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`. Success example labelled \"Expected\": built from the live staging rows of person_id 26023."
               },
               "status": "Bad Request",
               "code": 400,
@@ -10402,7 +10441,7 @@
                     }
                   ]
                 },
-                "description": "**Purpose:** Ticket-cancellation options (caller-scoped; person_id derived from the JWT)\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+                "description": "**Purpose:** op 72 — Ticket-cancellation options, always the caller's own (PERSON_ID derived from the JWT via EMPLOYMENT_DETAILS_V; an optional `person_id` that is not the caller's → 403). One `tickets[]` entry per cancellable ticket, joined on `ANALYSIS_CRITERIA_ID` with its taken-as (Cash | Voucher) and its own `repaymentMethods[]`. `value` is the composite `ANNUAL_LEAVE_PASS_TKT_VALUE`, shown parsed (`requestFor`, `employeeName`, `passengers`, `contractualYear`, `amount`) — for display only.\n\n**Next step:** send `tickets[].analysisCriteriaId` (plus one of its `repaymentMethods[].value` when it has several) to `POST /annual-ticket/cancel`. The flat `takenAs` / `repaymentMethods` lists are deprecated and deduplicated.\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`. Success example labelled \"Expected\": built from the live staging rows of person_id 26023."
               },
               "status": "Unauthorized",
               "code": 401,
@@ -10436,7 +10475,7 @@
                     }
                   ]
                 },
-                "description": "**Purpose:** Ticket-cancellation options (caller-scoped; person_id derived from the JWT)\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+                "description": "**Purpose:** op 72 — Ticket-cancellation options, always the caller's own (PERSON_ID derived from the JWT via EMPLOYMENT_DETAILS_V; an optional `person_id` that is not the caller's → 403). One `tickets[]` entry per cancellable ticket, joined on `ANALYSIS_CRITERIA_ID` with its taken-as (Cash | Voucher) and its own `repaymentMethods[]`. `value` is the composite `ANNUAL_LEAVE_PASS_TKT_VALUE`, shown parsed (`requestFor`, `employeeName`, `passengers`, `contractualYear`, `amount`) — for display only.\n\n**Next step:** send `tickets[].analysisCriteriaId` (plus one of its `repaymentMethods[].value` when it has several) to `POST /annual-ticket/cancel`. The flat `takenAs` / `repaymentMethods` lists are deprecated and deduplicated.\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`. Success example labelled \"Expected\": built from the live staging rows of person_id 26023."
               },
               "status": "Forbidden",
               "code": 403,
@@ -10470,7 +10509,7 @@
                     }
                   ]
                 },
-                "description": "**Purpose:** Ticket-cancellation options (caller-scoped; person_id derived from the JWT)\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`."
+                "description": "**Purpose:** op 72 — Ticket-cancellation options, always the caller's own (PERSON_ID derived from the JWT via EMPLOYMENT_DETAILS_V; an optional `person_id` that is not the caller's → 403). One `tickets[]` entry per cancellable ticket, joined on `ANALYSIS_CRITERIA_ID` with its taken-as (Cash | Voucher) and its own `repaymentMethods[]`. `value` is the composite `ANNUAL_LEAVE_PASS_TKT_VALUE`, shown parsed (`requestFor`, `employeeName`, `passengers`, `contractualYear`, `amount`) — for display only.\n\n**Next step:** send `tickets[].analysisCriteriaId` (plus one of its `repaymentMethods[].value` when it has several) to `POST /annual-ticket/cancel`. The flat `takenAs` / `repaymentMethods` lists are deprecated and deduplicated.\n\n**Auth:** Bearer {{token}} required\n**Query parameters:** lang\n\n**Response:** Sanaad read envelope — `{ result, opstatus, status, httpStatusCode }`. Success example labelled \"Expected\": built from the live staging rows of person_id 26023."
               },
               "status": "Internal Server Error",
               "code": 500,
@@ -10535,14 +10574,14 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"p_annual_tkt\": \"Self and Family |Amir |Caroline |Jerome Amir Sami |Jolie Amir Sami | |01-SEP-2025 to 31-AUG-2026 |Cash |20920\",\n  \"p_contractual_year\": \"01-SEP-2025 to 31-AUG-2026\",\n  \"p_reason\": \"Travel plans cancelled\",\n  \"p_ticket_as\": \"Cash\",\n  \"p_repayment_method\": \"Payroll Deduction\",\n  \"p_comments\": \"Cancelling the unused ticket.\"\n}",
+              "raw": "{\n  \"analysis_criteria_id\": \"71794897\",\n  \"p_reason\": \"Travel plans cancelled\",\n  \"p_comments\": \"Cancelling the unused ticket.\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
                 }
               }
             },
-            "description": "**Purpose:** Cancel annual ticket\n\n**Auth:** Bearer {{token}} required\n**Request body:** see the raw body below.\n\n**Response:** Sanaad action envelope — `{ status, successflag, message, httpStatusCode, result? }`."
+            "description": "**Purpose:** op 72 — Cancel annual ticket (`XXHMC_SND_CANCEL_TKT_PR`).\n\n**Auth:** Bearer {{token}} required\n\n**Body:** required `analysis_criteria_id` (digits — `tickets[].analysisCriteriaId` from `GET /annual-ticket/cancel-options`) and `p_reason`; optional `p_comments`, `p_voucher_ref`, `p_repayment_method` (one of that ticket's `repaymentMethods[].value`; only needed when it has several), attachments. The backend re-reads the caller's own options and fills `p_annual_tkt` (composite, verbatim), `p_contractual_year`, `p_ticket_as` and the repayment method itself. 404 when the id is not one of the caller's tickets; 400 when the repayment method is ambiguous or not the ticket's.\n\n**Changed:** the old `p_annual_tkt` / `p_contractual_year` / `p_ticket_as` keys are rejected (400 \"should not exist\"). The staging F5 WAF blocked the response of every request carrying the pipe composite, and resolving it server-side makes a wrong Cash/Voucher pairing impossible.\n\n**Response:** Sanaad action envelope — `{ status, successflag, message, httpStatusCode, result? }`."
           },
           "response": [
             {
@@ -10567,14 +10606,14 @@
                 },
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"p_annual_tkt\": \"Self and Family |Amir |Caroline |Jerome Amir Sami |Jolie Amir Sami | |01-SEP-2025 to 31-AUG-2026 |Cash |20920\",\n  \"p_contractual_year\": \"01-SEP-2025 to 31-AUG-2026\",\n  \"p_reason\": \"Travel plans cancelled\",\n  \"p_ticket_as\": \"Cash\",\n  \"p_repayment_method\": \"Payroll Deduction\",\n  \"p_comments\": \"Cancelling the unused ticket.\"\n}",
+                  "raw": "{\n  \"analysis_criteria_id\": \"71794897\",\n  \"p_reason\": \"Travel plans cancelled\",\n  \"p_comments\": \"Cancelling the unused ticket.\"\n}",
                   "options": {
                     "raw": {
                       "language": "json"
                     }
                   }
                 },
-                "description": "**Purpose:** Cancel annual ticket\n\n**Auth:** Bearer {{token}} required\n**Request body:** see the raw body below.\n\n**Response:** Sanaad action envelope — `{ status, successflag, message, httpStatusCode, result? }`."
+                "description": "**Purpose:** op 72 — Cancel annual ticket (`XXHMC_SND_CANCEL_TKT_PR`).\n\n**Auth:** Bearer {{token}} required\n\n**Body:** required `analysis_criteria_id` (digits — `tickets[].analysisCriteriaId` from `GET /annual-ticket/cancel-options`) and `p_reason`; optional `p_comments`, `p_voucher_ref`, `p_repayment_method` (one of that ticket's `repaymentMethods[].value`; only needed when it has several), attachments. The backend re-reads the caller's own options and fills `p_annual_tkt` (composite, verbatim), `p_contractual_year`, `p_ticket_as` and the repayment method itself. 404 when the id is not one of the caller's tickets; 400 when the repayment method is ambiguous or not the ticket's.\n\n**Changed:** the old `p_annual_tkt` / `p_contractual_year` / `p_ticket_as` keys are rejected (400 \"should not exist\"). The staging F5 WAF blocked the response of every request carrying the pipe composite, and resolving it server-side makes a wrong Cash/Voucher pairing impossible.\n\n**Response:** Sanaad action envelope — `{ status, successflag, message, httpStatusCode, result? }`."
               },
               "status": "OK",
               "code": 200,
@@ -10588,7 +10627,7 @@
               "body": "{\n  \"status\": \"success\",\n  \"successflag\": \"S\",\n  \"message\": \"Success\",\n  \"httpStatusCode\": 200\n}"
             },
             {
-              "name": "Error (400)",
+              "name": "Error (400) — Expected: old composite body rejected",
               "originalRequest": {
                 "method": "POST",
                 "header": [
@@ -10609,14 +10648,14 @@
                 },
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"p_annual_tkt\": \"Self and Family |Amir |Caroline |Jerome Amir Sami |Jolie Amir Sami | |01-SEP-2025 to 31-AUG-2026 |Cash |20920\",\n  \"p_contractual_year\": \"01-SEP-2025 to 31-AUG-2026\",\n  \"p_reason\": \"Travel plans cancelled\",\n  \"p_ticket_as\": \"Cash\",\n  \"p_repayment_method\": \"Payroll Deduction\",\n  \"p_comments\": \"Cancelling the unused ticket.\"\n}",
+                  "raw": "{\n  \"p_annual_tkt\": \"Self and Family |Amir |Caroline |Jerome Amir Sami |Jolie Amir Sami | |01-SEP-2025 to 31-AUG-2026 |Cash |20920\",\n  \"p_contractual_year\": \"01-SEP-2025 to 31-AUG-2026\",\n  \"p_reason\": \"Travel plans cancelled\",\n  \"p_ticket_as\": \"Cash\",\n  \"p_repayment_method\": \"Payroll Deduction\"\n}",
                   "options": {
                     "raw": {
                       "language": "json"
                     }
                   }
                 },
-                "description": "**Purpose:** Cancel annual ticket\n\n**Auth:** Bearer {{token}} required\n**Request body:** see the raw body below.\n\n**Response:** Sanaad action envelope — `{ status, successflag, message, httpStatusCode, result? }`."
+                "description": "**Purpose:** op 72 — Cancel annual ticket (`XXHMC_SND_CANCEL_TKT_PR`).\n\n**Auth:** Bearer {{token}} required\n\n**Body:** required `analysis_criteria_id` (digits — `tickets[].analysisCriteriaId` from `GET /annual-ticket/cancel-options`) and `p_reason`; optional `p_comments`, `p_voucher_ref`, `p_repayment_method` (one of that ticket's `repaymentMethods[].value`; only needed when it has several), attachments. The backend re-reads the caller's own options and fills `p_annual_tkt` (composite, verbatim), `p_contractual_year`, `p_ticket_as` and the repayment method itself. 404 when the id is not one of the caller's tickets; 400 when the repayment method is ambiguous or not the ticket's.\n\n**Changed:** the old `p_annual_tkt` / `p_contractual_year` / `p_ticket_as` keys are rejected (400 \"should not exist\"). The staging F5 WAF blocked the response of every request carrying the pipe composite, and resolving it server-side makes a wrong Cash/Voucher pairing impossible.\n\n**Response:** Sanaad action envelope — `{ status, successflag, message, httpStatusCode, result? }`."
               },
               "status": "Bad Request",
               "code": 400,
@@ -10627,7 +10666,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"success\": false,\n  \"message\": \"Validation failed.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 400,\n  \"errors\": {\n    \"details\": [\n      \"field must not be empty\"\n    ]\n  }\n}"
+              "body": "{\n  \"success\": false,\n  \"message\": \"Validation failed.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 400,\n  \"errors\": {\n    \"details\": [\n      \"property p_annual_tkt should not exist\",\n      \"property p_contractual_year should not exist\",\n      \"property p_ticket_as should not exist\",\n      \"analysis_criteria_id must be a numeric ticket id.\"\n    ]\n  }\n}"
             },
             {
               "name": "Error (401)",
@@ -10651,14 +10690,14 @@
                 },
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"p_annual_tkt\": \"Self and Family |Amir |Caroline |Jerome Amir Sami |Jolie Amir Sami | |01-SEP-2025 to 31-AUG-2026 |Cash |20920\",\n  \"p_contractual_year\": \"01-SEP-2025 to 31-AUG-2026\",\n  \"p_reason\": \"Travel plans cancelled\",\n  \"p_ticket_as\": \"Cash\",\n  \"p_repayment_method\": \"Payroll Deduction\",\n  \"p_comments\": \"Cancelling the unused ticket.\"\n}",
+                  "raw": "{\n  \"analysis_criteria_id\": \"71794897\",\n  \"p_reason\": \"Travel plans cancelled\",\n  \"p_comments\": \"Cancelling the unused ticket.\"\n}",
                   "options": {
                     "raw": {
                       "language": "json"
                     }
                   }
                 },
-                "description": "**Purpose:** Cancel annual ticket\n\n**Auth:** Bearer {{token}} required\n**Request body:** see the raw body below.\n\n**Response:** Sanaad action envelope — `{ status, successflag, message, httpStatusCode, result? }`."
+                "description": "**Purpose:** op 72 — Cancel annual ticket (`XXHMC_SND_CANCEL_TKT_PR`).\n\n**Auth:** Bearer {{token}} required\n\n**Body:** required `analysis_criteria_id` (digits — `tickets[].analysisCriteriaId` from `GET /annual-ticket/cancel-options`) and `p_reason`; optional `p_comments`, `p_voucher_ref`, `p_repayment_method` (one of that ticket's `repaymentMethods[].value`; only needed when it has several), attachments. The backend re-reads the caller's own options and fills `p_annual_tkt` (composite, verbatim), `p_contractual_year`, `p_ticket_as` and the repayment method itself. 404 when the id is not one of the caller's tickets; 400 when the repayment method is ambiguous or not the ticket's.\n\n**Changed:** the old `p_annual_tkt` / `p_contractual_year` / `p_ticket_as` keys are rejected (400 \"should not exist\"). The staging F5 WAF blocked the response of every request carrying the pipe composite, and resolving it server-side makes a wrong Cash/Voucher pairing impossible.\n\n**Response:** Sanaad action envelope — `{ status, successflag, message, httpStatusCode, result? }`."
               },
               "status": "Unauthorized",
               "code": 401,
@@ -10670,6 +10709,48 @@
                 }
               ],
               "body": "{\n  \"success\": false,\n  \"message\": \"Authentication failed.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 401\n}"
+            },
+            {
+              "name": "Error (404) — Expected: id is not one of the caller's tickets",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/annual-ticket/cancel",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "annual-ticket",
+                    "cancel"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"analysis_criteria_id\": \"71794897\",\n  \"p_reason\": \"Travel plans cancelled\",\n  \"p_comments\": \"Cancelling the unused ticket.\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "**Purpose:** op 72 — Cancel annual ticket (`XXHMC_SND_CANCEL_TKT_PR`).\n\n**Auth:** Bearer {{token}} required\n\n**Body:** required `analysis_criteria_id` (digits — `tickets[].analysisCriteriaId` from `GET /annual-ticket/cancel-options`) and `p_reason`; optional `p_comments`, `p_voucher_ref`, `p_repayment_method` (one of that ticket's `repaymentMethods[].value`; only needed when it has several), attachments. The backend re-reads the caller's own options and fills `p_annual_tkt` (composite, verbatim), `p_contractual_year`, `p_ticket_as` and the repayment method itself. 404 when the id is not one of the caller's tickets; 400 when the repayment method is ambiguous or not the ticket's.\n\n**Changed:** the old `p_annual_tkt` / `p_contractual_year` / `p_ticket_as` keys are rejected (400 \"should not exist\"). The staging F5 WAF blocked the response of every request carrying the pipe composite, and resolving it server-side makes a wrong Cash/Voucher pairing impossible.\n\n**Response:** Sanaad action envelope — `{ status, successflag, message, httpStatusCode, result? }`."
+              },
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"message\": \"Ticket not found or not cancellable for this user.\",\n  \"status\": \"error\",\n  \"httpStatusCode\": 404\n}"
             },
             {
               "name": "Error (500)",
@@ -10693,14 +10774,14 @@
                 },
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"p_annual_tkt\": \"Self and Family |Amir |Caroline |Jerome Amir Sami |Jolie Amir Sami | |01-SEP-2025 to 31-AUG-2026 |Cash |20920\",\n  \"p_contractual_year\": \"01-SEP-2025 to 31-AUG-2026\",\n  \"p_reason\": \"Travel plans cancelled\",\n  \"p_ticket_as\": \"Cash\",\n  \"p_repayment_method\": \"Payroll Deduction\",\n  \"p_comments\": \"Cancelling the unused ticket.\"\n}",
+                  "raw": "{\n  \"analysis_criteria_id\": \"71794897\",\n  \"p_reason\": \"Travel plans cancelled\",\n  \"p_comments\": \"Cancelling the unused ticket.\"\n}",
                   "options": {
                     "raw": {
                       "language": "json"
                     }
                   }
                 },
-                "description": "**Purpose:** Cancel annual ticket\n\n**Auth:** Bearer {{token}} required\n**Request body:** see the raw body below.\n\n**Response:** Sanaad action envelope — `{ status, successflag, message, httpStatusCode, result? }`."
+                "description": "**Purpose:** op 72 — Cancel annual ticket (`XXHMC_SND_CANCEL_TKT_PR`).\n\n**Auth:** Bearer {{token}} required\n\n**Body:** required `analysis_criteria_id` (digits — `tickets[].analysisCriteriaId` from `GET /annual-ticket/cancel-options`) and `p_reason`; optional `p_comments`, `p_voucher_ref`, `p_repayment_method` (one of that ticket's `repaymentMethods[].value`; only needed when it has several), attachments. The backend re-reads the caller's own options and fills `p_annual_tkt` (composite, verbatim), `p_contractual_year`, `p_ticket_as` and the repayment method itself. 404 when the id is not one of the caller's tickets; 400 when the repayment method is ambiguous or not the ticket's.\n\n**Changed:** the old `p_annual_tkt` / `p_contractual_year` / `p_ticket_as` keys are rejected (400 \"should not exist\"). The staging F5 WAF blocked the response of every request carrying the pipe composite, and resolving it server-side makes a wrong Cash/Voucher pairing impossible.\n\n**Response:** Sanaad action envelope — `{ status, successflag, message, httpStatusCode, result? }`."
               },
               "status": "Internal Server Error",
               "code": 500,

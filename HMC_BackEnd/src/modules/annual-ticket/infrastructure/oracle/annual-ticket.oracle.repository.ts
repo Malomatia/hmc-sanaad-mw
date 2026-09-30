@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import * as oracledb from 'oracledb';
 import { OracleService } from '@core/database/oracle.service';
 import { OracleSchemaService } from '@core/database/oracle-schema.service';
@@ -7,7 +7,8 @@ import { SubmitResult } from '@shared/domain/submit-result';
 import { ORACLE_OBJECTS } from '@shared/constants/oracle-objects';
 import { PERSON_ID_COLUMN, USERNAME_KEY_CANDIDATES } from '@shared/constants/oracle-columns';
 import {
-  TicketCancelOptions,
+  TicketCancelOptionRows,
+  TicketEligibility,
   TicketRepository,
   TicketRequestCommand,
 } from '../../domain/annual-ticket.repository';
@@ -49,9 +50,14 @@ const TICKET_CANCEL_PARAMS = [
   ...BaseOracleRepository.attachmentParams(),
 ] as const;
 
-/** op 67 — Submit_Annual_Ticket (TICKET_REQ_PR) · op 72 — cancel (CANCEL_TKT_PR). */
+/**
+ * op 66 — master (TICKET_MASTER + ANNUAL_TICKT_LOV) · op 67 — Submit_Annual_Ticket
+ * (TICKET_REQ_PR) · op 72 — cancel (CANCEL_TKT_PR).
+ */
 @Injectable()
 export class TicketOracleRepository extends BaseOracleRepository implements TicketRepository {
+  private readonly log = new Logger(TicketOracleRepository.name);
+
   constructor(ora: OracleService, schema: OracleSchemaService) {
     super(ora, schema);
   }
@@ -89,11 +95,56 @@ export class TicketOracleRepository extends BaseOracleRepository implements Tick
   }
 
   /**
+   * op 66 — the caller's rows of XXHMC_SND_TICKET_MASTER (a UNION of the
+   * passenger, contract-year, request-for, destination and ticket-class
+   * views). Always filtered on USER_NAME: the unfiltered view exceeded the
+   * request timeout (HTTP 408). A schema mismatch degrades to [] with a
+   * SCHEMA_MISMATCH warning (`readByResolvedKey`).
+   */
+  getMaster(username: string): Promise<Record<string, unknown>[]> {
+    return this.readByResolvedKey(ORACLE_OBJECTS.TICKET_MASTER, username, USERNAME_KEY_CANDIDATES);
+  }
+
+  /**
+   * op 66 — the caller's annual-ticket eligibility flag. ANNUAL_TICKT_LOV holds
+   * one row per user (`Yes`/`No` from
+   * `xxhmc_hr_sit_leaveadv_pkg_dp.get_travelling_days_default`). A side read
+   * of the master: any failure is logged and answers null, never an error.
+   * A value other than Yes/No is also null (with its Arabic twin), so the two
+   * fields can never disagree between `lang=en` and `lang=ar`.
+   */
+  async getEligibility(username: string): Promise<TicketEligibility | null> {
+    try {
+      const [row] = await this.readByResolvedKey(
+        ORACLE_OBJECTS.ANNUAL_TICKT_LOV,
+        username,
+        USERNAME_KEY_CANDIDATES,
+      );
+      if (!row) return null;
+      const flag = String(row.ANUAL_TKT_DEFAULT ?? '')
+        .trim()
+        .toLowerCase();
+      const eligible = flag === 'yes' ? 'Yes' : flag === 'no' ? 'No' : null;
+      const ar = row.ANUAL_TKT_DEFAULT_AR;
+      return {
+        eligible,
+        eligibleAr: eligible && ar !== null && ar !== undefined && ar !== '' ? String(ar) : null,
+      };
+    } catch (err) {
+      this.log.warn(
+        `[READ_DEGRADED] object=${ORACLE_OBJECTS.ANNUAL_TICKT_LOV} failed: ${(err as Error).message} — eligible: null`,
+      );
+      return null;
+    }
+  }
+
+  /**
    * The three cancellation LOVs in parallel; all keyed by PERSON_ID. The id is
    * the server-resolved one (never a client value) and is bound as a NUMBER
-   * against the contract's key column.
+   * against the contract's key column. Raw rows: the join on
+   * ANALYSIS_CRITERIA_ID happens in the service.
    */
-  async cancelOptions(personId: string): Promise<TicketCancelOptions> {
+  async cancelOptions(personId: string): Promise<TicketCancelOptionRows> {
     const id = Number(personId);
     if (!/^\d+$/.test(personId) || !Number.isSafeInteger(id)) {
       return { tickets: [], takenAs: [], repaymentMethods: [] };

@@ -314,27 +314,45 @@ const MODULES = [
   {
     folder: 'Annual Ticket',
     items: [
-      { name: 'Annual ticket master LOV', method: 'GET', p: 'annual-ticket/master', auth: 'bearer', kind: 'lov', query: { lang: 'en' },
-        success: lovGeneric([{ code: 'Economy', meaning: 'Economy' }]), errors: [401, 500] },
+      { name: 'Annual ticket master (TICKET_MASTER grouped by TAG1 + eligibility flag)', method: 'GET', p: 'annual-ticket/master', auth: 'bearer', kind: 'read', query: { lang: 'en' },
+        success: {
+          eligible: 'Yes',
+          contractualYears: ['2025', '2026', '2027'].map((from) => {
+            const year = `01-SEP-${from} to 31-AUG-${Number(from) + 1}`;
+            return { value: year, label: year, fromYear: Number(from), toYear: Number(from) + 1, law: 'HMC LAW', totalCount: 18 };
+          }),
+          destinations: [{ value: 'Cairo', label: 'Cairo' }],
+          passengers: [
+            { contactId: '26023', name: 'Mr. Amir Sami Samir Ibrahim', type: 'Self', contactType: 'EMP', currentEmployee: 'Y', dateOfBirth: '1984-05-15', sex: 'M' },
+            { contactId: '42465', name: 'Caroline Victor Francis Fam', type: 'Family', contactType: 'S', currentEmployee: null, dateOfBirth: null, sex: 'F' },
+            { contactId: '329302', name: 'Jerome Amir Sami Samir Ibrahim', type: 'Family', contactType: 'C', currentEmployee: null, dateOfBirth: null, sex: 'M' },
+            { contactId: '329303', name: 'Jolie Amir Sami Samir Ibrahim', type: 'Family', contactType: 'C', currentEmployee: null, dateOfBirth: null, sex: 'F' },
+          ],
+          requestFor: [{ value: 'Family', label: 'Family' }, { value: 'Self', label: 'Self' }, { value: 'Self and Family', label: 'Self and Family' }],
+          ticketClasses: [{ value: 'Economy', label: 'Economy' }],
+          requestType: 'Annual Ticket',
+          other: [],
+        },
+        errors: [401, 403, 500] },
       { name: 'Submit annual ticket', method: 'POST', p: 'annual-ticket/apply', auth: 'bearer', kind: 'action',
         body: { p_ticket_class: 'Economy', p_travel_year: '2026' }, success: actionSuccess, errors: [400, 401, 409, 500] },
       { name: 'Ticket-cancellation options (caller-scoped; person_id derived from the JWT)', method: 'GET', p: 'annual-ticket/cancel-options', auth: 'bearer', kind: 'read', query: { lang: 'en' },
         success: {
-          tickets: [{ PERSON_ID: 26023, ANNUAL_LEAVE_PASS_TKT_VALUE: 'Self and Family |Amir |Caroline |Jerome Amir Sami |Jolie Amir Sami | |01-SEP-2025 to 31-AUG-2026 |Cash |20920' }],
-          takenAs: [{ PERSON_ID: 26023, TAKES_AS: 'Cash' }],
-          repaymentMethods: [{ PERSON_ID: 26023, FLEX_VALUE: 'Payroll Deduction' }],
+          tickets: [
+            { analysisCriteriaId: '71794897', value: 'Self and Family |Amir |Caroline |Jerome Amir Sami |Jolie Amir Sami | |01-SEP-2025 to 31-AUG-2026 |Cash |20920', requestFor: 'Self and Family', employeeName: 'Amir', passengers: ['Caroline', 'Jerome Amir Sami', 'Jolie Amir Sami'], contractualYear: '01-SEP-2025 to 31-AUG-2026', takenAs: 'Cash', amount: '20920', repaymentMethods: [{ value: 'Payroll Deduction', label: 'Cash' }] },
+            { analysisCriteriaId: '71803898', value: 'Self and Family |Amir |Caroline |Jerome Amir Sami |Jolie Amir Sami | |01-SEP-2024 to 31-AUG-2025 |Cash |20920', requestFor: 'Self and Family', employeeName: 'Amir', passengers: ['Caroline', 'Jerome Amir Sami', 'Jolie Amir Sami'], contractualYear: '01-SEP-2024 to 31-AUG-2025', takenAs: 'Cash', amount: '20920', repaymentMethods: [{ value: 'Payroll Deduction', label: 'Cash' }] },
+          ],
+          takenAs: [{ TAKES_AS: 'Cash' }, { TAKES_AS: 'Voucher' }],
+          repaymentMethods: [{ FLEX_VALUE: 'Payroll Deduction', DESCRIPTION: 'Cash' }, { FLEX_VALUE: 'Cancel Voucher', DESCRIPTION: 'Voucher' }],
         },
         errors: [400, 401, 403, 500] },
       { name: 'Cancel annual ticket', method: 'POST', p: 'annual-ticket/cancel', auth: 'bearer', kind: 'action',
         body: {
-          p_annual_tkt: 'Self and Family |Amir |Caroline |Jerome Amir Sami |Jolie Amir Sami | |01-SEP-2025 to 31-AUG-2026 |Cash |20920',
-          p_contractual_year: '01-SEP-2025 to 31-AUG-2026',
+          analysis_criteria_id: '71794897',
           p_reason: 'Travel plans cancelled',
-          p_ticket_as: 'Cash',
-          p_repayment_method: 'Payroll Deduction',
           p_comments: 'Cancelling the unused ticket.',
         },
-        success: actionSuccess, errors: [400, 401, 500] },
+        success: actionSuccess, errors: [400, 401, 404, 500] },
     ],
   },
   {

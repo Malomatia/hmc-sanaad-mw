@@ -1,4 +1,5 @@
 import * as oracledb from 'oracledb';
+import { Logger } from '@nestjs/common';
 import { OracleService } from '@core/database/oracle.service';
 import { OracleSchemaService } from '@core/database/oracle-schema.service';
 import { OracleContractCatalog } from '@core/database/oracle-contracts';
@@ -10,9 +11,10 @@ import { TicketOracleRepository } from './annual-ticket.oracle.repository';
  * Pins the op-72 read shapes against the real static catalog with a mocked
  * driver: the caller's PERSON_ID comes from EMPLOYMENT_DETAILS_V by USER_NAME,
  * and the three cancellation views are filtered on the contract's PERSON_ID
- * column with a NUMBER bind.
+ * column with a NUMBER bind. The op-66 master reads (TICKET_MASTER and the
+ * ANNUAL_TICKT_LOV eligibility flag) are filtered on USER_NAME.
  */
-describe('TicketOracleRepository — cancellation reads', () => {
+describe('TicketOracleRepository — master and cancellation reads', () => {
   function make(
     query: jest.Mock = jest.fn().mockResolvedValue([]),
     schema = new OracleSchemaService(new OracleContractCatalog()),
@@ -111,6 +113,114 @@ describe('TicketOracleRepository — cancellation reads', () => {
       expect(describeColumns).toHaveBeenCalledWith(ORACLE_OBJECTS.CANCEL_TICKETS_V);
       expect(query).not.toHaveBeenCalled();
     });
+  });
+
+  describe('getMaster (op 66)', () => {
+    it('reads TICKET_MASTER by the upper-cased USER_NAME and returns the raw rows', async () => {
+      const rows = [{ TAG1: 'DESTINATION', NAME_EN: 'Cairo', USER_NAME: 'AIBRAHIM39' }];
+      const { repository, issued } = make(jest.fn().mockResolvedValue(rows));
+
+      await expect(repository.getMaster('aibrahim39')).resolves.toEqual(rows);
+
+      expect(issued()).toEqual([
+        {
+          sql: 'SELECT * FROM XXHMC_SND_TICKET_MASTER WHERE user_name IN (:k0)',
+          binds: { k0: 'AIBRAHIM39' },
+        },
+      ]);
+    });
+
+    it('never reads the view unfiltered', async () => {
+      const { repository, query } = make();
+
+      await expect(repository.getMaster('  ')).resolves.toEqual([]);
+      expect(query).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getEligibility (op 66)', () => {
+    it('reads ANNUAL_TICKT_LOV by the upper-cased USER_NAME and returns the flag', async () => {
+      const { repository, issued } = make(
+        jest
+          .fn()
+          .mockResolvedValue([
+            { ANUAL_TKT_DEFAULT: 'Yes', USER_NAME: 'AIBRAHIM39', ANUAL_TKT_DEFAULT_AR: 'نعم' },
+          ]),
+      );
+
+      await expect(repository.getEligibility('aibrahim39')).resolves.toEqual({
+        eligible: 'Yes',
+        eligibleAr: 'نعم',
+      });
+
+      expect(issued()).toEqual([
+        {
+          sql: 'SELECT * FROM XXHMC_SND_ANNUAL_TICKT_LOV WHERE user_name IN (:k0)',
+          binds: { k0: 'AIBRAHIM39' },
+        },
+      ]);
+    });
+
+    it('returns null when the user has no row', async () => {
+      const { repository } = make();
+      await expect(repository.getEligibility('AIBRAHIM39')).resolves.toBeNull();
+    });
+
+    it.each([
+      [{ ANUAL_TKT_DEFAULT: ' no ', ANUAL_TKT_DEFAULT_AR: 'لا' }, { eligible: 'No', eligibleAr: 'لا' }],
+      [{ ANUAL_TKT_DEFAULT: 'Maybe', ANUAL_TKT_DEFAULT_AR: 'ربما' }, { eligible: null, eligibleAr: null }],
+      [{ ANUAL_TKT_DEFAULT: null, ANUAL_TKT_DEFAULT_AR: null }, { eligible: null, eligibleAr: null }],
+    ])('normalizes the flag %j to Yes | No | null', async (row, expected) => {
+      const { repository } = make(jest.fn().mockResolvedValue([row]));
+      await expect(repository.getEligibility('AIBRAHIM39')).resolves.toEqual(expected);
+    });
+
+    it('degrades a failed read to null with a READ_DEGRADED warning (never throws)', async () => {
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      const { repository } = make(jest.fn().mockRejectedValue(new Error('ORA-00942')));
+
+      await expect(repository.getEligibility('AIBRAHIM39')).resolves.toBeNull();
+
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('[READ_DEGRADED] object=XXHMC_SND_ANNUAL_TICKT_LOV failed: ORA-00942'),
+      );
+      warn.mockRestore();
+    });
+  });
+
+  it('registers the confirmed columns of TICKET_MASTER and ANNUAL_TICKT_LOV', async () => {
+    const catalog = new OracleContractCatalog();
+    const columns = async (object: string) =>
+      (await catalog.describeColumns(object)).map(({ name, dataType }) => `${name}:${dataType}`);
+
+    await expect(columns(ORACLE_OBJECTS.TICKET_MASTER)).resolves.toEqual([
+      'TAG1:VARCHAR2',
+      'PERSON_ID:NUMBER',
+      'CONTACT_ID:NUMBER',
+      'USER_NAME:VARCHAR2',
+      'RECORD_TYPE:VARCHAR2',
+      'NAME_EN:VARCHAR2',
+      'NAME_AR:VARCHAR2',
+      'CURRENT_EMPLOYEE_FLAG:VARCHAR2',
+      'CONTACT_TYPE:VARCHAR2',
+      'DATE_OF_BIRTH:DATE',
+      'SEX:VARCHAR2',
+      'ROW_NUM:NUMBER',
+      'EMPLOYEE_NUMBER:VARCHAR2',
+      'DATE_START:DATE',
+      'LAW:VARCHAR2',
+      'TOT_COUNT:NUMBER',
+      'FROM_DATE:NUMBER',
+      'TOO_DATE:NUMBER',
+      'CONTRACT_YEAR:VARCHAR2',
+      'CONTRACT_YEAR_DEF:VARCHAR2',
+      'CONTRACT_YEAR_DEF_AR:VARCHAR2',
+    ]);
+    await expect(columns(ORACLE_OBJECTS.ANNUAL_TICKT_LOV)).resolves.toEqual([
+      'ANUAL_TKT_DEFAULT:VARCHAR2',
+      'USER_NAME:VARCHAR2',
+      'ANUAL_TKT_DEFAULT_AR:VARCHAR2',
+    ]);
   });
 
   it('registers the confirmed columns of the three cancellation views', async () => {

@@ -109,6 +109,20 @@ export class TicketOracleRepository extends BaseOracleRepository implements Tick
   }
 
   /**
+   * op 66 — the `REQ TYPE` branch of TICKET_MASTER (XXHMC_SND_TICKET_REQ_TYPES_V:
+   * `Cash` / `Voucher`, the only values the HMC_HR_CASH_VOUCHER_TYPE value set
+   * accepts for `p_request_type`). That branch selects NULL as USER_NAME, so the
+   * user-scoped read above never returns it. Filtered on TAG1, which Oracle
+   * pushes into each UNION branch (every other branch has a different literal
+   * TAG1), so this never scans the per-user branches.
+   */
+  getRequestTypes(): Promise<Record<string, unknown>[]> {
+    return this.query(`SELECT * FROM ${ORACLE_OBJECTS.TICKET_MASTER} WHERE TAG1 = :tag`, {
+      tag: 'REQ TYPE',
+    });
+  }
+
+  /**
    * op 66 — the caller's annual-ticket eligibility flag. ANNUAL_TICKT_LOV holds
    * one row per user (`Yes`/`No` from
    * `xxhmc_hr_sit_leaveadv_pkg_dp.get_travelling_days_default`). A side read

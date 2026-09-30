@@ -21,7 +21,10 @@ export class AnnualTicketApplyRequestDto {
   @RequiredString('26023')
   p_employee!: string;
 
-  @RequiredString('Annual Ticket')
+  @RequiredString(
+    'Cash',
+    'Ticket request type — GET /annual-ticket/master → requestTypes[].value (`Cash` or `Voucher`), validated by the HMC_HR_CASH_VOUCHER_TYPE value set.',
+  )
   p_request_type!: string;
 
   @RequiredString('01-SEP-2025 to 31-AUG-2026')
@@ -214,16 +217,15 @@ export class AnnualTicketMasterResponseDto {
   @ApiProperty({ type: [AnnualTicketOptionDto], description: '`value` → `p_request_for`.' })
   requestFor!: AnnualTicketOptionDto[];
 
+  @ApiProperty({
+    type: [AnnualTicketOptionDto],
+    description:
+      '`value` → `p_request_type` (`Cash` / `Voucher`; TAG1 `REQ TYPE`, validated by the HMC_HR_CASH_VOUCHER_TYPE value set).',
+  })
+  requestTypes!: AnnualTicketOptionDto[];
+
   @ApiProperty({ type: [AnnualTicketOptionDto], description: '`value` → `p_travel_class`.' })
   ticketClasses!: AnnualTicketOptionDto[];
-
-  @ApiProperty({
-    type: String,
-    example: 'Annual Ticket',
-    description:
-      'Constant → `p_request_type`. The only known value: the master has no source for it (AT-5 open).',
-  })
-  requestType!: string;
 
   @ApiProperty({
     type: [AnnualTicketMasterOtherDto],

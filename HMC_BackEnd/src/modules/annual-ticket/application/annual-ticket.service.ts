@@ -12,7 +12,6 @@ import { ERROR_MESSAGES } from '@shared/constants/error-codes';
 import { formatOracleIsoDate } from '@shared/utils/date.util';
 import { AuthenticatedUser } from '@core/auth/auth-user.interface';
 import {
-  ANNUAL_TICKET_REQUEST_TYPE,
   AnnualTicketMaster,
   TICKET_REPOSITORY,
   TicketCancellable,
@@ -29,7 +28,7 @@ import { parseTicketComposite } from './annual-ticket-composite.util';
 
 type Row = Record<string, unknown>;
 
-type MasterGroup = Exclude<keyof AnnualTicketMaster, keyof TicketEligibility | 'requestType'>;
+type MasterGroup = Exclude<keyof AnnualTicketMaster, keyof TicketEligibility>;
 
 /** TICKET_MASTER `TAG1` value → response group; anything else lands in `other`. */
 const MASTER_GROUPS: ReadonlyMap<string, MasterGroup> = new Map<string, MasterGroup>([
@@ -37,6 +36,7 @@ const MASTER_GROUPS: ReadonlyMap<string, MasterGroup> = new Map<string, MasterGr
   ['DESTINATION', 'destinations'],
   ['PASSENGER', 'passengers'],
   ['REQUEST FOR', 'requestFor'],
+  ['REQ TYPE', 'requestTypes'],
   ['TICKET CLASS', 'ticketClasses'],
 ]);
 
@@ -99,7 +99,16 @@ export class AnnualTicketService {
       );
       return null;
     });
-    const rows = AnnualTicketService.dedupe(await this.repo.getMaster(user.username));
+    const requestTypes = this.repo.getRequestTypes().catch((err: unknown) => {
+      this.logger.warn(
+        `[READ_DEGRADED] object=TICKET_MASTER (REQ TYPE) failed: ${(err as Error).message} — requestTypes: []`,
+      );
+      return [] as Row[];
+    });
+    const rows = AnnualTicketService.dedupe([
+      ...(await this.repo.getMaster(user.username)),
+      ...(await requestTypes),
+    ]);
     const requested = query.person_id?.trim();
     if (requested) {
       const own =
@@ -113,7 +122,6 @@ export class AnnualTicketService {
       eligible: flag?.eligible ?? null,
       eligibleAr: flag?.eligibleAr ?? null,
       ...AnnualTicketService.group(rows),
-      requestType: ANNUAL_TICKET_REQUEST_TYPE,
     };
   }
 
@@ -320,6 +328,7 @@ export class AnnualTicketService {
       destinations: [],
       passengers: [],
       requestFor: [],
+      requestTypes: [],
       ticketClasses: [],
       other: [],
     };
@@ -357,6 +366,7 @@ export class AnnualTicketService {
           break;
         case 'destinations':
         case 'requestFor':
+        case 'requestTypes':
         case 'ticketClasses':
           out[group].push(option(row));
           break;

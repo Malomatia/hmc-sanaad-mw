@@ -150,7 +150,7 @@ to the `/annual-ticket/apply` body:
 | `contractualYears` | `CONTRACTUAL YEAR` | `value` = `CONTRACT_YEAR`, `label` = `CONTRACT_YEAR_DEF` (fallback `NAME_EN`), `labelAr` = `CONTRACT_YEAR_DEF_AR`, `fromYear`, `toYear`, `law`, `totalCount` | `value` → `p_contractual_year` |
 | `destinations` | `DESTINATION` | `value`/`label` = `NAME_EN`, `labelAr` = `NAME_AR` | `value` → `p_traveling_dest` |
 | `ticketClasses` | `TICKET CLASS` | `value`/`label` = `NAME_EN`, `labelAr` = `NAME_AR` | `value` → `p_travel_class` |
-| `requestType` | — (constant) | `'Annual Ticket'` | → `p_request_type` (the only known value, AT-5 open) |
+| `requestTypes` | `REQ TYPE` (global rows, USER_NAME NULL — read separately with `WHERE TAG1 = 'REQ TYPE'`) | `value` = `NAME_EN` (`Cash` / `Voucher`), `label`/`labelAr` | `value` → `p_request_type` — validated by the HMC_HR_CASH_VOUCHER_TYPE value set; `Annual Ticket` is rejected (FLEX-VALUE DOES NOT EXIST) |
 | `other` | anything else | `tag`, `recordType`, `value`, `label`, `labelAr` | nothing is dropped silently |
 
 The `*Ar` twins (`labelAr`, `nameAr`, `eligibleAr`) are folded into their base
@@ -171,7 +171,7 @@ answers **403**.
   "passengers": [{ "value": "26023", "contactId": "26023", "name": "Mr. Amir Sami Samir Ibrahim", "type": "Self", "contactType": "EMP", "currentEmployee": "Y", "dateOfBirth": "1984-05-15", "sex": "M" }],
   "requestFor": [{ "value": "Self", "label": "Self" }],
   "ticketClasses": [{ "value": "Economy", "label": "Economy" }],
-  "requestType": "Annual Ticket",
+  "requestTypes": [{ "value": "Cash", "label": "Cash" }, { "value": "Voucher", "label": "Voucher" }],
   "other": []
 }
 ```

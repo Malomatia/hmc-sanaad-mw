@@ -544,7 +544,14 @@ responses as examples.
   assigns the parameters verbatim to the SIT segments (lines 307-312; its
   name→id lookups at 197-306 are commented out) and `fnd_flex_plsql.VALIDATE`
   checks them against value sets whose id column is person_id / contact_id, so
-  a name raises ORA-01722. Existing tickets store `26023 | 42465 | 329302 | ...`. `ANNUAL_TICKT_LOV` is only the per-user Yes/No
+  a name raises ORA-01722. Existing tickets store `26023 | 42465 | 329302 | ...`.
+  `p_request_type` is `Cash` or `Voucher` (value set HMC_HR_CASH_VOUCHER_TYPE,
+  segment 9) — `Annual Ticket` fails with FLEX-VALUE DOES NOT EXIST. The
+  values are TICKET_MASTER's `TAG1 = 'REQ TYPE'` rows, whose USER_NAME is NULL,
+  so the master reads them with a second, TAG1-filtered query → `requestTypes`.
+  `p_employee` must be the PERSON_ID of the token user: the value set is scoped
+  to the caller (the procedure sets `PER_PERSON_ID` from `p_user_name`), so
+  another person's id — or the employee number — is FLEX-VALUE DOES NOT EXIST. `ANNUAL_TICKT_LOV` is only the per-user Yes/No
   eligibility flag (`eligible`), not the form LOV.
 - op 72 `POST /annual-ticket/cancel` takes `analysis_criteria_id` + the user's
   text only; the service re-reads the caller's cancel options (joined on

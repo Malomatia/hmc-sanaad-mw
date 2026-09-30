@@ -138,6 +138,19 @@ describe('TicketOracleRepository — master and cancellation reads', () => {
     });
   });
 
+  describe('getRequestTypes (op 66)', () => {
+    it('reads only the global REQ TYPE branch of TICKET_MASTER, filtered on TAG1', async () => {
+      const rows = [{ TAG1: 'REQ TYPE', USER_NAME: null, NAME_EN: 'Cash' }];
+      const { repository, issued } = make(jest.fn().mockResolvedValue(rows));
+
+      await expect(repository.getRequestTypes()).resolves.toEqual(rows);
+
+      expect(issued()).toEqual([
+        { sql: 'SELECT * FROM XXHMC_SND_TICKET_MASTER WHERE TAG1 = :tag', binds: { tag: 'REQ TYPE' } },
+      ]);
+    });
+  });
+
   describe('getEligibility (op 66)', () => {
     it('reads ANNUAL_TICKT_LOV by the upper-cased USER_NAME and returns the flag', async () => {
       const { repository, issued } = make(

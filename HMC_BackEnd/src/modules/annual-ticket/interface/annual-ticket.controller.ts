@@ -49,7 +49,7 @@ export class AnnualTicketController {
       '- `contractualYears[].value` → `p_contractual_year` (e.g. `01-SEP-2025 to 31-AUG-2026`)',
       '- `destinations[].value` → `p_traveling_dest`',
       '- `ticketClasses[].value` → `p_travel_class`',
-      '- `requestType` → `p_request_type` (constant `Annual Ticket`)',
+      '- `requestTypes[].value` → `p_request_type` (`Cash` | `Voucher`)',
       '',
       '`eligible` is the ANNUAL_TICKT_LOV Yes/No flag (null when it could not be read). `*Ar` twins',
       '(`labelAr`, `nameAr`, `eligibleAr`) are folded into their base field per `lang`; `value` and',

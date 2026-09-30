@@ -119,9 +119,6 @@ export interface TicketMasterOther extends TicketOption {
   recordType: string | null;
 }
 
-/** The only `p_request_type` value known so far (AT-5 open: the master has no source for it). */
-export const ANNUAL_TICKET_REQUEST_TYPE = 'Annual Ticket';
-
 /**
  * op 66 — the annual-ticket form master: TICKET_MASTER rows of the caller
  * grouped by TAG1 (one array per mobile picker) plus the eligibility flag.
@@ -131,8 +128,13 @@ export interface AnnualTicketMaster extends TicketEligibility {
   destinations: TicketOption[];
   passengers: TicketPassenger[];
   requestFor: TicketOption[];
+  /**
+   * TAG1 `REQ TYPE` (XXHMC_SND_TICKET_REQ_TYPES_V: `Cash` / `Voucher`) — `value`
+   * feeds `p_request_type`, which the flexfield validates against the
+   * HMC_HR_CASH_VOUCHER_TYPE value set (segment 9 "Ticket Request Type").
+   */
+  requestTypes: TicketOption[];
   ticketClasses: TicketOption[];
-  requestType: typeof ANNUAL_TICKET_REQUEST_TYPE;
   other: TicketMasterOther[];
 }
 
@@ -145,6 +147,8 @@ export interface TicketRepository {
   resolvePersonId(username: string): Promise<string | null>;
   /** The caller's raw TICKET_MASTER rows (`WHERE USER_NAME = :u`). */
   getMaster(username: string): Promise<Record<string, unknown>[]>;
+  /** The global TICKET_MASTER `REQ TYPE` rows (USER_NAME is NULL on them, so `getMaster` never returns them). */
+  getRequestTypes(): Promise<Record<string, unknown>[]>;
   /** The caller's ANNUAL_TICKT_LOV flag; null when there is no row or the read failed (never throws). */
   getEligibility(username: string): Promise<TicketEligibility | null>;
 }

@@ -74,6 +74,12 @@ const MASTER_ROWS: Record<string, unknown>[] = [
   { TAG1: 'TICKET CLASS', RECORD_TYPE: 'TICKET_CLASS', NAME_EN: 'Economy', NAME_AR: 'إقتصادية' },
 ];
 
+/** TICKET_MASTER `REQ TYPE` branch: global (USER_NAME / PERSON_ID NULL), so it comes from getRequestTypes. */
+const REQ_TYPE_ROWS = [
+  { TAG1: 'REQ TYPE', PERSON_ID: null, USER_NAME: null, RECORD_TYPE: 'REQUEST_TYPE', NAME_EN: 'Cash', NAME_AR: 'نقدا' },
+  { TAG1: 'REQ TYPE', PERSON_ID: null, USER_NAME: null, RECORD_TYPE: 'REQUEST_TYPE', NAME_EN: 'Voucher', NAME_AR: 'قسيمة' },
+];
+
 const COMPOSITE_2025 =
   'Self and Family |Amir |Caroline |Jerome Amir Sami |Jolie Amir Sami | |01-SEP-2025 to 31-AUG-2026 |Cash |20920';
 const COMPOSITE_2024 =
@@ -108,6 +114,7 @@ function makeService(overrides: Partial<jest.Mocked<TicketRepository>> = {}) {
     cancelOptions: jest.fn().mockResolvedValue(RAW_OPTIONS),
     resolvePersonId: jest.fn().mockResolvedValue('26023'),
     getMaster: jest.fn().mockResolvedValue(MASTER_ROWS),
+    getRequestTypes: jest.fn().mockResolvedValue(REQ_TYPE_ROWS),
     getEligibility: jest.fn().mockResolvedValue({ eligible: 'Yes', eligibleAr: 'نعم' }),
     ...overrides,
   } as jest.Mocked<TicketRepository>;
@@ -177,10 +184,26 @@ describe('AnnualTicketService.master', () => {
         { value: 'Self', label: 'Self', labelAr: 'الموظف' },
         { value: 'Self and Family', label: 'Self and Family', labelAr: 'الموظف و العائلة' },
       ],
+      requestTypes: [
+        { value: 'Cash', label: 'Cash', labelAr: 'نقدا' },
+        { value: 'Voucher', label: 'Voucher', labelAr: 'قسيمة' },
+      ],
       ticketClasses: [{ value: 'Economy', label: 'Economy', labelAr: 'إقتصادية' }],
-      requestType: 'Annual Ticket',
       other: [],
     });
+    expect(master).not.toHaveProperty('requestType');
+  });
+
+  it('degrades requestTypes to [] (with a warning) when the REQ TYPE read fails', async () => {
+    const { service } = makeService({
+      getRequestTypes: jest.fn().mockRejectedValue(new Error('ORA-03113')),
+    });
+
+    const master = await service.master(USER);
+
+    expect(master.requestTypes).toEqual([]);
+    expect(master.passengers).toHaveLength(4);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('REQ TYPE'));
   });
 
   it('takes the contractual-year value from CONTRACT_YEAR and falls back for the label', async () => {
@@ -302,8 +325,11 @@ describe('AnnualTicketService.master', () => {
       destinations: [],
       passengers: [],
       requestFor: [],
+      requestTypes: [
+        { value: 'Cash', label: 'Cash', labelAr: 'نقدا' },
+        { value: 'Voucher', label: 'Voucher', labelAr: 'قسيمة' },
+      ],
       ticketClasses: [],
-      requestType: 'Annual Ticket',
       other: [],
     });
   });

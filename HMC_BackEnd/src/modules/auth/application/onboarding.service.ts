@@ -23,6 +23,7 @@ import {
 } from '../interface/dto/onboarding.dto';
 import { devIdentity } from './dev-fallback';
 import { maskEmail, maskPhone } from './mask.util';
+import { INVALID_OTP_MESSAGE } from './auth-messages';
 import { DEFAULT_LANG, Lang } from '@shared/domain/lang';
 
 /** User-facing initiate messages, per the request's `lang` header/query. */
@@ -304,7 +305,10 @@ export class OnboardingService {
     return this.otpInResponse && otp ? { otp } : {};
   }
 
-  async validateOtp(dto: ValidateOtpRequestDto): Promise<ValidateOtpResponseDto> {
+  async validateOtp(
+    dto: ValidateOtpRequestDto,
+    lang: Lang = DEFAULT_LANG,
+  ): Promise<ValidateOtpResponseDto> {
     const ctx = {
       username: dto.username,
       deviceImei: dto.imeinumber,
@@ -327,7 +331,7 @@ export class OnboardingService {
       status: ok ? 'success' : 'error',
     });
 
-    if (!ok) return { status: 'error', message: 'Invalid OTP' };
+    if (!ok) return { status: 'error', message: INVALID_OTP_MESSAGE[lang] };
     const enrollmenttoken = this.devBypass
       ? randomBytes(32).toString('base64url')
       : await this.state.issueEnrollment(dto.username, dto.imeinumber);

@@ -3,6 +3,8 @@ import { OracleContractUnavailableException, OracleQueryError, OracleUnavailable
 import { SqlQueryError, SqlUnavailableException } from '../database/sql.error';
 import { SchemaColumnNotFoundException } from '../database/schema-column-not-found.error';
 import { ORA_NO_DATA_FOUND } from '@shared/constants/error-codes';
+import { Lang } from '@shared/domain/lang';
+import { LocalizedHttpException } from './localized-http.exception';
 import {
   CATEGORY_MESSAGE,
   CATEGORY_STATUS,
@@ -18,6 +20,8 @@ export interface ClassifiedError {
   httpStatus: number;
   /** Safe message (already stripped of technical detail). */
   message: string;
+  /** Per-language client messages (LocalizedHttpException); the filter picks by `lang`. */
+  messages?: Readonly<Record<Lang, string>>;
   /** Field-level detail for validation failures only (describes client input). */
   errors?: Record<string, unknown>;
   /** True → a server fault (log with stack at error level); false → client fault (warn). */
@@ -79,6 +83,16 @@ export function classifyException(exception: unknown): ClassifiedError {
     return of(ErrorCategory.DATABASE_ERROR, { httpStatus: exception.getStatus() });
   }
   if (exception instanceof SqlQueryError) return of(ErrorCategory.DATABASE_ERROR);
+  // Category/status follow the status code; the message is the thrower's own,
+  // already translated, text.
+  if (exception instanceof LocalizedHttpException) {
+    return {
+      ...classifyHttp(exception),
+      message: exception.messages.en,
+      messages: exception.messages,
+      errors: undefined,
+    };
+  }
   if (exception instanceof HttpException) return classifyHttp(exception);
   // body-parser rejects an oversized body with an http-errors instance, which
   // is a plain Error (not an HttpException) — so it used to fall through to

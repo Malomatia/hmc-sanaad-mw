@@ -183,6 +183,18 @@ export const mysqlAuthState = {
     });
   },
 
+  grantValid(
+    db: UsersDbService,
+    params: { grantTokenKey: string; username: string },
+  ): Promise<{ Live: number }[]> {
+    return db.query<{ Live: number }>(
+      `SELECT 1 AS Live FROM ${CHALLENGES}
+        WHERE ${exact('Challenge', '@grantTokenKey')} AND LoginID = @username
+          AND UsedAt IS NULL AND ExpiresAt > NOW()`,
+      params,
+    );
+  },
+
   createSession(
     db: UsersDbService,
     params: SessionKeys & { mpin: string },

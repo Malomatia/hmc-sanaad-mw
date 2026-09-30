@@ -44,6 +44,7 @@ function makeService(authDisabled = false) {
     enroll: jest.fn().mockResolvedValue(true),
     resetMpin: jest.fn().mockResolvedValue(true),
     resetMpinWithGrant: jest.fn().mockResolvedValue(true),
+    grantValid: jest.fn().mockResolvedValue(true),
   } as unknown as jest.Mocked<AuthStateService>;
   const config = {
     get: (key: string, fallback: unknown) => (key === 'auth.disabled' ? authDisabled : fallback),
@@ -186,14 +187,52 @@ describe('MPIN reset', () => {
   it('never writes an MPIN after failed OTP verification', async () => {
     const { service, otp, state } = makeService();
     otp.verify.mockResolvedValue(false);
-    await expect(service.resetMpin(reset)).resolves.toMatchObject({ status: 'error' });
+    await expect(service.resetMpin(reset)).resolves.toEqual({
+      status: 'error',
+      message: 'Invalid OTP',
+    });
     expect(state.resetMpin).not.toHaveBeenCalled();
+  });
+
+  it('translates "Invalid OTP" by lang', async () => {
+    const { service, otp } = makeService();
+    otp.verify.mockResolvedValue(false);
+    await expect(service.resetMpin(reset, 'ar')).resolves.toEqual({
+      status: 'error',
+      message: 'رمز التحقق غير صحيح',
+    });
   });
 
   it('does not report success when the registration is inactive or missing', async () => {
     const { service, state } = makeService();
     state.resetMpin.mockResolvedValue(false);
     await expect(service.resetMpin(reset)).resolves.toMatchObject({ status: 'error' });
+  });
+
+  it('rejects a new MPIN equal to the current one with a 400, after the OTP, without writing', async () => {
+    const { service, otp, store, state } = makeService();
+    store.verify.mockResolvedValue(true);
+    await expect(service.resetMpin(reset)).rejects.toMatchObject({
+      status: 400,
+      messages: {
+        en: 'This password was used before. Please enter a different password.',
+        ar: 'تم استخدام كلمة المرور هذه من قبل. يرجى إدخال كلمة مرور مختلفة.',
+      },
+    });
+    expect(otp.verify).toHaveBeenCalled();
+    expect(store.verify).toHaveBeenCalledWith({
+      username: DTO.username,
+      imei: DTO.imeinumber,
+      mpin: reset.newmpin,
+    });
+    expect(state.resetMpin).not.toHaveBeenCalled();
+  });
+
+  it('does not compare MPINs when the OTP is wrong (no MPIN oracle)', async () => {
+    const { service, otp, store } = makeService();
+    otp.verify.mockResolvedValue(false);
+    await service.resetMpin(reset);
+    expect(store.verify).not.toHaveBeenCalled();
   });
 
   it('refuses a reset with neither an OTP nor a token, without spending anything', async () => {
@@ -250,6 +289,26 @@ describe('MPIN reset with the /auth/otp/validate token (forgot → validate → 
       status: 'error',
       message: 'Invalid or expired reset authorization.',
     });
+  });
+
+  it('rejects an unchanged MPIN with a 400 and keeps the grant for a retry', async () => {
+    const { service, store, state } = makeService();
+    store.verify.mockResolvedValue(true);
+    await expect(service.resetMpin(reset)).rejects.toMatchObject({ status: 400 });
+    expect(state.grantValid).toHaveBeenCalledWith(DTO.username, DTO.imeinumber, GRANT);
+    expect(state.resetMpinWithGrant).not.toHaveBeenCalled();
+  });
+
+  it('does not reveal MPIN equality without a live grant', async () => {
+    const { service, store, state } = makeService();
+    state.grantValid.mockResolvedValue(false);
+    state.resetMpinWithGrant.mockResolvedValue(false);
+    store.verify.mockResolvedValue(true);
+    await expect(service.resetMpin(reset)).resolves.toEqual({
+      status: 'error',
+      message: 'Invalid or expired reset authorization.',
+    });
+    expect(store.verify).not.toHaveBeenCalled();
   });
 
   it('rechecks employee eligibility before resetting', async () => {

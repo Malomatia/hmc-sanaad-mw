@@ -61,8 +61,9 @@ export class AllExceptionsFilter implements ExceptionFilter {
     // id, timestamp, path) stays server-side only, in logInternal above.
     const header = req?.headers?.lang;
     const lang = toLang(req?.query?.lang ?? (Array.isArray(header) ? header[0] : header));
-    const message =
-      classified.message === GENERIC_ERROR_MESSAGE.en
+    const message = classified.messages
+      ? classified.messages[lang]
+      : classified.message === GENERIC_ERROR_MESSAGE.en
         ? GENERIC_ERROR_MESSAGE[lang]
         : lang === 'ar' && classified.message === CATEGORY_MESSAGE[classified.category]
           ? CATEGORY_MESSAGE_AR[classified.category]

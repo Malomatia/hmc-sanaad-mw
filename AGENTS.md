@@ -538,7 +538,10 @@ responses as examples.
   USER_NAME = :u` (never unfiltered — that hit the HTTP 408) through the
   repository, not `LovMapper` (it drops `TAG1`), and groups the rows by `TAG1`
   into the five pickers; `value` / `contactId` is the op-67 value (`label` /
-  `name` carry the `*Ar` twins). `ANNUAL_TICKT_LOV` is only the per-user Yes/No
+  `name` carry the `*Ar` twins). Passengers: the `Self` row's `contactId`
+  (PERSON_ID) → `p_employee`; a `Family` row's `value` (English NAME_EN, never
+  localized) → `p_passenger1..4` — TICKET_REQ_PR stores passenger NAMES, not
+  contact ids (the cancel composite shows them as names). `ANNUAL_TICKT_LOV` is only the per-user Yes/No
   eligibility flag (`eligible`), not the form LOV.
 - op 72 `POST /annual-ticket/cancel` takes `analysis_criteria_id` + the user's
   text only; the service re-reads the caller's cancel options (joined on

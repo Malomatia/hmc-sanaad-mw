@@ -344,6 +344,7 @@ export class AnnualTicketService {
           break;
         case 'passengers':
           out.passengers.push({
+            value: text(row.NAME_EN),
             contactId: text(row.CONTACT_ID),
             name: text(row.NAME_EN),
             nameAr: text(row.NAME_AR),

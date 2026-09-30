@@ -120,13 +120,27 @@ export class AnnualTicketPassengerDto {
   @ApiProperty({
     type: String,
     nullable: true,
-    example: '26023',
+    example: 'Caroline Victor Francis Fam',
     description:
-      'CONTACT_ID — the `Self` row (= the PERSON_ID) feeds `p_employee`, `Family` rows feed `p_passenger1..4`.',
+      'NAME_EN verbatim — what a `Family` row sends as `p_passenger1..4` (TICKET_REQ_PR stores passenger names). ' +
+      'Never localized, unlike `name`.',
+  })
+  value!: string | null;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    example: '26023',
+    description: 'CONTACT_ID — the `Self` row (= the PERSON_ID) feeds `p_employee`. Not used for Family rows.',
   })
   contactId!: string | null;
 
-  @ApiProperty({ type: String, nullable: true, example: 'Mr. Amir Sami Samir Ibrahim' })
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    example: 'Mr. Amir Sami Samir Ibrahim',
+    description: 'Display name; Arabic for lang=ar (use `value` for p_passenger1..4).',
+  })
   name!: string | null;
 
   @ApiPropertyOptional({ type: String, nullable: true, description: `NAME_AR. ${AR_TWIN_NOTE}` })
@@ -193,7 +207,7 @@ export class AnnualTicketMasterResponseDto {
 
   @ApiProperty({
     type: [AnnualTicketPassengerDto],
-    description: '`Self` `contactId` → `p_employee`; `Family` `contactId` → `p_passenger1..4`.',
+    description: '`Self` `contactId` → `p_employee`; `Family` `value` (English name) → `p_passenger1..4`.',
   })
   passengers!: AnnualTicketPassengerDto[];
 

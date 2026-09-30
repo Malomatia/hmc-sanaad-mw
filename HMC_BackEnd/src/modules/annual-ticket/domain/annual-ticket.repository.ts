@@ -92,8 +92,14 @@ export interface TicketContractualYear extends TicketOption {
   totalCount: number | null;
 }
 
-/** `passengers[]` — TAG1 `PASSENGER`; `contactId` feeds `p_employee` (Self) / `p_passenger1..4` (Family). */
+/**
+ * `passengers[]` — TAG1 `PASSENGER`. The `Self` row's `contactId` (= PERSON_ID)
+ * feeds `p_employee`; the `Family` rows' `value` (the English NAME_EN, never
+ * localized — TICKET_REQ_PR stores passenger NAMES, not ids) feeds `p_passenger1..4`.
+ */
 export interface TicketPassenger {
+  /** NAME_EN verbatim — what `p_passenger1..4` must carry. Not localized, unlike `name`. */
+  value: string | null;
   contactId: string | null;
   name: string | null;
   nameAr: string | null;

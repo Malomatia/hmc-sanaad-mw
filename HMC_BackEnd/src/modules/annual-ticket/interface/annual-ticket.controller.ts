@@ -45,7 +45,7 @@ export class AnnualTicketController {
       'How each group maps to the POST /annual-ticket/apply body:',
       '- `requestFor[].value` → `p_request_for` (`Self` | `Family` | `Self and Family`)',
       '- `passengers[]` with `type: Self` → `contactId` → `p_employee` (the PERSON_ID)',
-      '- `passengers[]` with `type: Family` → `contactId` → `p_passenger1..4`',
+      '- `passengers[]` with `type: Family` → `value` (the English name, never localized) → `p_passenger1..4`',
       '- `contractualYears[].value` → `p_contractual_year` (e.g. `01-SEP-2025 to 31-AUG-2026`)',
       '- `destinations[].value` → `p_traveling_dest`',
       '- `ticketClasses[].value` → `p_travel_class`',

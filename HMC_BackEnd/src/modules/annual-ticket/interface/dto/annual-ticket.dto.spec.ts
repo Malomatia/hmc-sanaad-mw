@@ -109,7 +109,7 @@ describe('POST /annual-ticket/cancel → CANCEL_TKT_PR binds', () => {
     expect(sql).toContain('XXHMC_SND_CANCEL_TKT_PR');
     expect(binds).toMatchObject({
       p_user_name: 'AIBRAHIM39',
-      p_annual_tkt: COMPOSITE,
+      p_annual_tkt: '71794897',
       p_contractual_year: '01-SEP-2025 to 31-AUG-2026',
       p_reason: 'Travel plans cancelled',
       p_ticket_as: 'Cash',

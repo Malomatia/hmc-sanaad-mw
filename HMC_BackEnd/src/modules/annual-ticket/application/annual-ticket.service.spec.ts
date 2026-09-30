@@ -443,7 +443,7 @@ describe('AnnualTicketService.cancel', () => {
   beforeEach(() => jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined));
   afterEach(() => jest.restoreAllMocks());
 
-  it('resolves every p_* value server-side from the ticket and passes the user text through', async () => {
+  it('resolves every p_* value server-side from the ticket (p_annual_tkt = its id, never the 109-char composite) and passes the user text through', async () => {
     const { service, repo } = makeService();
 
     await expect(
@@ -466,7 +466,7 @@ describe('AnnualTicketService.cancel', () => {
       username: 'AIBRAHIM39',
       lang: 'en',
       fields: {
-        p_annual_tkt: COMPOSITE_2025,
+        p_annual_tkt: '71794897',
         p_contractual_year: '01-SEP-2025 to 31-AUG-2026',
         p_ticket_as: 'Cash',
         p_repayment_method: 'Payroll Deduction',
@@ -489,7 +489,7 @@ describe('AnnualTicketService.cancel', () => {
     );
 
     expect(repo.cancel.mock.calls[0][0].fields).toMatchObject({
-      p_annual_tkt: COMPOSITE_2025,
+      p_annual_tkt: '71794897',
       p_repayment_method: 'Payroll Deduction',
     });
   });
@@ -575,10 +575,11 @@ describe('AnnualTicketService.cancel', () => {
     );
 
     expect(repo.cancel.mock.calls[0][0].fields).toMatchObject({
-      p_annual_tkt: COMPOSITE_2025,
+      p_annual_tkt: '71794897',
       p_contractual_year: '01-SEP-2025 to 31-AUG-2026',
       p_ticket_as: 'Cash',
     });
     expect(repo.cancel.mock.calls[0][0].fields).not.toHaveProperty('analysis_criteria_id');
+    expect(repo.cancel.mock.calls[0][0].fields.p_annual_tkt).not.toBe(COMPOSITE_2025);
   });
 });

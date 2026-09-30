@@ -367,7 +367,8 @@ export class TicketCancelOptionsResponseDto {
  * The client sends only the ticket id (`tickets[].analysisCriteriaId` from
  * GET /annual-ticket/cancel-options) and its own text. The server looks the
  * ticket up again in the caller's cancel options and fills `p_annual_tkt`
- * (the composite, verbatim), `p_contractual_year` and `p_ticket_as` itself.
+ * (the ANALYSIS_CRITERIA_ID — the procedure's segment1 is VARCHAR2(60) and the
+ * composite reaches 109 chars), `p_contractual_year` and `p_ticket_as` itself.
  *
  * `p_annual_tkt`, `p_contractual_year` and `p_ticket_as` are deliberately NOT
  * accepted any more (400 "should not exist"): the pipe-separated composite

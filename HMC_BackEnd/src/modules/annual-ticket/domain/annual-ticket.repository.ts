@@ -36,7 +36,7 @@ export interface TicketOption {
  */
 export interface TicketCancellable {
   analysisCriteriaId: string;
-  /** ANNUAL_LEAVE_PASS_TKT_VALUE verbatim (becomes `p_annual_tkt`). */
+  /** ANNUAL_LEAVE_PASS_TKT_VALUE verbatim — display text; `p_annual_tkt` carries `analysisCriteriaId`. */
   value: string;
   requestFor: string | null;
   employeeName: string | null;

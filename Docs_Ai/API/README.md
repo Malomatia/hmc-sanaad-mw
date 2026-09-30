@@ -213,8 +213,11 @@ fields.
 
 Required `analysis_criteria_id` (digits) and `p_reason`; optional `p_comments`,
 `p_voucher_ref`, `p_repayment_method`, attachments. The backend re-reads the
-caller's cancel options and fills `p_annual_tkt` (composite verbatim),
-`p_contractual_year` (segment 6), `p_ticket_as` (the ticket's taken-as) and
+caller's cancel options and fills `p_annual_tkt` (the ticket's
+ANALYSIS_CRITERIA_ID — the procedure's segment1 is VARCHAR2(60) while the
+composite reaches 109 chars; CANCEL_TKT_PR is being changed by the Oracle team
+to resolve the ticket by id), `p_contractual_year` (segment 6), `p_ticket_as`
+(the ticket's taken-as) and
 `p_repayment_method` (the given one if it is one of the ticket's, else the
 ticket's only one). **404** when the id is not one of the caller's tickets;
 **400** when the ticket has several methods and none is given, or the given one

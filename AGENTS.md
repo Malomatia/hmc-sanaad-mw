@@ -546,6 +546,12 @@ responses as examples.
   `p_ticket_as` / `p_repayment_method` itself. The pipe composite must not come
   from the client again: the staging F5 WAF blocked the response of every
   request carrying it, and server-side resolution pins the Cash/Voucher pairing.
+  `p_annual_tkt` is the ticket's **ANALYSIS_CRITERIA_ID, not the composite**:
+  `CANCEL_TKT_PR` copies it into `lc_segment1 VARCHAR2(60)` (source line 192)
+  and the composite reaches 109 chars (person 26023) → ORA-06502 on every
+  cancel; the WAF then blocked that error response on staging. Agreed with the
+  Oracle team 2026-09-30 — they change the procedure to resolve by id; until
+  that is deployed Oracle answers "no data found".
 - `UPD_ADDRESS_PR`: `p_country` takes the country NAME (`Qatar`; `QA` →
   "Invalid Country"), `p_address_type` must equal the target address's own
   type, and repeating an update on the same `p_effective_date` fails

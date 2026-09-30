@@ -151,11 +151,18 @@ export class AnnualTicketService {
    * op 72 — submit the cancellation (CANCEL_TKT_PR). The client names the
    * ticket by `analysis_criteria_id` only; the ticket is looked up again in
    * the caller's own cancel options (404 when it is not there) and every
-   * list value is taken from it: `p_annual_tkt` = the composite verbatim,
+   * list value is taken from it: `p_annual_tkt` = its ANALYSIS_CRITERIA_ID,
    * `p_contractual_year` = its segment 6, `p_ticket_as` = its taken-as and
    * `p_repayment_method` = one of its own methods. The composite never
    * round-trips through the client (the staging WAF blocked it) and a
    * Cash/Voucher ↔ repayment mismatch cannot be submitted.
+   *
+   * `p_annual_tkt` carries the ID, not the composite ANNUAL_LEAVE_PASS_TKT_VALUE:
+   * the procedure copies it into `lc_segment1 VARCHAR2(60)` (line 192) and the
+   * composite reaches 109 characters (person 26023), which raised ORA-06502
+   * on every cancel. Agreed with the Oracle team 2026-09-30: CANCEL_TKT_PR is
+   * being changed to resolve the ticket by ANALYSIS_CRITERIA_ID; until that
+   * version is deployed the procedure answers "no data found".
    */
   async cancel(body: TicketCancelInput, user: AuthenticatedUser, lang: Lang): Promise<SubmitResult> {
     const { analysis_criteria_id, p_repayment_method, ...userFields } = body;
@@ -168,7 +175,7 @@ export class AnnualTicketService {
       lang,
       fields: {
         ...userFields,
-        p_annual_tkt: ticket.value,
+        p_annual_tkt: ticket.analysisCriteriaId,
         p_contractual_year: ticket.contractualYear,
         p_ticket_as: ticket.takenAs,
         p_repayment_method: AnnualTicketService.repaymentMethodFor(ticket, p_repayment_method),

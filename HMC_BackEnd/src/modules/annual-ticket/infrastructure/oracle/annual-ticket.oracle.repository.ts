@@ -36,7 +36,10 @@ const TICKET_REQ_PARAMS = [
  * `HMC_HR_ANNUAL_PASSAGE_CANCEL` flexfield: `p_annual_tkt` → segment1,
  * `p_reason` → segment2, `p_ticket_as` → segment3, `p_repayment_method` →
  * segment4, `p_comments` → segment5, `p_voucher_ref` → segment7,
- * `p_contractual_year` → segment10.
+ * `p_contractual_year` → segment10. `lc_segment1` is VARCHAR2(60) (source
+ * line 62/192), so `p_annual_tkt` carries the ticket's ANALYSIS_CRITERIA_ID,
+ * not the 109-char ANNUAL_LEAVE_PASS_TKT_VALUE (ORA-06502); agreed with the
+ * Oracle team 2026-09-30, who are changing the procedure to resolve by id.
  */
 const TICKET_CANCEL_PARAMS = [
   'p_user_name',

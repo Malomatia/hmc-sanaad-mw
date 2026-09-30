@@ -93,12 +93,15 @@ export interface TicketContractualYear extends TicketOption {
 }
 
 /**
- * `passengers[]` — TAG1 `PASSENGER`. The `Self` row's `contactId` (= PERSON_ID)
- * feeds `p_employee`; the `Family` rows' `value` (the English NAME_EN, never
- * localized — TICKET_REQ_PR stores passenger NAMES, not ids) feeds `p_passenger1..4`.
+ * `passengers[]` — TAG1 `PASSENGER`. `value` (= `contactId`) is what Oracle
+ * expects: the `Self` row's PERSON_ID feeds `p_employee`, the `Family` rows'
+ * CONTACT_ID feed `p_passenger1..4`. TICKET_REQ_PR stores the parameters
+ * verbatim into segments validated by id-column value sets (person_id /
+ * contact_id) — its name→id lookups are commented out (source 197-306), so a
+ * NAME is rejected (ORA-01722).
  */
 export interface TicketPassenger {
-  /** NAME_EN verbatim — what `p_passenger1..4` must carry. Not localized, unlike `name`. */
+  /** CONTACT_ID (Self: = PERSON_ID) — what `p_employee` / `p_passenger1..4` carry. Never localized. */
   value: string | null;
   contactId: string | null;
   name: string | null;

@@ -120,10 +120,10 @@ export class AnnualTicketPassengerDto {
   @ApiProperty({
     type: String,
     nullable: true,
-    example: 'Caroline Victor Francis Fam',
+    example: '26023',
     description:
-      'NAME_EN verbatim — what a `Family` row sends as `p_passenger1..4` (TICKET_REQ_PR stores passenger names). ' +
-      'Never localized, unlike `name`.',
+      'What Oracle expects (= CONTACT_ID): the `Self` row (= PERSON_ID) → `p_employee`, `Family` rows → `p_passenger1..4`. ' +
+      'TICKET_REQ_PR validates these against id value sets (person_id / contact_id); a name is rejected (ORA-01722). Never localized.',
   })
   value!: string | null;
 
@@ -131,7 +131,7 @@ export class AnnualTicketPassengerDto {
     type: String,
     nullable: true,
     example: '26023',
-    description: 'CONTACT_ID — the `Self` row (= the PERSON_ID) feeds `p_employee`. Not used for Family rows.',
+    description: 'CONTACT_ID (same as `value`; kept for clarity).',
   })
   contactId!: string | null;
 
@@ -139,7 +139,7 @@ export class AnnualTicketPassengerDto {
     type: String,
     nullable: true,
     example: 'Mr. Amir Sami Samir Ibrahim',
-    description: 'Display name; Arabic for lang=ar (use `value` for p_passenger1..4).',
+    description: 'Display name only; Arabic for lang=ar. Never send it to Oracle.',
   })
   name!: string | null;
 
@@ -207,7 +207,7 @@ export class AnnualTicketMasterResponseDto {
 
   @ApiProperty({
     type: [AnnualTicketPassengerDto],
-    description: '`Self` `contactId` → `p_employee`; `Family` `value` (English name) → `p_passenger1..4`.',
+    description: '`Self` `value` (= PERSON_ID) → `p_employee`; `Family` `value` (= CONTACT_ID) → `p_passenger1..4`.',
   })
   passengers!: AnnualTicketPassengerDto[];
 

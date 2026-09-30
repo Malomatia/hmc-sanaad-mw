@@ -146,7 +146,7 @@ to the `/annual-ticket/apply` body:
 | Array | TAG1 | Item fields | → apply field |
 |---|---|---|---|
 | `requestFor` | `REQUEST FOR` | `value`/`label` = `NAME_EN`, `labelAr` = `NAME_AR` | `value` → `p_request_for` (`Self` / `Family` / `Self and Family`) |
-| `passengers` | `PASSENGER` | `value` = `NAME_EN` (never localized), `contactId` = `CONTACT_ID`, `name`/`nameAr`, `type` (`Self`/`Family`), `contactType` (`EMP`/`S`/`C`), `currentEmployee`, `dateOfBirth` (`YYYY-MM-DD`), `sex`; `Self` first | `Self` `contactId` (= PERSON_ID) → `p_employee`; `Family` `value` (the English name — TICKET_REQ_PR stores passenger names, not ids) → `p_passenger1..4` |
+| `passengers` | `PASSENGER` | `value` = `contactId` = `CONTACT_ID` (never localized), `name`/`nameAr` (display only), `type` (`Self`/`Family`), `contactType` (`EMP`/`S`/`C`), `currentEmployee`, `dateOfBirth` (`YYYY-MM-DD`), `sex`; `Self` first | `Self` `value` (= PERSON_ID) → `p_employee`; `Family` `value` (= CONTACT_ID) → `p_passenger1..4`. Ids, never names: TICKET_REQ_PR stores the parameters verbatim (source 307-312, its name→id lookups 197-306 are commented out) into segments validated by person_id / contact_id value sets, so a name raises ORA-01722 |
 | `contractualYears` | `CONTRACTUAL YEAR` | `value` = `CONTRACT_YEAR`, `label` = `CONTRACT_YEAR_DEF` (fallback `NAME_EN`), `labelAr` = `CONTRACT_YEAR_DEF_AR`, `fromYear`, `toYear`, `law`, `totalCount` | `value` → `p_contractual_year` |
 | `destinations` | `DESTINATION` | `value`/`label` = `NAME_EN`, `labelAr` = `NAME_AR` | `value` → `p_traveling_dest` |
 | `ticketClasses` | `TICKET CLASS` | `value`/`label` = `NAME_EN`, `labelAr` = `NAME_AR` | `value` → `p_travel_class` |
@@ -168,7 +168,7 @@ answers **403**.
   "eligible": "Yes",
   "contractualYears": [{ "value": "01-SEP-2025 to 31-AUG-2026", "label": "01-SEP-2025 to 31-AUG-2026", "fromYear": 2025, "toYear": 2026, "law": "HMC LAW", "totalCount": 18 }],
   "destinations": [{ "value": "Cairo", "label": "Cairo" }],
-  "passengers": [{ "value": "Mr. Amir Sami Samir Ibrahim", "contactId": "26023", "name": "Mr. Amir Sami Samir Ibrahim", "type": "Self", "contactType": "EMP", "currentEmployee": "Y", "dateOfBirth": "1984-05-15", "sex": "M" }],
+  "passengers": [{ "value": "26023", "contactId": "26023", "name": "Mr. Amir Sami Samir Ibrahim", "type": "Self", "contactType": "EMP", "currentEmployee": "Y", "dateOfBirth": "1984-05-15", "sex": "M" }],
   "requestFor": [{ "value": "Self", "label": "Self" }],
   "ticketClasses": [{ "value": "Economy", "label": "Economy" }],
   "requestType": "Annual Ticket",

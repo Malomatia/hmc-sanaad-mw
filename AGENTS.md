@@ -538,10 +538,13 @@ responses as examples.
   USER_NAME = :u` (never unfiltered — that hit the HTTP 408) through the
   repository, not `LovMapper` (it drops `TAG1`), and groups the rows by `TAG1`
   into the five pickers; `value` / `contactId` is the op-67 value (`label` /
-  `name` carry the `*Ar` twins). Passengers: the `Self` row's `contactId`
-  (PERSON_ID) → `p_employee`; a `Family` row's `value` (English NAME_EN, never
-  localized) → `p_passenger1..4` — TICKET_REQ_PR stores passenger NAMES, not
-  contact ids (the cancel composite shows them as names). `ANNUAL_TICKT_LOV` is only the per-user Yes/No
+  `name` carry the `*Ar` twins). Passengers: `value` = `contactId` — the `Self`
+  row's PERSON_ID → `p_employee`, a `Family` row's CONTACT_ID → `p_passenger1..4`.
+  **Ids, never names** (verified in the EBSDEV source 2026-09-30): TICKET_REQ_PR
+  assigns the parameters verbatim to the SIT segments (lines 307-312; its
+  name→id lookups at 197-306 are commented out) and `fnd_flex_plsql.VALIDATE`
+  checks them against value sets whose id column is person_id / contact_id, so
+  a name raises ORA-01722. Existing tickets store `26023 | 42465 | 329302 | ...`. `ANNUAL_TICKT_LOV` is only the per-user Yes/No
   eligibility flag (`eligible`), not the form LOV.
 - op 72 `POST /annual-ticket/cancel` takes `analysis_criteria_id` + the user's
   text only; the service re-reads the caller's cancel options (joined on

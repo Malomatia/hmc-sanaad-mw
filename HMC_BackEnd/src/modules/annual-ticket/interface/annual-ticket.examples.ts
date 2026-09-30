@@ -41,7 +41,7 @@ export const ANNUAL_TICKET_MASTER_EXAMPLE = {
     ['329302', 'Jerome Amir Sami Samir Ibrahim', 'Family', 'C', null, null, 'M'],
     ['329303', 'Jolie Amir Sami Samir Ibrahim', 'Family', 'C', null, null, 'F'],
   ].map(([contactId, name, type, contactType, currentEmployee, dateOfBirth, sex]) => ({
-    value: name,
+    value: contactId,
     contactId,
     name,
     type,
@@ -117,12 +117,13 @@ export const ANNUAL_TICKET_APPLY_BODY = {
         nullable: true,
         example: null,
         description:
-          'Passenger NAME (GET /annual-ticket/master → passengers[type=Family].value, the English NAME_EN), ' +
-          'e.g. "Caroline Victor Francis Fam" — not the CONTACT_ID. Null when p_request_for is Self.',
+          'Passenger CONTACT_ID (GET /annual-ticket/master → passengers[type=Family].value), e.g. "42465" — ' +
+          'NOT the name: TICKET_REQ_PR validates it against a contact_id value set (a name raises ORA-01722). ' +
+          'Null when p_request_for is Self.',
       },
-      p_passenger2: { type: 'string', nullable: true, example: null, description: 'Passenger name, as p_passenger1.' },
-      p_passenger3: { type: 'string', nullable: true, example: null, description: 'Passenger name, as p_passenger1.' },
-      p_passenger4: { type: 'string', nullable: true, example: null, description: 'Passenger name, as p_passenger1.' },
+      p_passenger2: { type: 'string', nullable: true, example: null, description: 'Passenger CONTACT_ID, as p_passenger1.' },
+      p_passenger3: { type: 'string', nullable: true, example: null, description: 'Passenger CONTACT_ID, as p_passenger1.' },
+      p_passenger4: { type: 'string', nullable: true, example: null, description: 'Passenger CONTACT_ID, as p_passenger1.' },
       p_request_type: { type: 'string', example: 'Annual Ticket' },
       p_contractual_year: { type: 'string', example: '01-SEP-2025 to 31-AUG-2026' },
       p_traveling_dest: { type: 'string', example: 'Doha' },

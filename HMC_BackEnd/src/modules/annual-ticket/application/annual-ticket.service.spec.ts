@@ -148,7 +148,7 @@ describe('AnnualTicketService.master', () => {
       destinations: [{ value: 'Cairo', label: 'Cairo', labelAr: 'القاهرة' }],
       passengers: [
         {
-          value: 'Mr. Amir Sami Samir Ibrahim',
+          value: '26023',
           contactId: '26023',
           name: 'Mr. Amir Sami Samir Ibrahim',
           nameAr: 'امير',
@@ -159,7 +159,7 @@ describe('AnnualTicketService.master', () => {
           sex: 'M',
         },
         {
-          value: 'Caroline Victor Francis Fam',
+          value: '42465',
           contactId: '42465',
           name: 'Caroline Victor Francis Fam',
           nameAr: 'كارولين',
@@ -169,8 +169,8 @@ describe('AnnualTicketService.master', () => {
           dateOfBirth: null,
           sex: 'F',
         },
-        expect.objectContaining({ value: 'Jerome Amir Sami Samir Ibrahim', contactId: '329302', type: 'Family', contactType: 'C' }),
-        expect.objectContaining({ value: 'Jolie Amir Sami Samir Ibrahim', contactId: '329303', type: 'Family', contactType: 'C' }),
+        expect.objectContaining({ value: '329302', contactId: '329302', type: 'Family', contactType: 'C' }),
+        expect.objectContaining({ value: '329303', contactId: '329303', type: 'Family', contactType: 'C' }),
       ],
       requestFor: [
         { value: 'Family', label: 'Family', labelAr: 'العائلة' },

@@ -114,6 +114,14 @@ export interface AuthConfig {
   functionAccessView: string;
   /** AppID filter of the documented AppMaster query (Sanaad = 1). */
   functionAccessAppId: number;
+  /**
+   * /auth/initiate device block: after this many invalid-username attempts from
+   * one device, that device is blocked from the endpoint for
+   * `invalidUsernameBlockMinutes`. 0 disables the block.
+   */
+  invalidUsernameMaxAttempts: number;
+  /** Minutes a device stays blocked after hitting `invalidUsernameMaxAttempts`. */
+  invalidUsernameBlockMinutes: number;
 }
 
 export interface CernerConfig {
@@ -727,6 +735,8 @@ export default (): RootConfig => ({
     staticLogin: toBool(process.env.AUTH_STATIC_LOGIN),
     functionAccessView: process.env.FUNCTION_ACCESS_VIEW ?? 'HMC_Sanad_AppMaster_VW',
     functionAccessAppId: Number(process.env.FUNCTION_ACCESS_APP_ID ?? 1),
+    invalidUsernameMaxAttempts: Number(process.env.INITIATE_INVALID_USERNAME_MAX_ATTEMPTS ?? 0),
+    invalidUsernameBlockMinutes: Number(process.env.INITIATE_INVALID_USERNAME_BLOCK_MINUTES ?? 15),
   },
   cerner: {
     baseUrl: process.env.CERNER_BASE_URL ?? '',

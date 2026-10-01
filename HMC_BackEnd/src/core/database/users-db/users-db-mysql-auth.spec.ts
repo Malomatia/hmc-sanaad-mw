@@ -108,6 +108,47 @@ describe('AuthStateService on MySQL', () => {
     });
   });
 
+  it('grantValid() is one read-only SELECT on MySQL', async () => {
+    const { db, calls, transactions } = scriptedMysql(() => ({ rows: [{ Live: 1 }] }));
+    await expect(
+      new AuthStateService(db, config).grantValid('user', 'device', GRANT),
+    ).resolves.toBe(true);
+    expect(transactions()).toBe(0);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].sql).toMatch(/UsedAt IS NULL AND ExpiresAt > NOW\(\)/);
+    expect(calls[0].sql).not.toMatch(/\bUPDATE\b|\bINSERT\b/);
+    expectRunnableOnMysql(calls);
+  });
+
+  describe('assertUnderLimit()', () => {
+    it('peeks the bucket read-only and resolves under the cap', async () => {
+      const { db, calls } = scriptedMysql(() => ({ rows: [{ Attempts: 1, RetryAfterSeconds: 0 }] }));
+      await expect(
+        new AuthStateService(db, config).assertUnderLimit(
+          'initiate-invalid-username',
+          'device-1',
+          5,
+        ),
+      ).resolves.toBeUndefined();
+
+      expect(calls).toHaveLength(1);
+      expect(calls[0].sql).toMatch(/COUNT\(\*\) AS Attempts[\s\S]*ExpiresAt > NOW\(\)/);
+      expect(calls[0].sql).not.toMatch(/INSERT/i);
+      expectRunnableOnMysql(calls);
+    });
+
+    it('refuses with 429 and the retry time at the cap', async () => {
+      const { db } = scriptedMysql(() => ({ rows: [{ Attempts: 5, RetryAfterSeconds: 120 }] }));
+      const failure = await new AuthStateService(db, config)
+        .assertUnderLimit('initiate-invalid-username', 'device-1', 5)
+        .catch((e: unknown) => e);
+
+      expect(failure).toBeInstanceOf(HttpException);
+      expect((failure as HttpException).getStatus()).toBe(429);
+      expect((failure as HttpException).getResponse()).toMatchObject({ retryAfterSeconds: 120 });
+    });
+  });
+
   it('issues an enrollment grant with one INSERT', async () => {
     const { db, calls, transactions } = scriptedMysql();
     await new AuthStateService(db, config).issueEnrollment('user', 'device');

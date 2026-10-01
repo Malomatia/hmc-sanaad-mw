@@ -77,7 +77,7 @@ export const API_LOG_VIEW_HTML = `<!doctype html>
     <select id="f-errorCategory">
       <option value="">category: all</option>
       <option>VALIDATION_ERROR</option><option>AUTHENTICATION_ERROR</option><option>AUTHORIZATION_ERROR</option>
-      <option>NOT_FOUND</option><option>BUSINESS_RULE_ERROR</option><option>DATABASE_ERROR</option>
+      <option>NOT_FOUND</option><option>BUSINESS_RULE_ERROR</option><option>TOO_MANY_ATTEMPTS</option><option>DATABASE_ERROR</option>
       <option>EXTERNAL_SERVICE_ERROR</option><option>TIMEOUT</option><option>APPLICATION_ERROR</option><option>UNKNOWN_ERROR</option>
     </select>
     <input id="f-minDurationMs" placeholder="min ms" style="width:90px"/>

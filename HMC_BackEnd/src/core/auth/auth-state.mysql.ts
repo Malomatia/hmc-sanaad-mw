@@ -110,6 +110,22 @@ export const mysqlAuthState = {
     });
   },
 
+  peekLimit(
+    db: UsersDbService,
+    params: { username: string; bucketTokenPrefix: string },
+  ): Promise<{ Attempts: number; RetryAfterSeconds: number }[]> {
+    return db.query<{ Attempts: number; RetryAfterSeconds: number }>(
+      `SELECT COUNT(*) AS Attempts,
+              IFNULL(TIMESTAMPDIFF(SECOND, NOW(), MIN(ExpiresAt)), 0) AS RetryAfterSeconds
+         FROM ${CHALLENGES}
+        WHERE LoginID = @username
+          AND Challenge LIKE @bucketTokenPrefix ESCAPE '~'
+          AND CAST(Challenge AS BINARY) LIKE @bucketTokenPrefix ESCAPE '~'
+          AND ExpiresAt > NOW()`,
+      params,
+    );
+  },
+
   async issueEnrollment(
     db: UsersDbService,
     params: { grantTokenKey: string; username: string; ttl: number },
@@ -165,6 +181,18 @@ export const mysqlAuthState = {
       await tx.execute(REVOKE_AUTH_NONCES, params);
       return [{ Updated: 1 }];
     });
+  },
+
+  grantValid(
+    db: UsersDbService,
+    params: { grantTokenKey: string; username: string },
+  ): Promise<{ Live: number }[]> {
+    return db.query<{ Live: number }>(
+      `SELECT 1 AS Live FROM ${CHALLENGES}
+        WHERE ${exact('Challenge', '@grantTokenKey')} AND LoginID = @username
+          AND UsedAt IS NULL AND ExpiresAt > NOW()`,
+      params,
+    );
   },
 
   createSession(

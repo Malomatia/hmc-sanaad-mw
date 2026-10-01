@@ -245,6 +245,45 @@ describe('Existing-table shared authentication state', () => {
     assertSupportedSql(db);
   });
 
+  it('grantValid checks the same grant key read-only, without spending it', async () => {
+    const { state, db } = makeState();
+    const token = await state.issueEnrollment('testuser', 'device');
+    const key = db.execute.mock.calls[0][1]!.grantTokenKey;
+    db.query.mockResolvedValueOnce([{ Live: 1 }]);
+    await expect(state.grantValid('TESTUSER', 'device', token)).resolves.toBe(true);
+    const [sql, params] = db.query.mock.calls[0];
+    expect(params).toMatchObject({ grantTokenKey: key, username: 'TESTUSER' });
+    expect(sql).toContain('UsedAt IS NULL AND ExpiresAt > GETDATE()');
+    expect(sql).not.toMatch(/\bUPDATE\b|\bINSERT\b/);
+    db.query.mockResolvedValueOnce([]);
+    await expect(state.grantValid('testuser', 'device', token)).resolves.toBe(false);
+    await expect(state.grantValid('testuser', 'device', 'short')).resolves.toBe(false);
+    expect(db.query).toHaveBeenCalledTimes(2);
+    assertSupportedSql(db);
+  });
+
+  it('assertUnderLimit peeks the shared bucket read-only and blocks at the cap', async () => {
+    const { state, db } = makeState();
+    db.query.mockResolvedValueOnce([{ Attempts: 2, RetryAfterSeconds: 0 }]);
+    await expect(
+      state.assertUnderLimit('initiate-invalid-username', 'device-1', 5),
+    ).resolves.toBeUndefined();
+    expect(db.execute).not.toHaveBeenCalled();
+    const peekSql = db.query.mock.calls[0][0];
+    expect(peekSql).toContain('COUNT(*) AS Attempts');
+    expect(peekSql).not.toContain('INSERT');
+    // Same bucket scheme as limit(): identical prefix for the same scope+key.
+    await state.limit('initiate-invalid-username', 'device-1', 5, 900);
+    expect(db.query.mock.calls[0][1]!.bucketTokenPrefix).toBe(
+      db.query.mock.calls[1][1]!.bucketTokenPrefix,
+    );
+    db.query.mockResolvedValueOnce([{ Attempts: 5, RetryAfterSeconds: 300 }]);
+    await expect(
+      state.assertUnderLimit('initiate-invalid-username', 'device-1', 5),
+    ).rejects.toMatchObject({ status: 429 });
+    assertSupportedSql(db);
+  });
+
   it('fails closed on an unavailable existing store', async () => {
     const { state, db } = makeState();
     db.query.mockRejectedValue(new Error('Unavailable'));

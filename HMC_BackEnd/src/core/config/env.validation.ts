@@ -118,6 +118,9 @@ export const envValidationSchema = Joi.object({
   // TESTING ONLY: static /auth/login payload with full user data embedded in
   // the JWT (`userdata` claim). Never enable in production.
   AUTH_STATIC_LOGIN: Joi.boolean().when('NODE_ENV', { is: 'production', then: Joi.valid(false) }).default(false),
+  // /auth/initiate device block on repeated invalid usernames. 0 disables.
+  INITIATE_INVALID_USERNAME_MAX_ATTEMPTS: Joi.number().integer().min(0).max(50).default(0),
+  INITIATE_INVALID_USERNAME_BLOCK_MINUTES: Joi.number().integer().min(1).default(15),
 
   // Cerner
   CERNER_BASE_URL: Joi.string().uri().allow('').default(''),

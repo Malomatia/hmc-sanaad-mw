@@ -1,3 +1,4 @@
+import { HttpException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AuthStateService } from '@core/auth/auth-state.service';
 import { AuditService } from '@core/audit/audit.service';
@@ -59,6 +60,7 @@ function makeService(
   const audit = { lifecycle: jest.fn() } as unknown as AuditService;
   const state = {
     limit: jest.fn().mockResolvedValue(undefined),
+    assertUnderLimit: jest.fn().mockResolvedValue(undefined),
     issueEnrollment: jest.fn().mockResolvedValue(GRANT),
   } as unknown as jest.Mocked<AuthStateService>;
   const config = {
@@ -89,7 +91,6 @@ const INITIATE_EXTRA = {
   new: { ...CONTACT, newuser: 'Yes', vflag: 'New', otpmode: 'SMS', elapsedtimeinmins: 5 },
   pending: { ...CONTACT, newuser: 'Yes', vflag: 'Pending', otpmode: 'Email', elapsedtimeinmins: 2 },
   existing: { ...CONTACT, newuser: 'No', vflag: 'Exist' },
-  unknown: {},
 };
 
 describe('Onboarding security boundaries', () => {
@@ -125,20 +126,35 @@ describe('Onboarding security boundaries', () => {
           validForSeconds: 120,
         });
       const result = await service.validateUser(DTO);
-      expect(result).toEqual({
-        status: 'success',
-        message: GENERIC,
-        requestid: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/),
-        ...INITIATE_EXTRA[kind],
-      });
-      for (const key of PII_FIELDS) expect(result).not.toHaveProperty(key);
       if (kind === 'unknown') {
-        for (const key of Object.keys(INITIATE_EXTRA.new)) expect(result).not.toHaveProperty(key);
-        expect(devices.bind).not.toHaveBeenCalled();
+        expect(result).toEqual({ status: 'error', message: 'Invalid Username.' });
+      } else {
+        expect(result).toEqual({
+          status: 'success',
+          message: GENERIC,
+          requestid: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/),
+          ...INITIATE_EXTRA[kind],
+        });
       }
+      for (const key of PII_FIELDS) expect(result).not.toHaveProperty(key);
+      if (kind === 'unknown') expect(devices.bind).not.toHaveBeenCalled();
       if (kind === 'existing' || kind === 'unknown') expect(otp.send).not.toHaveBeenCalled();
     },
   );
+
+  it('returns the invalid-username error (localized) for an unknown username, without OTP', async () => {
+    const { service, ldap, otp, devices } = makeService({ identity: { isEmployee: false } });
+
+    const en = await service.validateUser({ ...DTO, username: 'GHOST99' });
+    expect(ldap.validate).toHaveBeenCalled();
+    expect(en).toEqual({ status: 'error', message: 'Invalid Username.' });
+    expect(otp.send).not.toHaveBeenCalled();
+    expect(devices.bind).not.toHaveBeenCalled();
+    for (const key of PII_FIELDS) expect(en).not.toHaveProperty(key);
+
+    const ar = await service.validateUser({ ...DTO, username: 'GHOST99' }, 'ar');
+    expect(ar).toEqual({ status: 'error', message: 'اسم المستخدم غير صحيح.' });
+  });
 
   it('returns only the masked contact on initiate, and none of it on send-otp', async () => {
     const { service } = makeService();
@@ -197,6 +213,51 @@ describe('Onboarding security boundaries', () => {
   });
 });
 
+describe('Invalid-username device block', () => {
+  const SCOPE = 'initiate-invalid-username';
+  // 3 attempts, 15-minute block (900s).
+  const ON = { 'auth.invalidUsernameMaxAttempts': 3, 'auth.invalidUsernameBlockMinutes': 15 };
+
+  it('counts an invalid username against the device and peeks the cap up front', async () => {
+    const { service, state } = makeService({ identity: { isEmployee: false }, config: ON });
+    await service.validateUser(DTO);
+    expect(state.assertUnderLimit).toHaveBeenCalledWith(SCOPE, DTO.imeinumber, 3);
+    expect(state.limit).toHaveBeenCalledWith(SCOPE, DTO.imeinumber, 3, 900);
+  });
+
+  it('keys the block on constantId when present (not the device id)', async () => {
+    const { service, state } = makeService({ identity: { isEmployee: false }, config: ON });
+    await service.validateUser({ ...DTO, constantId: 'CONST-1' });
+    expect(state.assertUnderLimit).toHaveBeenCalledWith(SCOPE, 'CONST-1', 3);
+    expect(state.limit).toHaveBeenCalledWith(SCOPE, 'CONST-1', 3, 900);
+  });
+
+  it('rejects a blocked device before any directory or OTP work', async () => {
+    const { service, state, ldap, otp } = makeService({ config: ON });
+    state.assertUnderLimit.mockRejectedValue(
+      new HttpException({ message: 'Too many attempts.Please try again later or contact support.' }, 429),
+    );
+    await expect(service.validateUser(DTO)).rejects.toMatchObject({ status: 429 });
+    expect(ldap.validate).not.toHaveBeenCalled();
+    expect(otp.send).not.toHaveBeenCalled();
+    expect(state.limit).not.toHaveBeenCalled();
+  });
+
+  it('does not count or peek for a valid username', async () => {
+    const { service, state } = makeService({ config: ON });
+    await service.validateUser(DTO);
+    expect(state.assertUnderLimit).toHaveBeenCalledWith(SCOPE, DTO.imeinumber, 3);
+    expect(state.limit).not.toHaveBeenCalledWith(SCOPE, DTO.imeinumber, 3, 900);
+  });
+
+  it('is disabled by default (max attempts 0): no peek, no count', async () => {
+    const { service, state } = makeService({ identity: { isEmployee: false } });
+    await service.validateUser(DTO);
+    expect(state.assertUnderLimit).not.toHaveBeenCalled();
+    expect(state.limit).not.toHaveBeenCalledWith(SCOPE, DTO.imeinumber, 3, 900);
+  });
+});
+
 describe.each(['validateUser', 'sendOtp'] as const)(
   'OnboardingService.%s language and testing options',
   (method) => {
@@ -211,12 +272,18 @@ describe.each(['validateUser', 'sendOtp'] as const)(
       },
     );
 
-    it('uses the same Arabic message for eligible and unknown users', async () => {
+    it('reveals the invalid-username error on initiate but stays generic on send-otp (ar)', async () => {
       const valid = makeService();
       const unknown = makeService({ identity: { isEmployee: false } });
-      expect((await valid.service[method](DTO, 'ar')).message).toBe(
-        (await unknown.service[method](DTO, 'ar')).message,
-      );
+      const validMsg = (await valid.service[method](DTO, 'ar')).message;
+      const unknownMsg = (await unknown.service[method](DTO, 'ar')).message;
+      if (method === 'sendOtp') {
+        // send-otp never enumerates: unknown looks exactly like eligible.
+        expect(unknownMsg).toBe(validMsg);
+      } else {
+        expect(unknownMsg).toBe('اسم المستخدم غير صحيح.');
+        expect(unknownMsg).not.toBe(validMsg);
+      }
     });
 
     it.each([undefined, false, 'true'])(
@@ -291,6 +358,9 @@ describe('Enrollment authorization', () => {
     await expect(
       service.validateOtp({ ...DTO, requestid: REQUEST_ID, otp: 'wrong' }),
     ).resolves.toEqual({ status: 'error', message: 'Invalid OTP' });
+    await expect(
+      service.validateOtp({ ...DTO, requestid: REQUEST_ID, otp: 'wrong' }, 'ar'),
+    ).resolves.toEqual({ status: 'error', message: 'رمز التحقق غير صحيح' });
     expect(state.issueEnrollment).not.toHaveBeenCalled();
   });
 

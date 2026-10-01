@@ -7,6 +7,7 @@ import { OracleLogStore } from '../database/oracle-log.store';
 import { OracleService } from '../database/oracle.service';
 import { DiagnosticsEnabledGuard } from './diagnostics-enabled.guard';
 import { AllExceptionsFilter } from './all-exceptions.filter';
+import { LocalizedHttpException } from './localized-http.exception';
 
 const TOKEN = 'local-test-console-token-with-32-bytes';
 const context = (headers: Record<string, string> = {}, query = {}) =>
@@ -76,26 +77,61 @@ describe('Hardened configuration and throttling', () => {
     expect(() => service.setWriteMode(true)).toThrow('disabled by server policy');
     expect(service.settings().allowWrite).toBe(false);
   });
-  it('preserves a bounded Retry-After header with the normal error envelope', () => {
+  it.each([
+    [undefined, 'Used before.'],
+    ['en', 'Used before.'],
+    ['ar', 'مستخدمة من قبل.'],
+  ])('answers a LocalizedHttpException in the request language (lang=%s)', (lang, message) => {
     const res = { setHeader: jest.fn(), status: jest.fn().mockReturnThis(), json: jest.fn() };
     const host = {
       switchToHttp: () => ({
-        getRequest: () => ({ method: 'POST', url: '/auth/login' }),
+        getRequest: () => ({ method: 'POST', url: '/auth/mpin/update/reset', query: { lang } }),
         getResponse: () => res,
       }),
     };
     new AllExceptionsFilter().catch(
-      new HttpException({ message: 'Limited', retryAfterSeconds: 60 }, 429),
+      new LocalizedHttpException({ en: 'Used before.', ar: 'مستخدمة من قبل.' }, 400),
       host as ArgumentsHost,
     );
-    expect(res.setHeader).toHaveBeenCalledWith('Retry-After', '60');
-    expect(res.status).toHaveBeenCalledWith(429);
-    expect(res.json).toHaveBeenCalledWith(
-      expect.objectContaining({
-        status: 'error',
-        httpStatusCode: 429,
-        message: 'Too many attempts. Please try again later.',
-      }),
-    );
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({
+      success: false,
+      status: 'error',
+      httpStatusCode: 400,
+      message,
+    });
   });
+
+  it.each([
+    [undefined, 'Too many attempts. Please try again later or contact support.'],
+    ['en', 'Too many attempts. Please try again later.'],
+    ['ar', 'لقد تجاوزت عدد المحاولات المسموح به. يرجى المحاولة لاحقًا.'],
+  ])(
+    'answers a rate limit with a translated 400 (lang=%s) and keeps Retry-After',
+    (lang, message) => {
+      const res = { setHeader: jest.fn(), status: jest.fn().mockReturnThis(), json: jest.fn() };
+      const host = {
+        switchToHttp: () => ({
+          getRequest: () => ({
+            method: 'POST',
+            url: '/auth/initiate',
+            headers: lang ? { lang } : {},
+          }),
+          getResponse: () => res,
+        }),
+      };
+      new AllExceptionsFilter().catch(
+        new HttpException({ message: 'Limited', retryAfterSeconds: 60 }, 429),
+        host as ArgumentsHost,
+      );
+      expect(res.setHeader).toHaveBeenCalledWith('Retry-After', '60');
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith({
+        success: false,
+        status: 'error',
+        httpStatusCode: 400,
+        message,
+      });
+    },
+  );
 });

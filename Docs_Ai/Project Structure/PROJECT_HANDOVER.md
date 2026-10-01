@@ -661,7 +661,7 @@ Solution — **ask the database itself** (`OracleSchemaService` reads the data d
 
 ## 10.3 SQL Server access
 
-Both `MssqlService` and `MotcSmsDbService` expose parameterized `query`/`execute` (named `@params`). Pools are created at boot; `*_DISABLED=true` skips creation (routes then fail with a typed 503 while the rest of the API works).
+Both `UsersDbService` and `MotcSmsDbService` expose parameterized `query`/`execute` (named `@params`). Pools are created at boot; `*_DISABLED=true` skips creation (routes then fail with a typed 503 while the rest of the API works).
 
 ## 10.4 Data flow summary
 
@@ -784,7 +784,7 @@ Error path: ANY exception thrown anywhere is caught by `AllExceptionsFilter`, cl
 ## 14.1 The error pipeline
 
 1. **Validation errors** — global `ValidationPipe` rejects malformed/unknown fields → 400 with detail list.
-2. **Typed domain errors** — adapters throw meaningful exceptions (`OracleQueryError`, `MssqlQueryError`, `MssqlUnavailableException`, `NotFoundException`, …).
+2. **Typed domain errors** — adapters throw meaningful exceptions (`OracleQueryError`, `SqlQueryError`, `SqlUnavailableException`, `NotFoundException`, …).
 3. **`AllExceptionsFilter`** (backend) catches everything, uses the **exception classifier** (`core/http/exception-classifier.ts`) to bucket it (VALIDATION / DATABASE_ERROR / EXTERNAL_SERVICE / AUTH / TIMEOUT / UNKNOWN), picks a safe bilingual message (`shared/constants/error-codes.ts` maps ORA codes → HTTP statuses), and returns the consistent error envelope.
 4. **Sanaad submit convention** — business submits return **HTTP 200 even on business failure**; the outcome is in `successflag` (`S`/`E`) + `message`/`messageAr`. Don't "fix" this — the mobile app depends on it.
 5. Gateway: relays backend errors untouched; only a real network failure produces a gateway-originated `502` (unreachable) or `504` (timeout).

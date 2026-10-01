@@ -175,6 +175,9 @@ services:
       AUTH_DISABLED: "${AUTH_DISABLED:-false}"
       # TESTING ONLY — never enable in production.
       AUTH_STATIC_LOGIN: "${AUTH_STATIC_LOGIN:-false}"
+      # /auth/initiate device block on repeated invalid usernames (0 disables).
+      INITIATE_INVALID_USERNAME_MAX_ATTEMPTS: "${INITIATE_INVALID_USERNAME_MAX_ATTEMPTS:-0}"
+      INITIATE_INVALID_USERNAME_BLOCK_MINUTES: "${INITIATE_INVALID_USERNAME_BLOCK_MINUTES:-15}"
       # Login functionaccesslist source (Users DB, documented AppMaster query).
       FUNCTION_ACCESS_VIEW: "${FUNCTION_ACCESS_VIEW:-HMC_Sanad_AppMaster_VW}"
       FUNCTION_ACCESS_APP_ID: "${FUNCTION_ACCESS_APP_ID:-1}"
@@ -233,6 +236,7 @@ services:
       REQUEST_TIMEOUT_MS: "${REQUEST_TIMEOUT_MS:-30000}"
       LOV_CACHE_TTL_MS: "${LOV_CACHE_TTL_MS:-300000}"
       LOG_LEVEL: "${LOG_LEVEL:-debug}"
+      OTP_RESEND_WINDOW_SECONDS: "${OTP_RESEND_WINDOW_SECONDS:-10}"
     # Host:container port mapping stays in sync with PORT in .env.
     ports:
       - "${PORT:-443}:${PORT:-443}"

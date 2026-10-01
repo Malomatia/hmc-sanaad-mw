@@ -84,8 +84,11 @@ export class AuthController {
   @Post('otp/validate')
   @ApiOperation({ summary: 'API-3 — Validate OTP', operationId: 'auth_validateOtp' })
   @ApiOkResponse({ type: ValidateOtpResponseDto })
-  validateOtp(@Body() dto: ValidateOtpRequestDto): Promise<ValidateOtpResponseDto> {
-    return this.onboarding.validateOtp(dto);
+  validateOtp(
+    @Body() dto: ValidateOtpRequestDto,
+    @Lang() lang: LangCode,
+  ): Promise<ValidateOtpResponseDto> {
+    return this.onboarding.validateOtp(dto, lang);
   }
 
   @Public()
@@ -127,8 +130,11 @@ export class AuthController {
   @Post('mpin/update/reset')
   @ApiOperation({ summary: 'API-7 — Reset MPIN (OTP + new MPIN)', operationId: 'auth_resetMpin' })
   @ApiOkResponse({ type: StatusMessageDto })
-  resetMpin(@Body() dto: ResetMpinRequestDto): Promise<StatusMessageDto> {
-    return this.mpin.resetMpin(dto);
+  resetMpin(
+    @Body() dto: ResetMpinRequestDto,
+    @Lang() lang: LangCode,
+  ): Promise<StatusMessageDto> {
+    return this.mpin.resetMpin(dto, lang);
   }
 
   /**

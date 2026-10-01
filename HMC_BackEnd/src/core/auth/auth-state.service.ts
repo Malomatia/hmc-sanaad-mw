@@ -44,14 +44,23 @@ export class AuthStateService {
     return this.db.dialect === 'mysql';
   }
 
-  async limit(scope: string, identity: string, maximum: number, seconds: number): Promise<void> {
+  /** Shared bucket identity for `limit`/`assertUnderLimit` (same scope+key = same bucket). */
+  private budgetBucket(
+    scope: string,
+    identity: string,
+  ): { username: string; prefix: string; bucketTokenPrefix: string } {
     const username = identity.trim().toUpperCase();
     const prefix = `hB.${this.mac(['budget', scope, username]).slice(0, 20)}`;
+    return { username, prefix, bucketTokenPrefix: `${prefix.replace(/_/g, '~_')}%` };
+  }
+
+  async limit(scope: string, identity: string, maximum: number, seconds: number): Promise<void> {
+    const { username, prefix, bucketTokenPrefix } = this.budgetBucket(scope, identity);
     const params = {
       username,
       maximum,
       seconds,
-      bucketTokenPrefix: `${prefix.replace(/_/g, '~_')}%`,
+      bucketTokenPrefix,
       rateTokenKey: prefix + randomBytes(15).toString('base64url'),
     };
     const rows = this.onMysql
@@ -85,8 +94,41 @@ export class AuthStateService {
     if (rows[0]?.Allowed !== 1) {
       throw new HttpException(
         {
-          message: 'Too many attempts. Please try again later.',
+          message: 'Too many attempts. Please try again later or contact support.',
           retryAfterSeconds: Math.max(1, rows[0]?.RetryAfterSeconds ?? seconds),
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+  }
+
+  /**
+   * Read-only companion to `limit`: throws 429 when the (scope, identity)
+   * bucket already holds `maximum` or more live tokens, WITHOUT consuming one.
+   * Pair it with `limit(scope, identity, maximum, seconds)` on the same key to
+   * gate an action on a failure counter — peek here, record the failure there.
+   */
+  async assertUnderLimit(scope: string, identity: string, maximum: number): Promise<void> {
+    const { username, bucketTokenPrefix } = this.budgetBucket(scope, identity);
+    const params = { username, bucketTokenPrefix };
+    const rows = this.onMysql
+      ? await mysqlAuthState.peekLimit(this.db, params)
+      : await this.db.query<{ Attempts: number; RetryAfterSeconds: number }>(
+          `DECLARE @now datetime2 = GETDATE();
+       SELECT COUNT(*) AS Attempts,
+              ISNULL(DATEDIFF(SECOND, @now, MIN(ExpiresAt)), 0) AS RetryAfterSeconds
+         FROM HMC_Sanad_AttestChallenge_tbl
+        WHERE LoginID = @username
+          AND Challenge LIKE @bucketTokenPrefix ESCAPE '~'
+          AND Challenge COLLATE Latin1_General_100_BIN2 LIKE @bucketTokenPrefix ESCAPE '~'
+          AND ExpiresAt > @now;`,
+          params,
+        );
+    if ((rows[0]?.Attempts ?? 0) >= maximum) {
+      throw new HttpException(
+        {
+          message: 'Too many attempts.Please try again later or contact support.',
+          retryAfterSeconds: Math.max(1, rows[0]?.RetryAfterSeconds ?? 0),
         },
         HttpStatus.TOO_MANY_REQUESTS,
       );
@@ -244,6 +286,28 @@ export class AuthStateService {
           params,
         );
     return rows[0]?.Updated === 1;
+  }
+
+  /**
+   * Read-only: true when this grant is live (unused, unexpired) for the
+   * user+device. Does NOT spend it — lets the reset reject a reused MPIN while
+   * keeping the grant for a retry, and reveal that only to a grant holder.
+   */
+  async grantValid(username: string, imei: string, enrollmenttoken: string): Promise<boolean> {
+    if (!/^[A-Za-z0-9_-]{43}$/.test(enrollmenttoken ?? '')) return false;
+    const params = {
+      grantTokenKey: this.nonce('G', username, imei, enrollmenttoken),
+      username: username.trim().toUpperCase(),
+    };
+    const rows = this.onMysql
+      ? await mysqlAuthState.grantValid(this.db, params)
+      : await this.db.query<{ Live: number }>(
+          `SELECT 1 AS Live FROM HMC_Sanad_AttestChallenge_tbl
+        WHERE Challenge = @grantTokenKey AND Challenge COLLATE Latin1_General_100_BIN2 = @grantTokenKey
+          AND LoginID = @username AND UsedAt IS NULL AND ExpiresAt > GETDATE()`,
+          params,
+        );
+    return rows.length > 0;
   }
 
   newSession(username: string, deviceImei: string, expiresAt: Date): SessionState {

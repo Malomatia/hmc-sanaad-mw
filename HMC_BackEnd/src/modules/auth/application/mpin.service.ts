@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomBytes } from 'node:crypto';
 import { AuthStateService } from '@core/auth/auth-state.service';
@@ -17,6 +17,8 @@ import {
   SetMpinRequestDto,
 } from '../interface/dto/mpin.dto';
 import { StatusMessageDto } from '../interface/dto/auth.dto';
+import { LocalizedHttpException } from '@core/http/localized-http.exception';
+import { INVALID_OTP_MESSAGE, MPIN_REUSED_MESSAGE } from './auth-messages';
 
 /**
  * MPIN lifecycle: set (API-4), forgot-initiate (API-6), reset (API-7). Policy is
@@ -128,11 +130,12 @@ export class MpinService {
     };
   }
 
-  async resetMpin(dto: ResetMpinRequestDto): Promise<StatusMessageDto> {
+  async resetMpin(dto: ResetMpinRequestDto, lang: Lang = DEFAULT_LANG): Promise<StatusMessageDto> {
     const ctx = this.ctx(dto);
+    const invalidOtp = { status: 'error', message: INVALID_OTP_MESSAGE[lang] };
     if (!this.isValidMpin(dto.newmpin)) return this.policyError();
     if (dto.enrollmenttoken !== undefined) return this.resetWithGrant(dto, ctx);
-    if (!dto.otp || !dto.requestid) return { status: 'error', message: 'Invalid OTP' };
+    if (!dto.otp || !dto.requestid) return invalidOtp;
     const otpOk = this.devBypass
       ? /^\d{4,8}$/.test(dto.otp)
       : await this.otp.verify({
@@ -145,7 +148,7 @@ export class MpinService {
 
     if (!otpOk) {
       this.audit.lifecycle(AuthLifecycleEvent.OTP_FAILED, { ...ctx, status: 'error' });
-      return { status: 'error', message: 'Invalid OTP' };
+      return invalidOtp;
     }
     if (this.devBypass) {
       this.logger.warn(`DEV bypass: MPIN reset for "${dto.username}" not persisted.`);
@@ -155,11 +158,11 @@ export class MpinService {
         imei: dto.imeinumber,
         platform: dto.platform,
       });
-      if (
-        !identity.isEmployee ||
-        !(await this.state.resetMpin(dto.username, dto.imeinumber, dto.newmpin))
-      ) {
-        return { status: 'error', message: 'Invalid OTP' };
+      if (!identity.isEmployee) return invalidOtp;
+      // The OTP was verified (and spent) above, so the caller is authorized.
+      await this.rejectReusedMpin(dto);
+      if (!(await this.state.resetMpin(dto.username, dto.imeinumber, dto.newmpin))) {
+        return invalidOtp;
       }
     }
 
@@ -192,8 +195,13 @@ export class MpinService {
         imei: dto.imeinumber,
         platform: dto.platform,
       });
+      if (!identity.isEmployee) return denied;
+      // Only a live-grant holder may learn the MPIN is unchanged, and the
+      // grant is NOT spent, so they can retry with a different MPIN.
+      if (await this.state.grantValid(dto.username, dto.imeinumber, dto.enrollmenttoken!)) {
+        await this.rejectReusedMpin(dto);
+      }
       if (
-        !identity.isEmployee ||
         !(await this.state.resetMpinWithGrant(
           dto.username,
           dto.imeinumber,
@@ -216,6 +224,20 @@ export class MpinService {
       platform: dto.platform,
       appVersion: dto.version,
     };
+  }
+
+  /**
+   * 400 (translated) when the new MPIN equals the current one. The MPIN is
+   * stored as received, so this is the same equality check as login. Call it
+   * only once the caller is authorized — otherwise it would confirm MPIN
+   * guesses without an OTP.
+   */
+  private async rejectReusedMpin(dto: ResetMpinRequestDto): Promise<void> {
+    if (
+      await this.store.verify({ username: dto.username, imei: dto.imeinumber, mpin: dto.newmpin })
+    ) {
+      throw new LocalizedHttpException(MPIN_REUSED_MESSAGE, HttpStatus.BAD_REQUEST);
+    }
   }
 
   private isValidMpin(mpin: string): boolean {

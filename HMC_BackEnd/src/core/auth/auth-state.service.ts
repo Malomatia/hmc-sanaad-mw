@@ -94,7 +94,7 @@ export class AuthStateService {
     if (rows[0]?.Allowed !== 1) {
       throw new HttpException(
         {
-          message: 'Too many attempts. Please try again later.',
+          message: 'Too many attempts. Please try again later or contact support.',
           retryAfterSeconds: Math.max(1, rows[0]?.RetryAfterSeconds ?? seconds),
         },
         HttpStatus.TOO_MANY_REQUESTS,
@@ -127,7 +127,7 @@ export class AuthStateService {
     if ((rows[0]?.Attempts ?? 0) >= maximum) {
       throw new HttpException(
         {
-          message: 'Too many attempts. Please try again later.',
+          message: 'Too many attempts.Please try again later or contact support.',
           retryAfterSeconds: Math.max(1, rows[0]?.RetryAfterSeconds ?? 0),
         },
         HttpStatus.TOO_MANY_REQUESTS,
@@ -286,6 +286,28 @@ export class AuthStateService {
           params,
         );
     return rows[0]?.Updated === 1;
+  }
+
+  /**
+   * Read-only: true when this grant is live (unused, unexpired) for the
+   * user+device. Does NOT spend it — lets the reset reject a reused MPIN while
+   * keeping the grant for a retry, and reveal that only to a grant holder.
+   */
+  async grantValid(username: string, imei: string, enrollmenttoken: string): Promise<boolean> {
+    if (!/^[A-Za-z0-9_-]{43}$/.test(enrollmenttoken ?? '')) return false;
+    const params = {
+      grantTokenKey: this.nonce('G', username, imei, enrollmenttoken),
+      username: username.trim().toUpperCase(),
+    };
+    const rows = this.onMysql
+      ? await mysqlAuthState.grantValid(this.db, params)
+      : await this.db.query<{ Live: number }>(
+          `SELECT 1 AS Live FROM HMC_Sanad_AttestChallenge_tbl
+        WHERE Challenge = @grantTokenKey AND Challenge COLLATE Latin1_General_100_BIN2 = @grantTokenKey
+          AND LoginID = @username AND UsedAt IS NULL AND ExpiresAt > GETDATE()`,
+          params,
+        );
+    return rows.length > 0;
   }
 
   newSession(username: string, deviceImei: string, expiresAt: Date): SessionState {

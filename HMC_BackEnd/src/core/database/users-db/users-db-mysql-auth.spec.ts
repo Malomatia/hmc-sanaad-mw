@@ -108,6 +108,18 @@ describe('AuthStateService on MySQL', () => {
     });
   });
 
+  it('grantValid() is one read-only SELECT on MySQL', async () => {
+    const { db, calls, transactions } = scriptedMysql(() => ({ rows: [{ Live: 1 }] }));
+    await expect(
+      new AuthStateService(db, config).grantValid('user', 'device', GRANT),
+    ).resolves.toBe(true);
+    expect(transactions()).toBe(0);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].sql).toMatch(/UsedAt IS NULL AND ExpiresAt > NOW\(\)/);
+    expect(calls[0].sql).not.toMatch(/\bUPDATE\b|\bINSERT\b/);
+    expectRunnableOnMysql(calls);
+  });
+
   describe('assertUnderLimit()', () => {
     it('peeks the bucket read-only and resolves under the cap', async () => {
       const { db, calls } = scriptedMysql(() => ({ rows: [{ Attempts: 1, RetryAfterSeconds: 0 }] }));

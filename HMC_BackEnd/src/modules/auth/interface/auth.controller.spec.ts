@@ -172,7 +172,7 @@ describe('AuthController', () => {
         .expect(200)
         .expect({ status: 'success', message: 'MPIN Changed successfully' });
 
-      expect(mpin.resetMpin).toHaveBeenCalledWith(expect.objectContaining(requestBody));
+      expect(mpin.resetMpin).toHaveBeenCalledWith(expect.objectContaining(requestBody), 'en');
     });
 
     it('still accepts the one-call otp + requestid form', async () => {

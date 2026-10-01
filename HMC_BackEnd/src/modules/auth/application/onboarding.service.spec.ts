@@ -235,7 +235,7 @@ describe('Invalid-username device block', () => {
   it('rejects a blocked device before any directory or OTP work', async () => {
     const { service, state, ldap, otp } = makeService({ config: ON });
     state.assertUnderLimit.mockRejectedValue(
-      new HttpException({ message: 'Too many attempts. Please try again later.' }, 429),
+      new HttpException({ message: 'Too many attempts.Please try again later or contact support.' }, 429),
     );
     await expect(service.validateUser(DTO)).rejects.toMatchObject({ status: 429 });
     expect(ldap.validate).not.toHaveBeenCalled();
@@ -358,6 +358,9 @@ describe('Enrollment authorization', () => {
     await expect(
       service.validateOtp({ ...DTO, requestid: REQUEST_ID, otp: 'wrong' }),
     ).resolves.toEqual({ status: 'error', message: 'Invalid OTP' });
+    await expect(
+      service.validateOtp({ ...DTO, requestid: REQUEST_ID, otp: 'wrong' }, 'ar'),
+    ).resolves.toEqual({ status: 'error', message: 'رمز التحقق غير صحيح' });
     expect(state.issueEnrollment).not.toHaveBeenCalled();
   });
 

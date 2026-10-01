@@ -89,6 +89,16 @@ export const ORACLE_OBJECTS = {
   TEMP_ADD_TYPE_V: o('TEMP_ADD_TYPE_V'),
   WORKLISTS_V: o('WORKLISTS_V'),
 
+  // OTL timecard views (EBSDEV 2026-09-29). `DEATIS` is the real spelling;
+  // the corrected one raises ORA-00942.
+  OTL_SUMMARY_V: o('OTL_SUMMARY_V'),
+  OTL_SUMMARY_ELE_V: o('OTL_SUMMARY_ELE_V'),
+  OTL_EMP_TIME_PERIOD_V: o('OTL_EMP_TIME_PERIOD_V'),
+  OTL_TIMECARD_DEATIS_V: o('OTL_TIMECARD_DEATIS_V'),
+  OTL_ELEMENT_V: o('OTL_ELEMENT_V'),
+  OTL_FACILITY_V: o('OTL_FACILITY_V'),
+  OTL_COST_CENTER_V: o('OTL_COST_CENTER_V'),
+
   // ── LOVs (_LOV) ───────────────────────────────────────────
   ACAD_YR_STRT_END_LOV: o('ACAD_YR_STRT_END_LOV'),
   ALSR_DFALT_LOV: o('ALSR_DFALT_LOV'),
@@ -162,6 +172,12 @@ export const ORACLE_OBJECTS = {
   PHONE_PKG_ADD_OR_UPDATE: `${o('PHONE_PKG')}.ADD_OR_UPDATE_PHONE`,
   DEPENDENT_PKG_ADD: `${o('ADD_DEPENDENT_PKG')}.${o('ADD_DEPENDENT_PR')}`,
   DEPENDENT_PKG_UPDATE: `${o('ADD_DEPENDENT_PKG')}.${o('UPDATE_DEPENDENT_PR')}`,
+  // OTL package: four table functions (read with TABLE(...)) + the submit procedure.
+  OTL_PKG_GET_ABSENCE_DETAILS: `${o('OTL_PKG')}.GET_ABSENCE_DETAILS`,
+  OTL_PKG_GET_ELEMENT_NAME: `${o('OTL_PKG')}.GET_ELEMENT_NAME`,
+  OTL_PKG_GET_TEMPLATE: `${o('OTL_PKG')}.GET_TEMPLATE`,
+  OTL_PKG_GET_TIME_CARD_DETAILS: `${o('OTL_PKG')}.GET_TIME_CARD_DETAILS`,
+  TIMECARD_SUBMIT_PR: `${o('OTL_PKG')}.${o('TIMECARD_SUBMIT_PR')}`,
 } as const;
 
 export type OracleObjectKey = keyof typeof ORACLE_OBJECTS;

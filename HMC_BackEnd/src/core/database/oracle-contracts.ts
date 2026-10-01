@@ -41,6 +41,8 @@ const table = (name: string, pkg: string, subname: string): ContractParameter =>
 const DEP_PKG = ORACLE_OBJECTS.ADD_DEPENDENT_PKG;
 const depTable = (name: string) => table(name, DEP_PKG, 'MY_TYPE');
 const phoneTable = (name: string) => table(name, ORACLE_OBJECTS.PHONE_PKG, 'ETSND_VARCHAR');
+/** Return type of an XXHMC_SND_OTL_PKG table function (collection types owned by HMCERP). */
+const otlTable = (typeName: string) => ({ dataType: 'TABLE', typeOwner: 'HMCERP', typeName });
 
 const PROGRAMS: Readonly<Record<string, ProgramContract>> = Object.freeze({
   [ORACLE_OBJECTS.COID_REQ_PR]: {
@@ -267,6 +269,39 @@ const PROGRAMS: Readonly<Record<string, ProgramContract>> = Object.freeze({
       ...inputs('p_employment_status', 'p_comments'),
     ],
   },
+
+  // ── XXHMC_SND_OTL_PKG (package spec + ALL_ARGUMENTS, EBSDEV 2026-09-29).
+  //    The four reads are table functions; the record types are owned by HMCERP.
+  [ORACLE_OBJECTS.OTL_PKG_GET_ABSENCE_DETAILS]: {
+    params: [input('p_user_name'), ...dates('p_start_date', 'p_end_date')],
+    returnType: otlTable('XXHMC_SND_OTL_ABS_SUM_TABLE_TYPE'),
+  },
+  [ORACLE_OBJECTS.OTL_PKG_GET_ELEMENT_NAME]: {
+    params: [input('p_user_name'), ...dates('p_start_date', 'p_end_date')],
+    returnType: otlTable('XXHMC_SND_OTL_ELEMENT_TABLE_TYPE'),
+  },
+  [ORACLE_OBJECTS.OTL_PKG_GET_TEMPLATE]: {
+    params: [input('p_user_name'), ...dates('p_start_date', 'p_end_date')],
+    returnType: otlTable('XXHMC_SND_OTL_TEMPLATE_TABLE_TYPE'),
+  },
+  [ORACLE_OBJECTS.OTL_PKG_GET_TIME_CARD_DETAILS]: {
+    params: [input('p_notification_id', 'NUMBER'), input('p_user_name')],
+    returnType: otlTable('XXHMC_SND_OTL_TIMECARD_DET_TABLE_TYPE'),
+  },
+  // Only p_entries is read by the body; the five scalar INs are ignored (B9),
+  // p_reference_no is never set and p_approval_chain is never OPENed.
+  [ORACLE_OBJECTS.TIMECARD_SUBMIT_PR]: {
+    params: [
+      ...inputs('p_user_name', 'p_period', 'p_confirmation_flag', 'p_language', 'p_comments'),
+      input('p_entries', 'CLOB'),
+      output('p_success_flag'),
+      output('p_error_msg'),
+      output('p_reference_no'),
+      output('p_submitted_date', 'DATE'),
+      output('p_card_status'),
+      output('p_approval_chain', 'REF CURSOR'),
+    ],
+  },
 });
 
 const GLOBAL_LOVS: readonly string[] = [
@@ -326,12 +361,147 @@ const COLUMNS: Readonly<Record<string, ColumnContract>> = Object.freeze({
   [ORACLE_OBJECTS.RFL_REL_LEAVE2_V]: { USER_NAME: 'VARCHAR2' },
   [ORACLE_OBJECTS.LEAVE_CANCEL_V]: { PERSON_ID: 'NUMBER', NAME: 'VARCHAR2' },
   [ORACLE_OBJECTS.LEAVE_AMEND_V]: { PERSON_ID: 'NUMBER', NAME: 'VARCHAR2' },
+  // Annual-ticket cancellation views (op 72) — confirmed EBSDEV/EBSPRJ
+  // 2026-09-29. PERSON_ID-scoped only: none of them has a USER_NAME column.
+  [ORACLE_OBJECTS.CANCEL_TICKETS_V]: {
+    PERSON_ID: 'NUMBER',
+    ANALYSIS_CRITERIA_ID: 'NUMBER',
+    ANNUAL_LEAVE_PASS_TKT_VALUE: 'VARCHAR2',
+  },
+  [ORACLE_OBJECTS.CANCEL_TAKENAS_V]: {
+    PERSON_ID: 'NUMBER',
+    ANALYSIS_CRITERIA_ID: 'NUMBER',
+    TAKES_AS: 'VARCHAR2',
+    TAKEN_AS_AR: 'VARCHAR2',
+  },
+  [ORACLE_OBJECTS.CANCEL_REPAYMENT_METHODS_V]: {
+    PERSON_ID: 'NUMBER',
+    ANALYSIS_CRITERIA_ID: 'NUMBER',
+    FLEX_VALUE: 'VARCHAR2',
+    DESCRIPTION: 'VARCHAR2',
+    FLEX_VALUE_AR: 'VARCHAR2',
+  },
+  // Annual-ticket master (op 66) — confirmed EBSDEV/EBSPRJ 2026-09-29. A UNION
+  // of the passenger / contract-year / request-for / destination / ticket-class
+  // views, split by TAG1; always read WHERE USER_NAME = :u (unfiltered it
+  // exceeded the request timeout).
+  [ORACLE_OBJECTS.TICKET_MASTER]: {
+    TAG1: 'VARCHAR2',
+    PERSON_ID: 'NUMBER',
+    CONTACT_ID: 'NUMBER',
+    USER_NAME: 'VARCHAR2',
+    RECORD_TYPE: 'VARCHAR2',
+    NAME_EN: 'VARCHAR2',
+    NAME_AR: 'VARCHAR2',
+    CURRENT_EMPLOYEE_FLAG: 'VARCHAR2',
+    CONTACT_TYPE: 'VARCHAR2',
+    DATE_OF_BIRTH: 'DATE',
+    SEX: 'VARCHAR2',
+    ROW_NUM: 'NUMBER',
+    EMPLOYEE_NUMBER: 'VARCHAR2',
+    DATE_START: 'DATE',
+    LAW: 'VARCHAR2',
+    TOT_COUNT: 'NUMBER',
+    FROM_DATE: 'NUMBER',
+    TOO_DATE: 'NUMBER',
+    CONTRACT_YEAR: 'VARCHAR2',
+    CONTRACT_YEAR_DEF: 'VARCHAR2',
+    CONTRACT_YEAR_DEF_AR: 'VARCHAR2',
+  },
+  // Annual-ticket eligibility flag (op 66 `eligible`) — confirmed EBSDEV/EBSPRJ
+  // 2026-09-29: one row per user, `Yes`/`No` + Arabic twin. Not the form LOV.
+  [ORACLE_OBJECTS.ANNUAL_TICKT_LOV]: {
+    ANUAL_TKT_DEFAULT: 'VARCHAR2',
+    USER_NAME: 'VARCHAR2',
+    ANUAL_TKT_DEFAULT_AR: 'VARCHAR2',
+  },
   [ORACLE_OBJECTS.CONTRACT_YEAR_V]: { USER_NAME: 'VARCHAR2' },
   [ORACLE_OBJECTS.LETTER_MOBILE_NO_LOV]: { USER_NAME: 'VARCHAR2' },
   [ORACLE_OBJECTS.SCHOOL_NAME_LOV]: { USER_NAME: 'VARCHAR2', NAME: 'VARCHAR2' },
   [ORACLE_OBJECTS.REQUEST_TYPE_LOV]: { USER_NAME: 'VARCHAR2' },
   [ORACLE_OBJECTS.DEP_LOOKUP_LOV]: { D_DATA_TYPE: 'VARCHAR2' },
   [ORACLE_OBJECTS.ABSENCE_REASON_V]: { LEAVE_TYPE: 'VARCHAR2' },
+  // OTL views — ALL_TAB_COLUMNS on EBSDEV, 2026-09-29. None has an _AR twin.
+  [ORACLE_OBJECTS.OTL_EMP_TIME_PERIOD_V]: {
+    TIME_PERIOD_ID: 'NUMBER',
+    PERSON_ID: 'NUMBER',
+    EMPLOYEE_NUMBER: 'VARCHAR2',
+    FULL_NAME: 'VARCHAR2',
+    USER_ID: 'NUMBER',
+    USER_NAME: 'VARCHAR2',
+    START_DATE: 'DATE',
+    END_DATE: 'DATE',
+    PERIOD: 'VARCHAR2',
+  },
+  // INVALID on EBSDEV (B4): every read raises ORA-04063 until Oracle fixes it.
+  [ORACLE_OBJECTS.OTL_SUMMARY_V]: {
+    EMPLOYEE_NUMBER: 'VARCHAR2',
+    PERSON_ID: 'NUMBER',
+    USER_ID: 'NUMBER',
+    FULL_NAME: 'VARCHAR2',
+    USER_NAME: 'VARCHAR2',
+    PERIOD: 'VARCHAR2',
+    START_TIME: 'DATE',
+    STOP_TIME: 'DATE',
+    RECORDED_HOURS: 'NUMBER',
+    ABSENCE_DAYS: 'NUMBER',
+    TIMECARD_ID: 'NUMBER',
+    APPROVAL_STATUS: 'VARCHAR2',
+    COMMENT_TEXT: 'VARCHAR2',
+  },
+  // FULL_NAME really is NUMBER (it carries USER_ID, B5).
+  [ORACLE_OBJECTS.OTL_SUMMARY_ELE_V]: {
+    EMPLOYEE_NUMBER: 'VARCHAR2',
+    PERSON_ID: 'NUMBER',
+    FULL_NAME: 'NUMBER',
+    USER_NAME: 'VARCHAR2',
+    ELEMENT_NAME: 'VARCHAR2',
+    FACILITY: 'VARCHAR2',
+    COST_CENTER: 'VARCHAR2',
+    HOURS: 'NUMBER',
+    TOTAL_HOURS: 'NUMBER',
+    PERIOD: 'VARCHAR2',
+    START_TIME: 'DATE',
+    STOP_TIME: 'DATE',
+    APPROVAL_STATUS: 'VARCHAR2',
+    COMMENT_TEXT: 'VARCHAR2',
+  },
+  [ORACLE_OBJECTS.OTL_TIMECARD_DEATIS_V]: {
+    EMPLOYEE_NUMBER: 'VARCHAR2',
+    FULL_NAME: 'VARCHAR2',
+    PERSON_ID: 'NUMBER',
+    USER_ID: 'NUMBER',
+    USER_NAME: 'VARCHAR2',
+    ELEMENT_NAME: 'VARCHAR2',
+    TIMECARD_ID: 'NUMBER',
+    TIMECARD_OVN: 'NUMBER',
+    PERIOD: 'VARCHAR2',
+    START_TIME: 'DATE',
+    STOP_TIME: 'DATE',
+    FACILITY: 'VARCHAR2',
+    COST_CENTER: 'VARCHAR2',
+    HOURS: 'NUMBER',
+    DAY: 'DATE',
+    APPROVAL_STATUS: 'VARCHAR2',
+    SUBMITTED_BY: 'VARCHAR2',
+    SUBMISSION_DATE: 'DATE',
+    APPROVE_BY: 'VARCHAR2',
+    APPROVAL_DATE: 'DATE',
+  },
+  [ORACLE_OBJECTS.OTL_ELEMENT_V]: { ELEMENT_TYPE_ID: 'NUMBER', ELEMENT_NAME: 'VARCHAR2' },
+  [ORACLE_OBJECTS.OTL_FACILITY_V]: {
+    FACILITY_CODE: 'VARCHAR2',
+    DESCRIPTION: 'VARCHAR2',
+    FACILITY: 'VARCHAR2',
+  },
+  [ORACLE_OBJECTS.OTL_COST_CENTER_V]: {
+    FACILITY_CODE: 'VARCHAR2',
+    FAC_DESCRIPTION: 'VARCHAR2',
+    FACILITY: 'VARCHAR2',
+    COST_CENTER_CODE: 'VARCHAR2',
+    COST_CENTER_DESCRIPTION: 'VARCHAR2',
+    COST_CENTER: 'VARCHAR2',
+  },
 });
 
 export const SCOPED_ORACLE_LOVS: ReadonlySet<string> = new Set([
@@ -339,6 +509,7 @@ export const SCOPED_ORACLE_LOVS: ReadonlySet<string> = new Set([
   ORACLE_OBJECTS.RFL_LEAVE_DET_V, ORACLE_OBJECTS.RFL_REL_LEAVE1_V, ORACLE_OBJECTS.RFL_REL_LEAVE2_V,
   ORACLE_OBJECTS.LEAVE_CANCEL_V, ORACLE_OBJECTS.LEAVE_AMEND_V,
   ORACLE_OBJECTS.LETTER_MOBILE_NO_LOV, ORACLE_OBJECTS.SCHOOL_NAME_LOV, ORACLE_OBJECTS.REQUEST_TYPE_LOV,
+  ORACLE_OBJECTS.TICKET_MASTER,
 ]);
 
 @Injectable()

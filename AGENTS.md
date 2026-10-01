@@ -529,6 +529,42 @@ responses as examples.
   `HMC_HR_CONTRACTUAL_YEAR_SIT` ('01-SEP-2025 to 31-AUG-2026' passes,
   calendar-year strings do not). With correct values the test user gets the
   real business answer "No ticket balance available..." (no entitlement).
+- op 72 `GET /annual-ticket/cancel-options` is bound to the JWT caller: the
+  three `CANCEL_*_V` views have NO `USER_NAME` column (PERSON_ID only), so the
+  PERSON_ID is derived from `EMPLOYMENT_DETAILS_V` by username and bound as a
+  NUMBER. A client `?person_id=` is optional; a different one → 403, and no
+  employment row → empty lists. Never query these views with a client id.
+- op 66 `GET /annual-ticket/master` reads `XXHMC_SND_TICKET_MASTER WHERE
+  USER_NAME = :u` (never unfiltered — that hit the HTTP 408) through the
+  repository, not `LovMapper` (it drops `TAG1`), and groups the rows by `TAG1`
+  into the five pickers; `value` / `contactId` is the op-67 value (`label` /
+  `name` carry the `*Ar` twins). Passengers: `value` = `contactId` — the `Self`
+  row's PERSON_ID → `p_employee`, a `Family` row's CONTACT_ID → `p_passenger1..4`.
+  **Ids, never names** (verified in the EBSDEV source 2026-09-30): TICKET_REQ_PR
+  assigns the parameters verbatim to the SIT segments (lines 307-312; its
+  name→id lookups at 197-306 are commented out) and `fnd_flex_plsql.VALIDATE`
+  checks them against value sets whose id column is person_id / contact_id, so
+  a name raises ORA-01722. Existing tickets store `26023 | 42465 | 329302 | ...`.
+  `p_request_type` is `Cash` or `Voucher` (value set HMC_HR_CASH_VOUCHER_TYPE,
+  segment 9) — `Annual Ticket` fails with FLEX-VALUE DOES NOT EXIST. The
+  values are TICKET_MASTER's `TAG1 = 'REQ TYPE'` rows, whose USER_NAME is NULL,
+  so the master reads them with a second, TAG1-filtered query → `requestTypes`.
+  `p_employee` must be the PERSON_ID of the token user: the value set is scoped
+  to the caller (the procedure sets `PER_PERSON_ID` from `p_user_name`), so
+  another person's id — or the employee number — is FLEX-VALUE DOES NOT EXIST. `ANNUAL_TICKT_LOV` is only the per-user Yes/No
+  eligibility flag (`eligible`), not the form LOV.
+- op 72 `POST /annual-ticket/cancel` takes `analysis_criteria_id` + the user's
+  text only; the service re-reads the caller's cancel options (joined on
+  ANALYSIS_CRITERIA_ID) and fills `p_annual_tkt` / `p_contractual_year` /
+  `p_ticket_as` / `p_repayment_method` itself. The pipe composite must not come
+  from the client again: the staging F5 WAF blocked the response of every
+  request carrying it, and server-side resolution pins the Cash/Voucher pairing.
+  `p_annual_tkt` is the ticket's **ANALYSIS_CRITERIA_ID, not the composite**:
+  `CANCEL_TKT_PR` copies it into `lc_segment1 VARCHAR2(60)` (source line 192)
+  and the composite reaches 109 chars (person 26023) → ORA-06502 on every
+  cancel; the WAF then blocked that error response on staging. Agreed with the
+  Oracle team 2026-09-30 — they change the procedure to resolve by id; until
+  that is deployed Oracle answers "no data found".
 - `UPD_ADDRESS_PR`: `p_country` takes the country NAME (`Qatar`; `QA` →
   "Invalid Country"), `p_address_type` must equal the target address's own
   type, and repeating an update on the same `p_effective_date` fails
@@ -1059,7 +1095,7 @@ typed declarations). Every registered parameter is bound (NULL when absent), so
 this only affects the "unmapped parameter" warning, not the call.
 
 Still unregistered (503 until their columns arrive): `QID_DET_V`,
-`LEAVE_BAL_PLAN_LOV`, `ANNUAL_TICKT_LOV`.
+`LEAVE_BAL_PLAN_LOV`.
 Do not treat unit-test fixtures as production Oracle definitions or restore
 runtime discovery to hide these gaps.
 
@@ -1971,3 +2007,53 @@ auth module, before the wildcard. Like `/healthcheck`, it has no `@SkipIntegrity
 The audit action is `view` (GET default), operationId `auth_appSetting`. Tests:
 backend `modules/auth/application/app-setting.service.spec.ts`, gateway e2e
 `forwards GET /app-setting ...`.
+
+## OTL timecards (`/otl/*`, 2026-09-29)
+
+`modules/otl` wraps `XXHMC_SND_OTL_PKG` and seven `XXHMC_SND_OTL_*_V` views. Contract
+source: `.workbench/artifacts/otl-db-findings.md` (dictionary + package source,
+EBSDEV). Plan: `.workbench/artifacts/otl-implementation-plan.md` sections 0-11.
+
+- **Deployment:** the objects exist on **EBSDEV** (APPS; record types owned by
+  HMCERP) and are **absent from EBSPRJ** (HMCERP, behind staging). Until the DBA
+  deploys them there with `GRANT EXECUTE/SELECT` + HMCERP synonyms, every OTL
+  call from staging fails with ORA-00942 / PLS-00201. Tests mock Oracle.
+- **Reads are table functions, not cursors:** `get_absence_details`,
+  `get_element_name`, `get_template` and `get_time_card_details` go through
+  `callRowsOrTableFunction` → `SELECT * FROM TABLE(pkg.fn(:arg0, ...))`, positional
+  in declared order, DATE/NUMBER types from the static contract.
+  `get_time_card_details(p_notification_id, p_user_name)` wants the timecard
+  OWNER, not the approver; `GET /approvals/:id/timecard-details?requestor=` (served
+  by the OTL module) first checks that the caller is the notification's
+  recipient in `WORKLISTS_V`, else 403.
+- **Never read `TIMECARD_DEATIS_V` or `SUMMARY_ELE_V` unfiltered** — heavy HXC
+  joins that did not return on EBSDEV. The repository always binds `USER_NAME` and
+  `TRUNC(START_TIME) = :p_start_date`. `DEATIS` is the real spelling.
+- **Submit** (`POST /otl/timecard/submit`, operationId `otl_submitTimecard`, in
+  `WORKLIST_SUBMIT_OPERATIONS`): Oracle reads ONLY the CLOB `p_entries`; its five
+  scalar INs are ignored. The service builds the JSON envelope server-side
+  (`p_user_name` from the JWT, `p_period`, `p_confirmation_flag`, `p_language`,
+  `p_employee_notes`, `p_entries[]` of `p_hour_type_id` = element NAME,
+  `p_entry_date`, `p_value`, `p_cross_dept_flag`, `p_dept_id`, `p_cost_center`,
+  `p_comments`) and binds the same values to the scalars. The OUTs are read with
+  `callMultiCursorProc`, because `p_approval_chain` is never OPENed (→ `[]`) and
+  `p_reference_no` is always NULL. Oracle's `E` becomes `successflag: N`. The
+  backend pre-checks the element name, the period, raw codes, ≤24 h/day and that
+  every day of the month has an entry (200/`N` without an Oracle call).
+- **Period formats:** the identifier is TIME_PERIOD_V `START_DATE`/`END_DATE`
+  (`YYYY-MM-DD` on the wire). Derived with fixed English names, never parsed:
+  `Month YYYY` for the submit JSON, `Mon YYYY` for summary/detail PERIOD, and
+  `DD-Mon-YYYY` for entry dates. Date binds are LOCAL-midnight Dates (node-oracledb
+  writes DB_TYPE_DATE from local components); Oracle DATEs are read back by their
+  local calendar day.
+- **Oracle bugs blocking UAT (plan 0.2, owner: Oracle team):** B1 hours deposited
+  as NULL, B2 0..24 check ineffective, B3 last row decides validation, B4
+  `SUMMARY_V` INVALID (ORA-04063 → the read degrades to `available: false` and
+  period status `UNKNOWN`), B5 `SUMMARY_ELE_V.FULL_NAME` is the user id, B6
+  NLS-dependent period parsing, B7 facility/cost-center stored in VARCHAR2(10), B8
+  range entries dropped (not accepted by the DTO), B9 no reference number /
+  approval chain, B10 no HXCEMP rows in `WORKLISTS_V`. No UAT submit before B1-B4
+  are fixed on the target instance.
+
+Checks: `npx.cmd jest src/modules/otl src/core/database/confirmed-submit-contracts.spec.ts
+src/modules/notifications --forceExit` and `npm.cmd run build` from `HMC_BackEnd/`.

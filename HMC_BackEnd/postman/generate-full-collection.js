@@ -38,6 +38,7 @@ const identityEx = req('modules/identity/interface/identity.examples.js');
 const leaveEx = req('modules/leave/interface/leave.examples.js');
 const payslipEx = req('modules/payslip/interface/payslip.examples.js');
 const lettersEx = req('modules/letters/interface/letters.examples.js');
+const otlEx = req('modules/otl/interface/otl.examples.js');
 
 // ── Generic envelope templates (used when no real capture exists) ──────────
 const readEnvelope = (result) => ({ result, opstatus: 0, status: 'success', httpStatusCode: 200 });
@@ -313,10 +314,45 @@ const MODULES = [
   {
     folder: 'Annual Ticket',
     items: [
-      { name: 'Annual ticket master LOV', method: 'GET', p: 'annual-ticket/master', auth: 'bearer', kind: 'lov', query: { lang: 'en' },
-        success: lovGeneric([{ code: 'Economy', meaning: 'Economy' }]), errors: [401, 500] },
+      { name: 'Annual ticket master (TICKET_MASTER grouped by TAG1 + eligibility flag)', method: 'GET', p: 'annual-ticket/master', auth: 'bearer', kind: 'read', query: { lang: 'en' },
+        success: {
+          eligible: 'Yes',
+          contractualYears: ['2025', '2026', '2027'].map((from) => {
+            const year = `01-SEP-${from} to 31-AUG-${Number(from) + 1}`;
+            return { value: year, label: year, fromYear: Number(from), toYear: Number(from) + 1, law: 'HMC LAW', totalCount: 18 };
+          }),
+          destinations: [{ value: 'Cairo', label: 'Cairo' }],
+          passengers: [
+            { contactId: '26023', name: 'Mr. Amir Sami Samir Ibrahim', type: 'Self', contactType: 'EMP', currentEmployee: 'Y', dateOfBirth: '1984-05-15', sex: 'M' },
+            { contactId: '42465', name: 'Caroline Victor Francis Fam', type: 'Family', contactType: 'S', currentEmployee: null, dateOfBirth: null, sex: 'F' },
+            { contactId: '329302', name: 'Jerome Amir Sami Samir Ibrahim', type: 'Family', contactType: 'C', currentEmployee: null, dateOfBirth: null, sex: 'M' },
+            { contactId: '329303', name: 'Jolie Amir Sami Samir Ibrahim', type: 'Family', contactType: 'C', currentEmployee: null, dateOfBirth: null, sex: 'F' },
+          ],
+          requestFor: [{ value: 'Family', label: 'Family' }, { value: 'Self', label: 'Self' }, { value: 'Self and Family', label: 'Self and Family' }],
+          ticketClasses: [{ value: 'Economy', label: 'Economy' }],
+          requestType: 'Annual Ticket',
+          other: [],
+        },
+        errors: [401, 403, 500] },
       { name: 'Submit annual ticket', method: 'POST', p: 'annual-ticket/apply', auth: 'bearer', kind: 'action',
         body: { p_ticket_class: 'Economy', p_travel_year: '2026' }, success: actionSuccess, errors: [400, 401, 409, 500] },
+      { name: 'Ticket-cancellation options (caller-scoped; person_id derived from the JWT)', method: 'GET', p: 'annual-ticket/cancel-options', auth: 'bearer', kind: 'read', query: { lang: 'en' },
+        success: {
+          tickets: [
+            { analysisCriteriaId: '71794897', value: 'Self and Family |Amir |Caroline |Jerome Amir Sami |Jolie Amir Sami | |01-SEP-2025 to 31-AUG-2026 |Cash |20920', requestFor: 'Self and Family', employeeName: 'Amir', passengers: ['Caroline', 'Jerome Amir Sami', 'Jolie Amir Sami'], contractualYear: '01-SEP-2025 to 31-AUG-2026', takenAs: 'Cash', amount: '20920', repaymentMethods: [{ value: 'Payroll Deduction', label: 'Cash' }] },
+            { analysisCriteriaId: '71803898', value: 'Self and Family |Amir |Caroline |Jerome Amir Sami |Jolie Amir Sami | |01-SEP-2024 to 31-AUG-2025 |Cash |20920', requestFor: 'Self and Family', employeeName: 'Amir', passengers: ['Caroline', 'Jerome Amir Sami', 'Jolie Amir Sami'], contractualYear: '01-SEP-2024 to 31-AUG-2025', takenAs: 'Cash', amount: '20920', repaymentMethods: [{ value: 'Payroll Deduction', label: 'Cash' }] },
+          ],
+          takenAs: [{ TAKES_AS: 'Cash' }, { TAKES_AS: 'Voucher' }],
+          repaymentMethods: [{ FLEX_VALUE: 'Payroll Deduction', DESCRIPTION: 'Cash' }, { FLEX_VALUE: 'Cancel Voucher', DESCRIPTION: 'Voucher' }],
+        },
+        errors: [400, 401, 403, 500] },
+      { name: 'Cancel annual ticket', method: 'POST', p: 'annual-ticket/cancel', auth: 'bearer', kind: 'action',
+        body: {
+          analysis_criteria_id: '71794897',
+          p_reason: 'Travel plans cancelled',
+          p_comments: 'Cancelling the unused ticket.',
+        },
+        success: actionSuccess, errors: [400, 401, 404, 500] },
     ],
   },
   {
@@ -338,6 +374,40 @@ const MODULES = [
         body: { decision: 'APPROVE', itemKey: '99001', itemType: 'HRSSA', comment: 'Approved.' }, success: actionSuccess, errors: [400, 401, 403, 404, 409, 500] },
       { name: 'Reassign approval', method: 'POST', p: 'approvals/:id/reassign', auth: 'bearer', roles: ['APPROVER', 'SUPERVISOR'], kind: 'action', pathVar: { id: '99001' },
         body: { assignTo: '037915', type: 'DELEGATE', comment: 'Reassigning while on leave.' }, success: actionSuccess, errors: [400, 401, 403, 404, 409, 500] },
+    ],
+  },
+  {
+    // XXHMC_SND_OTL_PKG — deployed on EBSDEV only (not yet on staging). Every
+    // route acts on the JWT caller; dates are YYYY-MM-DD period START/END_DATEs.
+    folder: 'OTL Timecard',
+    items: [
+      { name: 'Timecard periods (with derived status)', method: 'GET', p: 'otl/timecard/periods', auth: 'bearer', kind: 'read', query: { lang: 'en', year: '2026' },
+        success: otlEx.OTL_PERIODS_EXAMPLE, errors: [400, 401, 500, 503] },
+      { name: 'Timecard summary', method: 'GET', p: 'otl/timecard/summary', auth: 'bearer', kind: 'read', query: { lang: 'en', period: '2026-07-01' },
+        success: otlEx.OTL_SUMMARY_EXAMPLE, errors: [400, 401, 500, 503] },
+      { name: 'Timecard summary by hour type', method: 'GET', p: 'otl/timecard/summary/elements', auth: 'bearer', kind: 'read', query: { lang: 'en', period: '2026-07-01' },
+        success: otlEx.OTL_SUMMARY_ELEMENTS_EXAMPLE, errors: [400, 401, 500, 503] },
+      { name: 'Timecard details (grid)', method: 'GET', p: 'otl/timecard/details', auth: 'bearer', kind: 'read', query: { lang: 'en', period: '2026-07-01' },
+        success: otlEx.OTL_DETAILS_EXAMPLE, errors: [400, 401, 500, 503] },
+      { name: 'Timecard template (month pre-fill)', method: 'GET', p: 'otl/template', auth: 'bearer', kind: 'read', query: { lang: 'en', startDate: '2026-07-01', endDate: '2026-07-31' },
+        success: otlEx.OTL_TEMPLATE_EXAMPLE, errors: [400, 401, 500, 503] },
+      { name: 'Absence details', method: 'GET', p: 'otl/absence-details', auth: 'bearer', kind: 'read', query: { lang: 'en', startDate: '2026-07-01', endDate: '2026-07-31' },
+        success: otlEx.OTL_ABSENCE_EXAMPLE, errors: [400, 401, 500, 503] },
+      { name: 'Hour types for the caller (picker)', method: 'GET', p: 'otl/element-details', auth: 'bearer', kind: 'read', query: { lang: 'en', startDate: '2026-07-01', endDate: '2026-07-31' },
+        success: otlEx.OTL_ELEMENT_DETAILS_EXAMPLE, errors: [400, 401, 500, 503] },
+      { name: 'Hour-type catalog (display only)', method: 'GET', p: 'otl/timecard/elements', auth: 'bearer', kind: 'read', query: { lang: 'en' },
+        success: otlEx.OTL_ELEMENTS_EXAMPLE, errors: [401, 500, 503] },
+      { name: 'Facility LOV', method: 'GET', p: 'otl/timecard/facilities', auth: 'bearer', kind: 'read', query: { lang: 'en' },
+        success: otlEx.OTL_FACILITIES_EXAMPLE, errors: [401, 500, 503] },
+      { name: 'Cost-center LOV', method: 'GET', p: 'otl/timecard/cost-centers', auth: 'bearer', kind: 'read', query: { lang: 'en', facilityId: '09' },
+        success: otlEx.OTL_COST_CENTERS_EXAMPLE, errors: [400, 401, 500, 503] },
+      { name: 'Submit timecard', method: 'POST', p: 'otl/timecard/submit', auth: 'bearer', kind: 'action',
+        // Complete month required (one entry per day at least). p_user_name /
+        // p_period are built server-side and rejected (400) if sent.
+        body: otlEx.OTL_SUBMIT_BODY,
+        success: otlEx.OTL_SUBMIT_EXAMPLE, errors: [400, 401, 500, 503] },
+      { name: 'Timecard of an approval notification', method: 'GET', p: 'approvals/:id/timecard-details', auth: 'bearer', kind: 'read', pathVar: { id: '123864402' }, query: { lang: 'en', requestor: 'V-NFERNANDO' },
+        success: otlEx.OTL_TIMECARD_NOTIFICATION_EXAMPLE, errors: [400, 401, 403, 500, 503] },
     ],
   },
   {

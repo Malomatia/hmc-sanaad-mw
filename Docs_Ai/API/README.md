@@ -130,11 +130,101 @@
 
 **Errors:** 502 on Cerner failure (ACL); no Oracle dependency.
 
-## Module: `annual-ticket` (ops 66, 67)
+## Module: `annual-ticket` (ops 66, 67, 72)
 | Op | Method | Route | Req DTO | Resp DTO | Oracle |
 |---|---|---|---|---|---|
-| 66 | GET* | `/annual-ticket/master?lang` | `LangQueryDto` | `TicketMasterResponseDto` | `TICKET_MASTER` |
+| 66 | GET* | `/annual-ticket/master?lang&person_id` | `AnnualTicketMasterQueryDto` | `AnnualTicketMasterResponseDto` | `TICKET_MASTER, ANNUAL_TICKT_LOV` |
 | 67 | POST* | `/annual-ticket/apply` | `SubmitTicketRequestDto` | `SubmitResultDto` | `TICKET_REQ_PR` |
+| 72 | GET | `/annual-ticket/cancel-options?lang` | `TicketCancelOptionsQueryDto` | `TicketCancelOptionsResponseDto` | `CANCEL_TICKETS_V, CANCEL_TAKENAS_V, CANCEL_REPAYMENT_METHODS_V` |
+| 72 | POST | `/annual-ticket/cancel` | `AnnualTicketCancelRequestDto` | `SubmitResultDto` | `CANCEL_TKT_PR` |
+
+**master (op 66) is caller-scoped:** `XXHMC_SND_TICKET_MASTER` is read
+`WHERE USER_NAME = :u` (JWT username; unfiltered it exceeded the request
+timeout) and grouped by `TAG1` into one array per picker. How each group maps
+to the `/annual-ticket/apply` body:
+
+| Array | TAG1 | Item fields | → apply field |
+|---|---|---|---|
+| `requestFor` | `REQUEST FOR` | `value`/`label` = `NAME_EN`, `labelAr` = `NAME_AR` | `value` → `p_request_for` (`Self` / `Family` / `Self and Family`) |
+| `passengers` | `PASSENGER` | `value` = `contactId` = `CONTACT_ID` (never localized), `name`/`nameAr` (display only), `type` (`Self`/`Family`), `contactType` (`EMP`/`S`/`C`), `currentEmployee`, `dateOfBirth` (`YYYY-MM-DD`), `sex`; `Self` first | `Self` `value` (= PERSON_ID) → `p_employee`; `Family` `value` (= CONTACT_ID) → `p_passenger1..4`. Ids, never names: TICKET_REQ_PR stores the parameters verbatim (source 307-312, its name→id lookups 197-306 are commented out) into segments validated by person_id / contact_id value sets, so a name raises ORA-01722 |
+| `contractualYears` | `CONTRACTUAL YEAR` | `value` = `CONTRACT_YEAR`, `label` = `CONTRACT_YEAR_DEF` (fallback `NAME_EN`), `labelAr` = `CONTRACT_YEAR_DEF_AR`, `fromYear`, `toYear`, `law`, `totalCount` | `value` → `p_contractual_year` |
+| `destinations` | `DESTINATION` | `value`/`label` = `NAME_EN`, `labelAr` = `NAME_AR` | `value` → `p_traveling_dest` |
+| `ticketClasses` | `TICKET CLASS` | `value`/`label` = `NAME_EN`, `labelAr` = `NAME_AR` | `value` → `p_travel_class` |
+| `requestTypes` | `REQ TYPE` (global rows, USER_NAME NULL — read separately with `WHERE TAG1 = 'REQ TYPE'`) | `value` = `NAME_EN` (`Cash` / `Voucher`), `label`/`labelAr` | `value` → `p_request_type` — validated by the HMC_HR_CASH_VOUCHER_TYPE value set; `Annual Ticket` is rejected (FLEX-VALUE DOES NOT EXIST) |
+| `other` | anything else | `tag`, `recordType`, `value`, `label`, `labelAr` | nothing is dropped silently |
+
+The `*Ar` twins (`labelAr`, `nameAr`, `eligibleAr`) are folded into their base
+field per `lang` by the ResponseInterceptor (Arabic URL-decoded); `value` and
+`contactId` are never localized, so they are always what Oracle expects. Rows
+identical apart from `ROW_NUM` are de-duplicated. `eligible` is
+`ANNUAL_TICKT_LOV.ANUAL_TKT_DEFAULT` (`Yes`/`No`; Arabic under `lang=ar`) — an
+eligibility flag, not the form LOV; it is `null` (warning logged) when that read
+fails, and never fails the call. `person_id` is optional; one that differs from
+the caller's own PERSON_ID (the `Self` passenger, else `EMPLOYMENT_DETAILS_V`)
+answers **403**.
+
+```json
+{
+  "eligible": "Yes",
+  "contractualYears": [{ "value": "01-SEP-2025 to 31-AUG-2026", "label": "01-SEP-2025 to 31-AUG-2026", "fromYear": 2025, "toYear": 2026, "law": "HMC LAW", "totalCount": 18 }],
+  "destinations": [{ "value": "Cairo", "label": "Cairo" }],
+  "passengers": [{ "value": "26023", "contactId": "26023", "name": "Mr. Amir Sami Samir Ibrahim", "type": "Self", "contactType": "EMP", "currentEmployee": "Y", "dateOfBirth": "1984-05-15", "sex": "M" }],
+  "requestFor": [{ "value": "Self", "label": "Self" }],
+  "ticketClasses": [{ "value": "Economy", "label": "Economy" }],
+  "requestTypes": [{ "value": "Cash", "label": "Cash" }, { "value": "Voucher", "label": "Voucher" }],
+  "other": []
+}
+```
+
+**cancel-options (op 72) is caller-scoped and joined per ticket:** the three
+views have no `USER_NAME` column, so the backend resolves the caller's
+`PERSON_ID` from `EMPLOYMENT_DETAILS_V` by the JWT username. A `person_id` query
+param is still accepted; one that differs from the caller's answers **403**; a
+caller without an employment row gets empty lists. `ANALYSIS_CRITERIA_ID` is the
+join key between the views (TAKENAS_V / REPAYMENT_METHODS_V carry one row per
+historical ticket, so their flat lists were useless to a client):
+
+```json
+{
+  "tickets": [{
+    "analysisCriteriaId": "71794897",
+    "value": "Self and Family |Amir |Caroline |Jerome Amir Sami |Jolie Amir Sami | |01-SEP-2025 to 31-AUG-2026 |Cash |20920",
+    "requestFor": "Self and Family", "employeeName": "Amir",
+    "passengers": ["Caroline", "Jerome Amir Sami", "Jolie Amir Sami"],
+    "contractualYear": "01-SEP-2025 to 31-AUG-2026", "takenAs": "Cash", "amount": "20920",
+    "repaymentMethods": [{ "value": "Payroll Deduction", "label": "Payroll Deduction", "appliesTo": "Cash" }]
+  }],
+  "takenAs": [{ "TAKES_AS": "Cash" }, { "TAKES_AS": "Voucher" }],
+  "repaymentMethods": [{ "FLEX_VALUE": "Payroll Deduction", "DESCRIPTION": "Cash" }, { "FLEX_VALUE": "Cancel Voucher", "DESCRIPTION": "Voucher" }]
+}
+```
+
+`value` is the composite `ANNUAL_LEAVE_PASS_TKT_VALUE`
+(`requestFor |employeeName |passenger1..4 |contractYear |takenAs |amount`),
+shown parsed; `takenAs` comes from TAKENAS_V for that id (fallback: segment 7).
+The flat `takenAs` / `repaymentMethods` are deprecated, deduplicated legacy
+fields.
+
+**cancel (op 72) takes the ticket id, not the composite:**
+
+```json
+{ "analysis_criteria_id": "71794897", "p_reason": "Travel plans cancelled", "p_comments": "Cancelling the unused ticket." }
+```
+
+Required `analysis_criteria_id` (digits) and `p_reason`; optional `p_comments`,
+`p_voucher_ref`, `p_repayment_method`, attachments. The backend re-reads the
+caller's cancel options and fills `p_annual_tkt` (the ticket's
+ANALYSIS_CRITERIA_ID — the procedure's segment1 is VARCHAR2(60) while the
+composite reaches 109 chars; CANCEL_TKT_PR is being changed by the Oracle team
+to resolve the ticket by id), `p_contractual_year` (segment 6), `p_ticket_as`
+(the ticket's taken-as) and
+`p_repayment_method` (the given one if it is one of the ticket's, else the
+ticket's only one). **404** when the id is not one of the caller's tickets;
+**400** when the ticket has several methods and none is given, or the given one
+is not the ticket's. The old `p_annual_tkt` / `p_contractual_year` /
+`p_ticket_as` keys are rejected (400 "should not exist"): the staging F5 WAF
+blocked the response of every request carrying the pipe composite, and the
+server-side lookup makes a wrong Cash/Voucher ↔ repayment pairing impossible.
 
 ## Module: `approvals` (ops 20, 21, 22, 23, 68, 69, 70, 71) — Roles: `APPROVER`/`SUPERVISOR`
 | Op | Method | Route | Req DTO | Resp DTO | Oracle |
@@ -147,6 +237,26 @@
 | 69 | GET* | `/approvals/worklist/summary?enum&lang` | `ProfileQueryDto` | `WorklistSummaryResponseDto` | `WORKLISTS_V` |
 | 70 | GET* | `/approvals/worklist/:id/history?lang` | `ApprovalDetailQueryDto` | `ActionHistoryResponseDto` | `ACTION_HISTORY_V` |
 | 71 | POST* | `/approvals/:id/reassign` | `ReassignApprovalRequestDto` | `SubmitResultDto` | `REASSIGN_PR` |
+
+## Module: `otl` (OTL timecard — `XXHMC_SND_OTL_PKG`, not a legacy op)
+Every route acts on the JWT caller (a `username` query value is accepted and ignored). Dates are `YYYY-MM-DD`; `period`/`startDate` is the TIME_PERIOD_V `START_DATE`. Objects exist on EBSDEV only (not yet on staging/EBSPRJ) — see AGENTS.md "OTL timecards".
+
+| Method | Route | Req DTO | operationId | Oracle |
+|---|---|---|---|---|
+| GET | `/otl/timecard/periods?year&status&lang` | `OtlPeriodsQueryDto` | `otl_getPeriods` | `OTL_EMP_TIME_PERIOD_V` + `OTL_SUMMARY_V` (status derived) |
+| GET | `/otl/timecard/summary?period&lang` | `OtlSummaryQueryDto` | `otl_getSummary` | `OTL_SUMMARY_V` (INVALID today → `available:false`) |
+| GET | `/otl/timecard/summary/elements?period&lang` | `OtlPeriodQueryDto` | `otl_getSummaryByElement` | `OTL_SUMMARY_ELE_V` |
+| GET | `/otl/timecard/details?period&lang` | `OtlPeriodQueryDto` | `otl_getDetails` | `OTL_TIMECARD_DEATIS_V` (template fallback) |
+| GET | `/otl/template?startDate&endDate&lang` | `OtlDateRangeQueryDto` | `otl_getTemplate` | `OTL_PKG.get_template` + `get_absence_details` |
+| GET | `/otl/absence-details?startDate&endDate&lang` | `OtlDateRangeQueryDto` | `otl_getAbsenceDetails` | `OTL_PKG.get_absence_details` |
+| GET | `/otl/element-details?startDate&endDate&lang` | `OtlDateRangeQueryDto` | `otl_getElementDetails` | `OTL_PKG.get_element_name` (hour-type picker) |
+| GET | `/otl/timecard/elements?lang` | `LangQueryDto` | `otl_getElements` | `OTL_ELEMENT_V` (display catalog only) |
+| GET | `/otl/timecard/facilities?lang` | `LangQueryDto` | `otl_getFacilities` | `OTL_FACILITY_V` |
+| GET | `/otl/timecard/cost-centers?facilityId&lang` | `OtlCostCenterQueryDto` | `otl_getCostCenters` | `OTL_COST_CENTER_V` |
+| POST | `/otl/timecard/submit` (HTTP 200) | `SubmitTimecardRequestDto` | `otl_submitTimecard` | `OTL_PKG.XXHMC_SND_TIMECARD_SUBMIT_PR` (CLOB JSON) |
+| GET | `/approvals/:id/timecard-details?requestor&lang` | `OtlTimecardNotificationQueryDto` | `approvals_getTimecardDetails` | `OTL_PKG.get_time_card_details` (caller must be the recipient; 403 otherwise) |
+
+**Submit result:** action envelope with `result: { referenceNo, submittedDate, cardStatus, approvalChain }` — `referenceNo` is always `null` and `approvalChain` `[]` (Oracle bug B9). Oracle `E` → `successflag: N`. Invalid months (missing day, unknown element, > 24 h/day, label instead of code) answer `N` without calling Oracle.
 
 ## Module: `lookups` (shared — ops 15, 26 + generic)
 | Op | Method | Route | Req DTO | Resp DTO | Oracle |

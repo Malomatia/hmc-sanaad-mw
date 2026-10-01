@@ -96,6 +96,23 @@ export function parseOracleDate(value: unknown): Date | null {
   return isNaN(parsed.getTime()) ? null : parsed;
 }
 
+/**
+ * `YYYY-MM-DD` of an Oracle DATE column value, or null. node-oracledb returns
+ * DATE columns as JS Dates in the process's LOCAL time zone, so the local
+ * calendar components are the Oracle date (`toISOString()` would shift it a
+ * day back under TZ=Asia/Qatar). Same rule as the OTL module's `toIsoDate`,
+ * which feature modules cannot import from each other.
+ */
+export function formatOracleIsoDate(value: unknown): string | null {
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return null;
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}`;
+  }
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value)) return value.slice(0, 10);
+  return null;
+}
+
 export function formatOracleDisplayDate(value: unknown): string | null {
   const date = parseOracleDate(value);
   if (!date) return null;

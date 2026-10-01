@@ -19,6 +19,7 @@ const WORKLIST_SUBMIT_OPERATIONS = new Set([
   'dependents_delete',
   'dependents_passportApply',
   'schoolFees_apply',
+  'otl_submitTimecard',
 ]);
 
 /** `POST /approvals/123859449/decision` → the notification id. */

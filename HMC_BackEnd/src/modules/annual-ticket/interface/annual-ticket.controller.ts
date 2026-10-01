@@ -4,17 +4,23 @@ import { Lang } from '@core/i18n/lang.decorator';
 import type { Lang as LangCode } from '@shared/domain/lang';
 import { CurrentUser } from '@core/auth/decorators/current-user.decorator';
 import { AuthenticatedUser } from '@core/auth/auth-user.interface';
-import { LangQueryDto } from '@shared/dto/lang-query.dto';
-import { LovResponseDto } from '@shared/dto/lov-response.dto';
 import { SubmitResultDto } from '@shared/dto/submit-result.dto';
 import { VerifiedBody } from '@shared/dto/verified-body';
 import { AnnualTicketService } from '../application/annual-ticket.service';
 import {
   AnnualTicketApplyRequestDto,
   AnnualTicketCancelRequestDto,
+  AnnualTicketMasterQueryDto,
+  AnnualTicketMasterResponseDto,
   TicketCancelOptionsQueryDto,
+  TicketCancelOptionsResponseDto,
 } from './dto/annual-ticket.dto';
-import { ANNUAL_TICKET_APPLY_BODY } from './annual-ticket.examples';
+import {
+  ANNUAL_TICKET_APPLY_BODY,
+  ANNUAL_TICKET_CANCEL_BODY,
+  ANNUAL_TICKET_CANCEL_OPTIONS_EXAMPLE,
+  ANNUAL_TICKET_MASTER_EXAMPLE,
+} from './annual-ticket.examples';
 
 /** Annual-ticket endpoints (ops 66, 67, 72). See Docs_Ai/API/README.md. */
 @ApiTags('annual-ticket')
@@ -23,14 +29,40 @@ import { ANNUAL_TICKET_APPLY_BODY } from './annual-ticket.examples';
 export class AnnualTicketController {
   constructor(private readonly service: AnnualTicketService) {}
 
+  /**
+   * The annual-ticket form master of the JWT caller: TICKET_MASTER grouped by
+   * TAG1 into the five pickers plus the ANNUAL_TICKT_LOV eligibility flag.
+   * Each group feeds one POST /annual-ticket/apply field (see the operation
+   * description). A `person_id` query param is optional and answers 403 when
+   * it is not the caller's.
+   */
   @Get('master')
-  @ApiOperation({ summary: 'op 66 — Annual ticket master LOV', operationId: 'annualTicket_master' })
-  @ApiOkResponse({ type: LovResponseDto })
-  async master(
-    @Query() q: LangQueryDto,
-    @CurrentUser() user: AuthenticatedUser,
-  ): Promise<LovResponseDto> {
-    return { items: await this.service.master(q.lang, user.username) };
+  @ApiOperation({
+    summary: 'op 66 — Annual ticket master (TICKET_MASTER grouped by TAG1 + eligibility flag)',
+    operationId: 'annualTicket_master',
+    description: [
+      'Always for the JWT caller (`XXHMC_SND_TICKET_MASTER WHERE USER_NAME = <token username>`), grouped by `TAG1`.',
+      'How each group maps to the POST /annual-ticket/apply body:',
+      '- `requestFor[].value` → `p_request_for` (`Self` | `Family` | `Self and Family`)',
+      '- `passengers[]` with `type: Self` → `value` (= `contactId` = the PERSON_ID) → `p_employee`',
+      '- `passengers[]` with `type: Family` → `value` (= `contactId`) → `p_passenger1..4` — ids, never names: TICKET_REQ_PR validates them against contact_id value sets (ORA-01722 for a name)',
+      '- `contractualYears[].value` → `p_contractual_year` (e.g. `01-SEP-2025 to 31-AUG-2026`)',
+      '- `destinations[].value` → `p_traveling_dest`',
+      '- `ticketClasses[].value` → `p_travel_class`',
+      '- `requestTypes[].value` → `p_request_type` (`Cash` | `Voucher`)',
+      '',
+      '`eligible` is the ANNUAL_TICKT_LOV Yes/No flag (null when it could not be read). `*Ar` twins',
+      '(`labelAr`, `nameAr`, `eligibleAr`) are folded into their base field per `lang`; `value` and',
+      '`contactId` are never localized. Unknown TAG1 rows are returned in `other`.',
+    ].join('\n'),
+  })
+  @ApiOkResponse({
+    type: AnnualTicketMasterResponseDto,
+    description: 'Read envelope `result` (example: lang=en).',
+    example: ANNUAL_TICKET_MASTER_EXAMPLE,
+  })
+  master(@Query() q: AnnualTicketMasterQueryDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.service.master(user, q);
   }
 
   @Post('apply')
@@ -48,37 +80,45 @@ export class AnnualTicketController {
   }
 
   /**
-   * Inputs of the cancellation form. Three PERSON-scoped views in one call:
-   * the cancellable tickets, how each was taken (Cash|Voucher) and the
-   * available repayment methods.
+   * Inputs of the cancellation form, always the JWT caller's own: one entry
+   * per cancellable ticket with its taken-as (Cash|Voucher) and its own
+   * repayment methods, joined on ANALYSIS_CRITERIA_ID. The PERSON_ID is
+   * derived server-side (EMPLOYMENT_DETAILS_V); a `person_id` query param is
+   * optional and answers 403 when it is not the caller's.
    */
   @Get('cancel-options')
   @ApiOperation({
-    summary: 'op 72 — Ticket-cancellation options (tickets + takenAs + repayment)',
+    summary: 'op 72 — Ticket-cancellation options (one entry per ticket, joined on ANALYSIS_CRITERIA_ID)',
     operationId: 'annualTicket_cancelOptions',
+    description:
+      'Send `tickets[].analysisCriteriaId` (plus, when the ticket has several, one of its ' +
+      '`repaymentMethods[].value`) to POST /annual-ticket/cancel. `value` is the composite ticket ' +
+      'text for display only. The flat `takenAs` / `repaymentMethods` lists are deprecated and deduplicated.',
   })
-  cancelOptions(@Query() q: TicketCancelOptionsQueryDto) {
-    return this.service.cancelOptions(q.person_id);
+  @ApiOkResponse({
+    type: TicketCancelOptionsResponseDto,
+    description: 'Read envelope `result` (example: lang=en).',
+    example: ANNUAL_TICKET_CANCEL_OPTIONS_EXAMPLE,
+  })
+  cancelOptions(@Query() q: TicketCancelOptionsQueryDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.service.cancelOptions(user, q);
   }
 
+  /**
+   * Cancels one of the caller's tickets by its id. The server resolves
+   * `p_annual_tkt`, `p_contractual_year`, `p_ticket_as` and (when omitted and
+   * unambiguous) `p_repayment_method` from the caller's own cancel options:
+   * 404 when the id is not one of them, 400 when the repayment method is
+   * ambiguous or not one of the ticket's.
+   */
   @Post('cancel')
   @HttpCode(200)
   @ApiOperation({ summary: 'op 72 — Cancel annual ticket', operationId: 'annualTicket_cancel' })
   @ApiOkResponse({ type: SubmitResultDto })
-  // `p_annual_tkt` is the composite ANNUAL_LEAVE_PASS_TKT_VALUE returned by
-  // GET /annual-ticket/cancel-options — send it exactly as received.
   @VerifiedBody(
     AnnualTicketCancelRequestDto,
-    {
-      p_annual_tkt:
-        'Self and Family |Amir |Caroline |Jerome Amir Sami |Jolie Amir Sami | |01-SEP-2025 to 31-AUG-2026 |Cash |20920',
-      p_contractual_year: '01-SEP-2025 to 31-AUG-2026',
-      p_reason: 'Travel plans cancelled',
-      p_ticket_as: 'Cash',
-      p_repayment_method: 'Payroll Deduction',
-      p_comments: 'Cancelling the unused ticket.',
-    },
-    'Real cancellable ticket of the test user (person_id 26023), read from GET /annual-ticket/cancel-options. p_ticket_as pairs with p_repayment_method: Cash -> Payroll Deduction, Voucher -> Cancel Voucher.',
+    ANNUAL_TICKET_CANCEL_BODY,
+    'analysis_criteria_id = tickets[].analysisCriteriaId from GET /annual-ticket/cancel-options (71794897 is a real cancellable ticket of the test user, person_id 26023). p_repayment_method is optional when the ticket has a single method. The old p_annual_tkt / p_contractual_year / p_ticket_as keys are rejected (400).',
   )
   cancel(
     @Body() body: AnnualTicketCancelRequestDto,

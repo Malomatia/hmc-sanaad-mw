@@ -53,12 +53,32 @@ describe('Static LOV contracts', () => {
     expect(query).not.toHaveBeenCalled();
   });
 
+  // This used to pin ANNUAL_TICKT_LOV. Its columns are registered since
+  // 2026-09-29 (confirmed EBSDEV/EBSPRJ), so it is now scoped by USER_NAME
+  // (next test); LEAVE_BAL_PLAN_LOV is still scoped without a contract.
   it('does not query an unfiltered view when its static scope contract is missing', async () => {
     const { repo, query } = make();
-    await expect(repo.readLov(ORACLE_OBJECTS.ANNUAL_TICKT_LOV, 'en', 'TESTUSER'))
-      .rejects.toBeInstanceOf(OracleContractUnavailableException);
+    await expect(
+      repo.readLov(ORACLE_OBJECTS.LEAVE_BAL_PLAN_LOV, 'en', 'TESTUSER'),
+    ).rejects.toBeInstanceOf(OracleContractUnavailableException);
     expect(query).not.toHaveBeenCalled();
   });
+
+  // Both are per-user: with a caller they are filtered on USER_NAME, without
+  // one they answer 400 (leave defaults reads ANNUAL_TICKT_LOV without a
+  // username and degrades to [] through `settle`, as it did on the old 503).
+  it.each([ORACLE_OBJECTS.ANNUAL_TICKT_LOV, ORACLE_OBJECTS.TICKET_MASTER])(
+    'scopes %s by its registered USER_NAME column and refuses it without a caller',
+    async (object) => {
+      const { repo, query } = make();
+      await repo.readLov(object, 'en', 'testuser');
+      expect(query).toHaveBeenCalledWith(`SELECT * FROM ${object} WHERE user_name IN (:u0)`, {
+        u0: 'TESTUSER',
+      });
+      await expect(repo.readLov(object, 'en')).rejects.toMatchObject({ status: 400 });
+      expect(query).toHaveBeenCalledTimes(1);
+    },
+  );
 
   it.each([
     ['ALSR_DEFAULT_LOV', ORACLE_OBJECTS.ALSR_DFALT_LOV],
